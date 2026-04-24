@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="text-2xl font-bold mb-6">Dashboard Operacional</h2>
+
+<div class="grid grid-cols-4 gap-6 mb-6">
+
+    <div class="bg-gray-800 p-4 rounded">
+        <div class="text-sm text-gray-400">Devices</div>
+        <div id="total_devices" class="text-xl text-white">0</div>
+    </div>
+
+    <div class="bg-gray-800 p-4 rounded">
+        <div class="text-sm text-gray-400">Network Online</div>
+        <div id="network_online" class="text-xl text-green-400">0</div>
+    </div>
+
+    <div class="bg-gray-800 p-4 rounded">
+        <div class="text-sm text-gray-400">Network Offline</div>
+        <div id="network_offline" class="text-xl text-red-400">0</div>
+    </div>
+
+    <div class="bg-gray-800 p-4 rounded">
+        <div class="text-sm text-gray-400">Avg Latency</div>
+        <div id="avg_latency" class="text-xl text-blue-400">0 ms</div>
+    </div>
+
+</div>
+
+<div class="grid grid-cols-3 gap-6">
+
+    <div class="bg-gray-800 p-4 rounded">
+        <div class="text-sm text-gray-400">Logical Available</div>
+        <div id="logical_available" class="text-xl text-blue-400">0</div>
+    </div>
+
+    <div class="bg-gray-800 p-4 rounded">
+        <div class="text-sm text-gray-400">Logical Unavailable</div>
+        <div id="logical_unavailable" class="text-xl text-yellow-400">0</div>
+    </div>
+
+    <div class="bg-gray-800 p-4 rounded">
+        <div class="text-sm text-gray-400">Webhook Logs</div>
+        <div id="webhook_logs_count" class="text-xl text-white">0</div>
+    </div>
+
+</div>
+
+<div class="mt-6 bg-gray-800 p-4 rounded">
+    <div class="text-sm text-gray-400">Última Coleta</div>
+    <div id="last_collection" class="text-white">-</div>
+</div>
+
+<script>
+    async function loadDashboard() {
+        const res = await fetch('/api/dashboard/');
+        const data = await res.json();
+
+        document.getElementById("total_devices").innerText = data.total_devices;
+        document.getElementById("network_online").innerText = data.network_online;
+        document.getElementById("network_offline").innerText = data.network_offline;
+        document.getElementById("logical_available").innerText = data.logical_available;
+        document.getElementById("logical_unavailable").innerText = data.logical_unavailable;
+        document.getElementById("avg_latency").innerText = data.avg_latency + " ms";
+        document.getElementById("webhook_logs_count").innerText = data.webhook_logs_count;
+        document.getElementById("last_collection").innerText = data.last_collection || "-";
+    }
+
+    loadDashboard();
+    setInterval(loadDashboard, 5000);
+</script>
+
+{% endblock %}

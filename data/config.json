@@ -1,0 +1,26 @@
+{
+  "client_code": "",
+  "uscall_host": "",
+  "uscall_token": "",
+  "extensions_interval": 3600,
+  "devices_interval": 3600,
+  "results_interval": 3600,
+  "webhook_log_retention_days": 2,
+  "webhooks": {
+    "extensions": {
+      "url": "https://fiscal-remoto-go.base44.app/api/functions/uscallWebhook",
+      "token": "L3$#V2i9#s3S$HQncn7dTA9!dVHgmVPBfk&BEjQg",
+      "enabled": false
+    },
+    "devices": {
+      "url": "https://fiscal-remoto-go.base44.app/api/functions/uscallWebhook",
+      "token": "L3$#V2i9#s3S$HQncn7dTA9!dVHgmVPBfk&BEjQg",
+      "enabled": true
+    },
+    "results": {
+      "url": "https://fiscal-remoto-go.base44.app/api/functions/uscallWebhook",
+      "token": "L3$#V2i9#s3S$HQncn7dTA9!dVHgmVPBfk&BEjQg",
+      "enabled": false
+    }
+  }
+}

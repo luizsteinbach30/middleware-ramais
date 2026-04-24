@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="text-xl mb-4">
+    Hist�rico de Lat�ncia - {{ device }}
+</h2>
+
+<div class="bg-gray-800 p-6 rounded">
+    <canvas id="latencyChart"></canvas>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+
+async function loadChart() {
+
+    const res = await fetch("/api/history/{{ device }}");
+    const data = await res.json();
+
+    if (!data.length) {
+        document.getElementById("latencyChart").remove();
+        document.querySelector(".bg-gray-800").innerHTML +=
+            "<div class='text-gray-400 mt-4'>Sem dados ainda...</div>";
+        return;
+    }
+
+    const labels = data.map(d => d.timestamp);
+    const values = data.map(d => d.latency || 0);
+
+    const ctx = document.getElementById("latencyChart").getContext("2d");
+
+    new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: labels,
+            datasets: [{
+                label: "Latency (ms)",
+                data: values,
+                borderColor: "rgb(75, 192, 192)",
+                backgroundColor: "rgba(75,192,192,0.1)",
+                tension: 0.2
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: {
+                    ticks: {
+                        color: "#aaa"
+                    }
+                },
+                y: {
+                    ticks: {
+                        color: "#aaa"
+                    }
+                }
+            }
+        }
+    });
+}
+
+loadChart();
+
+</script>
+
+{% endblock %}
