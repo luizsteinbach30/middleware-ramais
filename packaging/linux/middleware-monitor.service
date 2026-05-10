@@ -1,0 +1,22 @@
+[Unit]
+Description=Middleware USCall Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mmonitor
+Group=mmonitor
+WorkingDirectory=/opt/middleware-monitor/current
+EnvironmentFile=/etc/middleware-monitor/env
+ExecStart=/opt/middleware-monitor/venv/bin/python -m middleware_monitor
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=4096
+ProtectSystem=strict
+ReadWritePaths=/var/lib/middleware-monitor
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

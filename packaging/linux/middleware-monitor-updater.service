@@ -1,0 +1,14 @@
+[Unit]
+Description=Middleware USCall Monitor — auto-update watcher
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=mmupdater
+Group=mmupdater
+WorkingDirectory=/opt/middleware-monitor/current
+EnvironmentFile=/etc/middleware-monitor/env
+ExecStart=/opt/middleware-monitor/venv/bin/python -m middleware_monitor.updater.installer
+ProtectSystem=strict
+ReadWritePaths=/opt/middleware-monitor/app /opt/middleware-monitor/current /var/lib/middleware-monitor/tmp /var/lib/middleware-monitor/backups
+NoNewPrivileges=yes

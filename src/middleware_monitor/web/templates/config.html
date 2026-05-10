@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Configuração — Middleware Monitor{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div id="cfg-banner" class="hidden px-6 py-2 bg-yellow-500/10 border-b border-yellow-500/30 text-xs text-yellow-300 flex items-center gap-2">
+    {% include "partials/icon_alert.html" %}<span>Você tem alterações não salvas.</span>
+  </div>
+  <div class="px-6 py-4 flex items-center gap-4">
+    <div class="flex-1 min-w-0">
+      <h1 class="text-lg font-semibold text-gray-100">Configuração</h1>
+      <p class="text-xs text-gray-400 mt-0.5">Parâmetros operacionais editáveis pela UI</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="cfg-reload" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Recarregar</button>
+      <button id="cfg-save" disabled class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-2.5 py-1.5 text-xs disabled:opacity-50 disabled:cursor-not-allowed">Salvar configuração</button>
+    </div>
+  </div>
+</div>
+<div class="px-6 py-6 space-y-5 max-w-4xl">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+    <div class="mb-4">
+      <h3 class="text-sm font-semibold text-gray-100">Identificação do cliente</h3>
+      <p class="text-xs text-gray-500 mt-0.5">Slug usado no payload dos webhooks.</p>
+    </div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">client_code <span class="text-red-400">*</span> <span class="font-normal text-gray-500">slug</span></span>
+        <input id="f-client_code" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+    </div>
+  </div>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+    <div class="flex items-center justify-between mb-4">
+      <div><h3 class="text-sm font-semibold text-gray-100">Integração USCall</h3>
+        <p class="text-xs text-gray-500 mt-0.5">Endpoint que retorna o status dos ramais.</p></div>
+      <button id="cfg-test-uscall" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Testar conexão</button>
+    </div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">uscall_host <span class="text-red-400">*</span> <span class="font-normal text-gray-500">sem https://</span></span>
+        <input id="f-uscall_host" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+      <div data-masked="uscall_token"></div>
+      <div class="md:col-span-2 flex items-center gap-3">
+        <label class="relative inline-block w-11 h-6 cursor-pointer">
+          <input type="checkbox" id="f-uscall_verify_ssl" class="sr-only peer">
+          <span class="absolute inset-0 rounded-full bg-gray-700 peer-checked:bg-blue-500 transition"></span>
+          <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
+        </label>
+        <span class="text-sm text-gray-200">verify_ssl (recomendado: ligado)</span>
+      </div>
+      <div id="uscall-test-result" class="md:col-span-2 hidden rounded-lg px-3 py-2 text-xs"></div>
+    </div>
+  </div>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+    <h3 class="text-sm font-semibold text-gray-100 mb-4">Intervalos de coleta <span class="text-xs font-normal text-gray-500">· em segundos, mínimo 10</span></h3>
+    <div class="grid md:grid-cols-3 gap-4">
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">extensions <span class="font-normal text-gray-500">USCall</span></span>
+        <input id="f-extensions_interval_seconds" type="number" min="10" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">devices <span class="font-normal text-gray-500">ping/arp</span></span>
+        <input id="f-devices_interval_seconds" type="number" min="10" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">results</span>
+        <input id="f-results_interval_seconds" type="number" min="10" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+    </div>
+  </div>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+    <h3 class="text-sm font-semibold text-gray-100 mb-4">Monitoramento de rede</h3>
+    <div class="grid md:grid-cols-3 gap-4">
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">ping_timeout_ms</span>
+        <input id="f-ping_timeout_ms" type="number" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">ping_concurrency <span class="font-normal text-gray-500">máx 200</span></span>
+        <input id="f-ping_concurrency" type="number" min="1" max="200" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">device_ping_retention_days</span>
+        <input id="f-device_ping_retention_days" type="number" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+    </div>
+  </div>
+  <div id="webhooks-section" class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+    <h3 class="text-sm font-semibold text-gray-100 mb-4">Webhooks</h3>
+    <div id="webhooks-list" class="space-y-3"></div>
+  </div>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+    <h3 class="text-sm font-semibold text-gray-100 mb-4">Retenção e limpeza</h3>
+    <div class="grid md:grid-cols-3 gap-4">
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">webhook_log_retention_days</span>
+        <input id="f-webhook_log_retention_days" type="number" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">collection_retention_days</span>
+        <input id="f-collection_retention_days" type="number" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">system_log_retention_days</span>
+        <input id="f-system_log_retention_days" type="number" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+    </div>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/config.js"></script>
+{% endblock %}

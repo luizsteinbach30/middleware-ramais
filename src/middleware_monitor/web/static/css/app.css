@@ -1,0 +1,11 @@
+/* App-specific overrides on top of Tailwind. */
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #111827; }
+::-webkit-scrollbar-thumb { background: #374151; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+
+[data-icon] { display: inline-flex; align-items: center; justify-content: center; }
+[data-icon] svg { width: 1em; height: 1em; }
+
+.tabular-nums { font-variant-numeric: tabular-nums; }

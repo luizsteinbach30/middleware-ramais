@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Ramal — Middleware Monitor{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center gap-4">
+    <div class="flex-1 min-w-0">
+      <h1 id="dd-title" class="text-lg font-semibold text-gray-100">Ramal —</h1>
+      <p id="dd-subtitle" class="text-xs text-gray-400 mt-0.5">—</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="/devices" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs"><span data-icon="arrow-left"></span>Voltar</a>
+      <button data-action="ping-now" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-2.5 py-1.5 text-xs"><span data-icon="refresh"></span>Forçar ping</button>
+    </div>
+  </div>
+</div>
+<div class="px-6 py-6 space-y-6">
+  <div id="dd-cards" class="grid grid-cols-1 lg:grid-cols-4 gap-3"></div>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-100">Histórico de latência</h3>
+        <p id="dd-chart-info" class="text-xs text-gray-500 mt-0.5">—</p>
+      </div>
+      <div class="inline-flex bg-gray-900 ring-1 ring-gray-700 rounded-lg p-0.5" id="dd-window">
+        <button data-w="24h" class="px-3 py-1 text-xs font-medium rounded-md bg-blue-500 text-white">24h</button>
+        <button data-w="7d" class="px-3 py-1 text-xs font-medium rounded-md text-gray-400 hover:text-gray-200">7d</button>
+        <button data-w="30d" class="px-3 py-1 text-xs font-medium rounded-md text-gray-400 hover:text-gray-200">30d</button>
+      </div>
+    </div>
+    <div class="h-56" id="dd-chart"></div>
+  </div>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-800">
+      <h3 class="text-sm font-semibold text-gray-100">Pings recentes</h3>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider">
+        <tr>
+          <th class="text-left px-4 py-2.5">Timestamp</th>
+          <th class="text-left px-4 py-2.5">Online</th>
+          <th class="text-right px-4 py-2.5">Latência</th>
+        </tr>
+      </thead>
+      <tbody id="dd-pings" class="divide-y divide-gray-800"></tbody>
+    </table>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/device_detail.js"></script>
+{% endblock %}

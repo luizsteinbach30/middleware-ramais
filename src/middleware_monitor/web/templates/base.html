@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>{% block title %}Middleware USCall Monitor{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script>
+    tailwind.config = { theme: { extend: { fontFamily: { sans: ['ui-sans-serif','system-ui'] } } } };
+  </script>
+  <script type="module" src="/static/js/app.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-200 antialiased">
+  <div class="min-h-screen flex">
+    {% if user %}{% include "partials/sidebar.html" %}{% endif %}
+    <div class="flex-1 min-w-0 flex flex-col">
+      <div id="degraded-banner" class="hidden px-6 py-2 bg-yellow-500/10 border-b border-yellow-500/30 text-xs text-yellow-200 flex items-center gap-2">
+        {% include "partials/icon_alert.html" %}
+        <span id="degraded-banner-text">Serviço degradado.</span>
+        <a href="/logs" class="underline hover:text-yellow-100">Verificar logs</a>
+      </div>
+      {% block body %}{% endblock %}
+    </div>
+  </div>
+  <div id="toast-root" class="fixed top-4 right-4 z-50 space-y-2"></div>
+</body>
+</html>

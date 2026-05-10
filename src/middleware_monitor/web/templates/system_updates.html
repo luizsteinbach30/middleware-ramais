@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Atualizações — Middleware Monitor{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4">
+    <h1 class="text-lg font-semibold text-gray-100">Atualizações</h1>
+    <p class="text-xs text-gray-400 mt-0.5">Auto-update via GitHub Releases</p>
+  </div>
+</div>
+<div class="px-6 py-6 space-y-6 max-w-4xl">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+    <div class="grid md:grid-cols-2 gap-6">
+      <div>
+        <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Versão atual</div>
+        <div id="upd-current" class="text-3xl font-bold text-gray-100 mt-1">{{ version }}</div>
+        <div class="flex items-center gap-2 mt-2">
+          <span id="upd-channel-badge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset bg-green-500/15 text-green-400 ring-green-500/30">stable</span>
+          <span id="upd-last-check" class="text-xs text-gray-500">—</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mt-5">
+          <div>
+            <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Canal</div>
+            <select id="upd-channel" class="mt-1.5 w-full bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100">
+              <option value="stable">stable</option><option value="beta">beta</option>
+            </select>
+          </div>
+          <div>
+            <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Auto-update</div>
+            <div class="mt-2 flex items-center gap-3">
+              <label class="relative inline-block w-11 h-6 cursor-pointer">
+                <input type="checkbox" id="upd-auto" class="sr-only peer">
+                <span class="absolute inset-0 rounded-full bg-gray-700 peer-checked:bg-blue-500 transition"></span>
+                <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
+              </label>
+              <span id="upd-auto-label" class="text-sm text-gray-200">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="upd-available-card" class="bg-gray-900/60 rounded-lg ring-1 ring-blue-500/30 p-4 hidden">
+        <div class="flex items-center gap-2 text-xs text-blue-300 font-semibold uppercase tracking-wider"><span data-icon="package"></span> Nova versão disponível</div>
+        <div id="upd-available-version" class="text-2xl font-bold text-gray-100 mt-1">—</div>
+        <div id="upd-available-info" class="text-xs text-gray-400 mt-1">—</div>
+        <pre id="upd-notes" class="text-xs text-gray-300 mt-3 whitespace-pre-wrap font-sans"></pre>
+        <div class="flex gap-2 mt-4">
+          <button id="upd-check" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs"><span data-icon="refresh"></span>Verificar agora</button>
+          <button id="upd-apply" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-2.5 py-1.5 text-xs"><span data-icon="download"></span>Atualizar agora</button>
+        </div>
+      </div>
+    </div>
+    <div id="upd-progress" class="hidden mt-5 bg-gray-900/60 rounded-lg ring-1 ring-blue-500/30 p-4">
+      <div class="flex items-center justify-between text-xs">
+        <span class="text-gray-300 flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span><span id="upd-stage">…</span></span>
+        <span id="upd-pct" class="font-mono text-gray-400 tabular-nums">0%</span>
+      </div>
+      <div class="mt-2 h-1.5 rounded-full bg-gray-800 overflow-hidden">
+        <div id="upd-bar" class="h-full bg-blue-500 transition-all" style="width:0%"></div>
+      </div>
+      <div class="text-[11px] text-gray-500 mt-2">Em caso de falha o serviço fará rollback automático.</div>
+    </div>
+  </div>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-800"><h3 class="text-sm font-semibold text-gray-100">Histórico</h3></div>
+    <table class="w-full text-sm">
+      <thead class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider">
+        <tr>
+          <th class="text-left px-4 py-3 font-semibold">Data</th>
+          <th class="text-left px-4 py-3 font-semibold">De</th>
+          <th class="text-left px-4 py-3 font-semibold">Para</th>
+          <th class="text-left px-4 py-3 font-semibold">Canal</th>
+          <th class="text-left px-4 py-3 font-semibold">Status</th>
+          <th class="text-right px-4 py-3 font-semibold">Duração</th>
+        </tr>
+      </thead>
+      <tbody id="upd-history" class="divide-y divide-gray-800"></tbody>
+    </table>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/system_updates.js"></script>
+{% endblock %}

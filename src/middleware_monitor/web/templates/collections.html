@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Coletas — Middleware Monitor{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center gap-4">
+    <div class="flex-1 min-w-0">
+      <h1 class="text-lg font-semibold text-gray-100">Histórico de coletas</h1>
+      <p id="col-subtitle" class="text-xs text-gray-400 mt-0.5">—</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button data-action="download" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs"><span data-icon="download"></span>Baixar JSON</button>
+      <button data-action="copy" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs"><span data-icon="copy"></span>Copiar</button>
+    </div>
+  </div>
+</div>
+<div class="px-6 py-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-800 flex items-center gap-3">
+      <select id="col-type" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-xs text-gray-100">
+        <option value="all">Todos os tipos</option>
+        <option value="extensions">extensions</option>
+        <option value="devices">devices</option>
+        <option value="results">results</option>
+      </select>
+      <input id="col-search" placeholder="Buscar por hash ou ID" class="flex-1 bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-xs text-gray-100"/>
+    </div>
+    <div id="col-list" class="max-h-[640px] overflow-auto divide-y divide-gray-800"></div>
+    <div class="px-4 py-3 border-t border-gray-800 flex items-center justify-between text-xs text-gray-500">
+      <span id="col-pageinfo">—</span>
+      <div class="flex gap-1">
+        <button id="col-prev" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">«</button>
+        <button id="col-next" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">»</button>
+      </div>
+    </div>
+  </div>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+      <div>
+        <div class="text-sm font-semibold text-gray-100">Visualizador de payload</div>
+        <div id="col-meta" class="text-xs text-gray-500 font-mono mt-0.5">—</div>
+      </div>
+      <span id="col-type-badge"></span>
+    </div>
+    <pre id="col-viewer" class="bg-gray-950 px-4 py-4 text-xs leading-relaxed font-mono text-gray-300 overflow-auto max-h-[600px]">selecione um item</pre>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/collections.js"></script>
+{% endblock %}

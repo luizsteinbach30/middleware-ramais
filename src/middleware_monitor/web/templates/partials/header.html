@@ -1,0 +1,10 @@
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  {% block header_banner %}{% endblock %}
+  <div class="px-6 py-4 flex items-center gap-4">
+    <div class="flex-1 min-w-0">
+      <h1 class="text-lg font-semibold text-gray-100 truncate">{% block header_title %}{% endblock %}</h1>
+      {% block header_subtitle %}{% endblock %}
+    </div>
+    <div class="flex items-center gap-2">{% block header_actions %}{% endblock %}</div>
+  </div>
+</div>

@@ -1,0 +1,153 @@
+"""HTML pages — server-rendered shells. Dynamic data is loaded by JS modules."""
+
+from __future__ import annotations
+
+import secrets
+
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session as DBSession
+
+from middleware_monitor.api.deps import get_session
+from middleware_monitor.core.models import Session as SessionModel
+from middleware_monitor.core.models import User
+from middleware_monitor.core.security import (
+    CSRF_COOKIE,
+    SESSION_COOKIE,
+    issue_csrf_token,
+)
+from middleware_monitor.settings import get_settings
+from middleware_monitor.version import __version__
+
+router = APIRouter()
+
+
+def get_templates() -> Jinja2Templates:
+    from pathlib import Path
+
+    here = Path(__file__).parent
+    return Jinja2Templates(directory=str(here / "templates"))
+
+
+def _maybe_user(
+    request: Request,
+    db: DBSession,
+    cookie: str | None,
+) -> User | None:
+    if not cookie:
+        return None
+    from middleware_monitor.core.security import _decode_cookie  # type: ignore[attr-defined]
+
+    raw = _decode_cookie(cookie)
+    if not raw:
+        return None
+    sess = db.get(SessionModel, raw)
+    if sess is None:
+        return None
+    user = db.get(User, sess.user_id)
+    return user
+
+
+def _ensure_csrf(request: Request) -> str:
+    token = request.cookies.get(CSRF_COOKIE)
+    if not token:
+        token = issue_csrf_token()
+        request.state._issue_csrf = token
+    return token
+
+
+def _render(
+    templates: Jinja2Templates,
+    request: Request,
+    name: str,
+    *,
+    user: User | None,
+    extra: dict | None = None,
+) -> HTMLResponse:
+    csrf = _ensure_csrf(request)
+    ctx = {
+        "user": user,
+        "csrf_token": csrf,
+        "version": __version__,
+        "page": name.rsplit(".", 1)[0],
+    }
+    if extra:
+        ctx.update(extra)
+    response = templates.TemplateResponse(request, name, ctx)
+    if getattr(request.state, "_issue_csrf", None):
+        s = get_settings()
+        response.set_cookie(
+            CSRF_COOKIE,
+            csrf,
+            httponly=False,
+            samesite="lax",
+            secure=s.cookie_secure,
+            max_age=12 * 60 * 60,
+            path="/",
+        )
+    return response
+
+
+@router.get("/login", response_class=HTMLResponse)
+def login_page(
+    request: Request,
+    cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+    db: DBSession = Depends(get_session),
+) -> HTMLResponse:
+    user = _maybe_user(request, db, cookie)
+    if user:
+        return RedirectResponse("/", status_code=302)
+    return _render(get_templates(), request, "login.html", user=None)
+
+
+def _require_user(
+    request: Request,
+    cookie: str | None,
+    db: DBSession,
+) -> User:
+    user = _maybe_user(request, db, cookie)
+    if user is None:
+        raise HTTPException(status_code=302, headers={"Location": "/login"})
+    return user
+
+
+@router.get("/", response_class=HTMLResponse)
+def dashboard_page(
+    request: Request,
+    cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+    db: DBSession = Depends(get_session),
+) -> HTMLResponse:
+    user = _maybe_user(request, db, cookie)
+    if user is None:
+        return RedirectResponse("/login", status_code=302)
+    if user.must_change_password:
+        return RedirectResponse("/account?force=1", status_code=302)
+    return _render(get_templates(), request, "dashboard.html", user=user)
+
+
+def _page(name: str, route: str) -> None:
+    @router.get(route, response_class=HTMLResponse)
+    def _handler(  # noqa: ANN202
+        request: Request,
+        cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+        db: DBSession = Depends(get_session),
+    ) -> HTMLResponse:
+        user = _maybe_user(request, db, cookie)
+        if user is None:
+            return RedirectResponse("/login", status_code=302)
+        if user.must_change_password and route != "/account":
+            return RedirectResponse("/account?force=1", status_code=302)
+        return _render(get_templates(), request, name, user=user)
+
+    _handler.__name__ = f"page_{name.replace('.', '_')}"
+
+
+_page("devices.html", "/devices")
+_page("device_detail.html", "/devices/{device_id}")
+_page("collections.html", "/collections")
+_page("webhook_logs.html", "/webhook-logs")
+_page("logs.html", "/logs")
+_page("config.html", "/config")
+_page("system_updates.html", "/system/updates")
+_page("account.html", "/account")

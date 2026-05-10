@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Webhook logs — Middleware Monitor{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center gap-4">
+    <div class="flex-1 min-w-0">
+      <h1 class="text-lg font-semibold text-gray-100">Webhook logs</h1>
+      <p class="text-xs text-gray-400 mt-0.5">Histórico das chamadas enviadas pelo middleware</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button data-test-type="extensions" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Testar extensions</button>
+      <button data-test-type="devices" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Testar devices</button>
+      <button data-test-type="results" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Testar results</button>
+    </div>
+  </div>
+</div>
+<div class="px-6 py-6 space-y-4">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="wh-filters">
+      <label class="flex flex-col gap-1.5">
+        <span class="text-xs font-semibold text-gray-300">Tipo</span>
+        <select id="wh-f-type" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100">
+          <option value="all">Todos</option><option value="extensions">extensions</option>
+          <option value="devices">devices</option><option value="results">results</option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1.5">
+        <span class="text-xs font-semibold text-gray-300">Status</span>
+        <select id="wh-f-status" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100">
+          <option value="all">Todos</option><option value="success">Sucesso</option><option value="failed">Falha</option>
+        </select>
+      </label>
+    </div>
+  </div>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider">
+        <tr>
+          <th class="text-left px-4 py-3 font-semibold">Data</th>
+          <th class="text-left px-4 py-3 font-semibold">Tipo</th>
+          <th class="text-right px-4 py-3 font-semibold">HTTP</th>
+          <th class="text-right px-4 py-3 font-semibold">Tempo</th>
+          <th class="text-left px-4 py-3 font-semibold">Status</th>
+          <th class="text-left px-4 py-3 font-semibold">Tentativa</th>
+          <th class="text-right px-4 py-3 font-semibold">Ações</th>
+        </tr>
+      </thead>
+      <tbody id="wh-tbody" class="divide-y divide-gray-800"></tbody>
+    </table>
+    <div class="px-4 py-3 border-t border-gray-800 flex items-center justify-between text-xs text-gray-500">
+      <span id="wh-pageinfo">—</span>
+      <div class="flex gap-1">
+        <button id="wh-prev" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">«</button>
+        <button id="wh-next" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">»</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="wh-modal" class="hidden fixed inset-0 bg-black/60 z-50 grid place-items-center px-4">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl max-w-2xl w-full" onclick="event.stopPropagation()">
+    <div class="px-5 py-4 border-b border-gray-700 flex items-center justify-between">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-100">Payload enviado</h3>
+        <div id="wh-modal-meta" class="text-xs text-gray-500 mt-0.5 font-mono">—</div>
+      </div>
+      <button data-close class="text-gray-400 hover:text-gray-100">×</button>
+    </div>
+    <pre id="wh-modal-content" class="bg-gray-950 px-5 py-4 text-xs font-mono text-gray-300 max-h-96 overflow-auto rounded-b-xl"></pre>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/webhook_logs.js"></script>
+{% endblock %}

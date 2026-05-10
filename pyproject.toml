@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "middleware-monitor"
+dynamic = ["version"]
+description = "Middleware USCall Monitor — coleta de ramais SIP, monitor de rede e webhooks com auto-update via GitHub Releases."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Middleware Monitor Team" }]
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "sqlalchemy>=2.0.25",
+    "alembic>=1.13",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+    "structlog>=24.1",
+    "httpx>=0.27",
+    "jinja2>=3.1",
+    "passlib>=1.7.4",
+    "bcrypt>=4.1,<5",
+    "itsdangerous>=2.1",
+    "cryptography>=42.0",
+    "apscheduler>=3.10",
+    "python-multipart>=0.0.7",
+    "packaging>=23.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "respx>=0.20",
+    "freezegun>=1.4",
+    "ruff>=0.3",
+    "mypy>=1.8",
+    "types-passlib",
+]
+metrics = ["prometheus-client>=0.19"]
+
+[project.scripts]
+middleware-monitor = "middleware_monitor.__main__:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "middleware_monitor.version.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+middleware_monitor = [
+    "web/templates/**/*.html",
+    "web/static/**/*",
+    "core/migrations/**/*",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "S", "W", "PL", "RUF"]
+ignore = ["S101", "PLR2004", "PLR0913", "S603", "S607"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "PLR"]
+
+[tool.mypy]
+python_version = "3.11"
+strict_optional = true
+warn_unused_ignores = true
+warn_return_any = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]

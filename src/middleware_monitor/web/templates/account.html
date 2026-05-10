@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Conta — Middleware Monitor{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div id="acct-banner" class="hidden px-6 py-2 bg-yellow-500/10 border-b border-yellow-500/30 text-xs text-yellow-300 flex items-center gap-2">
+    {% include "partials/icon_alert.html" %}<span>Senha temporária em uso. Defina uma nova para continuar.</span>
+  </div>
+  <div class="px-6 py-4">
+    <h1 class="text-lg font-semibold text-gray-100">Minha conta</h1>
+    <p class="text-xs text-gray-400 mt-0.5">Gerencie sua sessão</p>
+  </div>
+</div>
+<div class="px-6 py-6 grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-4xl">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+    <h3 class="text-sm font-semibold text-gray-100 mb-1">Trocar senha</h3>
+    <p class="text-xs text-gray-500 mb-4">Mínimo 12 caracteres, com letras e números.</p>
+    <form id="pw-form" class="space-y-3">
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Senha atual <span class="text-red-400">*</span></span>
+        <input id="pw-current" type="password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Nova senha <span class="text-red-400">*</span></span>
+        <input id="pw-new" type="password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Confirmar nova senha <span class="text-red-400">*</span></span>
+        <input id="pw-confirm" type="password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+      <div class="grid grid-cols-3 gap-2 text-xs" id="pw-rules">
+        <div data-rule="length" class="text-gray-500 flex items-center gap-1">≥ 12 caracteres</div>
+        <div data-rule="letter" class="text-gray-500 flex items-center gap-1">letras</div>
+        <div data-rule="digit" class="text-gray-500 flex items-center gap-1">números</div>
+      </div>
+      <button id="pw-submit" disabled class="w-full justify-center inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3.5 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed">Trocar senha</button>
+    </form>
+  </div>
+  <div class="space-y-6">
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+      <h3 class="text-sm font-semibold text-gray-100 mb-3">Sessão atual</h3>
+      <div class="space-y-2 text-sm">
+        <div class="flex justify-between"><span class="text-gray-500">Usuário</span><span class="text-gray-200">{{ user.username }}</span></div>
+        <div class="flex justify-between"><span class="text-gray-500">Função</span><span class="text-gray-200">{{ user.role }}</span></div>
+      </div>
+      <button data-action="logout" class="w-full justify-center inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-3.5 py-2 text-sm mt-4"><span data-icon="log-out"></span>Sair desta sessão</button>
+    </div>
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+      <h3 class="text-sm font-semibold text-gray-100 mb-3">Política de senha</h3>
+      <ul class="text-xs text-gray-400 space-y-1.5">
+        <li>• Hash com bcrypt cost 12.</li>
+        <li>• Bloqueio após 5 tentativas em 10 min.</li>
+        <li>• Sessão expira em 12h.</li>
+        <li>• Cookies HttpOnly, SameSite=Lax, Secure em produção.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/account.js"></script>
+{% endblock %}

@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Runtime data — must NEVER be committed
+data/
+*.db
+*.db-wal
+*.db-shm
+backups/
+tmp/
+logs/
+
+# Secrets
+*.key
+*.pem
+release.priv*
+SHA256SUMS.asc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Legacy v1.0 (kept for reference)
+__pycache__
+api/__pycache__
+core/__pycache__
+services/__pycache__
