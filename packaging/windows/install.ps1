@@ -9,7 +9,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-if (-not $Repo) { $Repo = "org/middleware-monitor" }
+if (-not $Repo) { $Repo = "luizsteinbach30/middleware-ramais" }
 
 Write-Host "==> Ensuring directories"
 foreach ($p in @($Prefix, "$Prefix\app", "$Prefix\venv", $Data, "$Data\db", "$Data\backups", "$Data\tmp", "$Data\logs")) {
