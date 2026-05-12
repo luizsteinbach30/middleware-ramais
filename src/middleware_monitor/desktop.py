@@ -319,7 +319,6 @@ def _apply_update(release: dict, data_dir: Path) -> None:
     helper.write_text(
         f"""@echo off
 chcp 65001 > nul
-echo Aguardando o app fechar...
 :wait_loop
 tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
 if not errorlevel 1 (
@@ -334,7 +333,24 @@ del "%~f0"
         encoding="utf-8",
     )
 
-    os.startfile(str(helper))  # noqa: S606
+    # Spawn the helper batch detached and windowless so the user never sees a
+    # CMD prompt during the swap. The batch waits for our PID to die, swaps the
+    # files, relaunches the new .exe and deletes itself.
+    import subprocess as _sp
+
+    creationflags = (
+        getattr(_sp, "CREATE_NO_WINDOW", 0x08000000)
+        | getattr(_sp, "DETACHED_PROCESS", 0x00000008)
+        | getattr(_sp, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+    )
+    _sp.Popen(
+        ["cmd.exe", "/c", str(helper)],
+        creationflags=creationflags,
+        close_fds=True,
+        stdin=_sp.DEVNULL,
+        stdout=_sp.DEVNULL,
+        stderr=_sp.DEVNULL,
+    )
     # Trigger our own exit on the UI thread:
     sys.exit(0)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import subprocess
 
 import httpx
 
@@ -20,6 +21,10 @@ _ARP_LINE_RE = re.compile(
     r"^\s*(\d{1,3}(?:\.\d{1,3}){3})\s+([0-9a-fA-F]{2}(?:-[0-9a-fA-F]{2}){5})",
 )
 
+# Required so children (ping.exe, arp.exe) don't flash a console window when
+# the parent is a windowed PyInstaller .exe with no attached console.
+_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
 
 class WindowsPingProbe:
     async def ping(self, ip: str, timeout_ms: int) -> int | None:
@@ -35,6 +40,7 @@ class WindowsPingProbe:
                 ip,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                creationflags=_CREATE_NO_WINDOW,
             )
             stdout, _stderr = await asyncio.wait_for(
                 proc.communicate(),
@@ -65,6 +71,7 @@ class WindowsArpProbe:
                 ip,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                creationflags=_CREATE_NO_WINDOW,
             )
             stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=3.0)
         except (TimeoutError, FileNotFoundError, OSError):
