@@ -94,6 +94,7 @@ hiddenimports = [
     "middleware_monitor.updater.service",
     "middleware_monitor.updater.client",
     "middleware_monitor.updater.installer",
+    "middleware_monitor.updater.standalone",
     "middleware_monitor.integrations.network.windows",
     "middleware_monitor.integrations.network.linux",
     "middleware_monitor.integrations.network.factory",

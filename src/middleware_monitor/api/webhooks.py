@@ -1,8 +1,9 @@
-"""Webhook events endpoints (list, detail, test, replay)."""
+"""Webhook events endpoints (list, detail, test, replay, send-now)."""
 
 from __future__ import annotations
 
 import json
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -18,9 +19,13 @@ from middleware_monitor.api.deps import (
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.models import User, WebhookEvent
 from middleware_monitor.core.time import iso_utc
+from middleware_monitor.domain.collections.repository import latest as latest_snapshot
 from middleware_monitor.domain.webhooks.sender import WebhookSender
 
 router = APIRouter(prefix="/api", tags=["webhooks"])
+
+_SEND_LAST_AT: dict[str, float] = {}
+_SEND_RATE_S = 15.0
 
 
 class WebhookEventOut(BaseModel):
@@ -136,6 +141,58 @@ async def send_test(event_type: str) -> dict[str, object]:
     if event is None:
         return {"ok": False, "reason": "disabled_or_missing"}
     return {"ok": event.success, "event_id": event.id, "http_status": event.http_status}
+
+
+@router.post(
+    "/webhooks/send/{event_type}",
+    dependencies=[Depends(require_csrf), Depends(require_admin)],
+)
+async def send_now(
+    event_type: str,
+    user: User = Depends(require_admin),
+    db: DBSession = Depends(get_session),
+) -> dict[str, object]:
+    """Dispatch a webhook out-of-band with the latest *real* payload (not a
+    test sample). For ``extensions`` and ``results`` reads the most recent
+    snapshot; for ``devices`` triggers a fresh ``monitor_devices`` run,
+    which itself dispatches the webhook when it finishes."""
+    if event_type not in {"extensions", "devices", "results"}:
+        raise HTTPException(status_code=400, detail="invalid_event_type")
+
+    last = _SEND_LAST_AT.get(f"{user.id}:{event_type}", 0.0)
+    if time.monotonic() - last < _SEND_RATE_S:
+        raise HTTPException(status_code=429, detail="rate_limited")
+    _SEND_LAST_AT[f"{user.id}:{event_type}"] = time.monotonic()
+
+    if event_type == "devices":
+        # The devices payload is computed at monitor time, not stored as a
+        # snapshot. Just kick the regular job — it pings every device and
+        # ends with the same WebhookSender.dispatch("devices", ...).
+        import asyncio
+
+        from middleware_monitor.jobs.monitor_devices import run_monitor_devices
+
+        asyncio.create_task(run_monitor_devices())
+        return {"ok": True, "mode": "monitor_triggered"}
+
+    snap = latest_snapshot(db, type_=event_type)
+    if snap is None:
+        return {"ok": False, "reason": "no_snapshot_yet"}
+    try:
+        payload = json.loads(snap.payload)
+    except json.JSONDecodeError:
+        payload = snap.payload
+
+    sender = WebhookSender(session_factory)
+    event = await sender.dispatch(event_type, payload)
+    if event is None:
+        return {"ok": False, "reason": "disabled_or_missing"}
+    return {
+        "ok": event.success,
+        "event_id": event.id,
+        "http_status": event.http_status,
+        "snapshot_id": snap.id,
+    }
 
 
 @router.post(

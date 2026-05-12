@@ -34,6 +34,21 @@ from pathlib import Path
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 
+# Cross-thread shutdown signal. Set this from any thread (e.g. the uvicorn
+# worker running the FastAPI app) to ask the Tk main loop to close the
+# window and exit. The DesktopApp polls it in the UI thread.
+_SHUTDOWN_REQUEST = threading.Event()
+
+
+def request_shutdown() -> None:
+    """Ask the desktop app to terminate from any thread. Idempotent."""
+    _SHUTDOWN_REQUEST.set()
+
+
+def get_data_dir() -> Path:
+    """Public accessor used by the API layer for the standalone-update flow."""
+    return _user_data_dir()
+
 # IMPORTANT: configure data-dir / env BEFORE importing the application,
 # because settings get cached on first import.
 
@@ -281,78 +296,52 @@ class UpdateChecker:
 
 
 def _apply_update(release: dict, data_dir: Path) -> None:
-    """Download the new .exe and hand off to a helper batch script.
-
-    Windows file locks prevent overwriting a running .exe. We work around it
-    by writing a small ``.bat`` that waits for our PID to exit, swaps the
-    files and re-launches.
-    """
+    """Apply an update from the Tk banner. Bridges to the shared
+    ``updater/standalone.py`` flow and asks the UI to shut down so the
+    helper batch can swap the running ``.exe``."""
     if not sys.platform.startswith("win"):
         webbrowser.open(release["url"])
         return
 
-    tmp_dir = data_dir / "tmp"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    new_exe = tmp_dir / release["name"]
-
-    try:
-        with urllib.request.urlopen(release["url"], timeout=120) as r, new_exe.open("wb") as out:
-            while True:
-                chunk = r.read(64 * 1024)
-                if not chunk:
-                    break
-                out.write(chunk)
-    except OSError as exc:
-        messagebox.showerror("Falha ao baixar atualização", str(exc))
-        return
-
     if not getattr(sys, "frozen", False):
+        # Dev mode: just download the asset so the dev can swap it manually.
+        tmp_dir = data_dir / "tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        new_exe = tmp_dir / release["name"]
+        try:
+            with urllib.request.urlopen(release["url"], timeout=120) as r, new_exe.open("wb") as out:
+                while True:
+                    chunk = r.read(64 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+        except OSError as exc:
+            messagebox.showerror("Falha ao baixar atualização", str(exc))
+            return
         messagebox.showinfo(
             "Atualização baixada",
             f"O novo executável foi salvo em:\n\n{new_exe}\n\nEm modo dev, substitua manualmente.",
         )
         return
 
-    current_exe = Path(sys.executable).resolve()
-    pid = os.getpid()
-    helper = tmp_dir / "apply_update.bat"
-    helper.write_text(
-        f"""@echo off
-chcp 65001 > nul
-:wait_loop
-tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
-if not errorlevel 1 (
-  timeout /t 1 /nobreak >nul
-  goto wait_loop
-)
-timeout /t 1 /nobreak >nul
-move /Y "{new_exe}" "{current_exe}" >nul
-start "" "{current_exe}"
-del "%~f0"
-""",
-        encoding="utf-8",
+    from middleware_monitor.updater.standalone import (
+        UpdateError,
+        apply_standalone_update,
     )
 
-    # Spawn the helper batch detached and windowless so the user never sees a
-    # CMD prompt during the swap. The batch waits for our PID to die, swaps the
-    # files, relaunches the new .exe and deletes itself.
-    import subprocess as _sp
+    try:
+        apply_standalone_update(
+            asset_url=release["url"],
+            asset_name=release["name"],
+            data_dir=data_dir,
+        )
+    except (UpdateError, OSError) as exc:
+        messagebox.showerror("Falha ao atualizar", str(exc))
+        return
 
-    creationflags = (
-        getattr(_sp, "CREATE_NO_WINDOW", 0x08000000)
-        | getattr(_sp, "DETACHED_PROCESS", 0x00000008)
-        | getattr(_sp, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
-    )
-    _sp.Popen(
-        ["cmd.exe", "/c", str(helper)],
-        creationflags=creationflags,
-        close_fds=True,
-        stdin=_sp.DEVNULL,
-        stdout=_sp.DEVNULL,
-        stderr=_sp.DEVNULL,
-    )
-    # Trigger our own exit on the UI thread:
-    sys.exit(0)
+    # Helper is now waiting for our PID to die. Signal shutdown — the
+    # main loop picks it up, tears down uvicorn + Tk and exits.
+    request_shutdown()
 
 
 # --- Tkinter UI --------------------------------------------------------------
@@ -404,7 +393,19 @@ class DesktopApp:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(self.POLL_INTERVAL_MS, self._drain_log)
         self.root.after(self.POLL_INTERVAL_MS, self._poll_status)
+        self.root.after(self.POLL_INTERVAL_MS, self._poll_shutdown)
         self.root.after(self.UPDATE_CHECK_DELAY_MS, self._check_for_update_async)
+
+    def _poll_shutdown(self) -> None:
+        """Watch the cross-thread shutdown flag (set by the API layer when
+        the user clicks "atualizar agora" from the web panel, or by the
+        Tk banner flow). When set, close without prompting."""
+        if _SHUTDOWN_REQUEST.is_set():
+            logging.getLogger("desktop").info("shutdown_requested_externally")
+            self.server.stop()
+            self.root.after(150, self.root.destroy)
+            return
+        self.root.after(self.POLL_INTERVAL_MS, self._poll_shutdown)
 
     # --------- build UI ----------
 

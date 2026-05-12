@@ -72,6 +72,27 @@ document.querySelectorAll('[data-test-type]').forEach((b) => b.addEventListener(
     load();
   } catch (e) { toast.error('Falha ao enviar teste'); }
 }));
+document.querySelectorAll('[data-send-type]').forEach((b) => b.addEventListener('click', async (e) => {
+  const t = b.dataset.sendType;
+  b.disabled = true;
+  try {
+    const r = await api('/api/webhooks/send/' + t, { method: 'POST' });
+    if (r.ok) {
+      toast.success(r.mode === 'monitor_triggered' ? `Coleta de devices disparada — webhook segue ao fim.` : `Webhook ${t} enviado (HTTP ${r.http_status}).`);
+    } else if (r.reason === 'no_snapshot_yet') {
+      toast.error(`Sem snapshot de ${t} ainda. Vá em Coletas e clique "Coletar agora".`);
+    } else if (r.reason === 'disabled_or_missing') {
+      toast.error(`Webhook ${t} desabilitado ou sem URL configurada.`);
+    } else {
+      toast.error(`Falha ao enviar (HTTP ${r.http_status || '—'}).`);
+    }
+    load();
+  } catch (err) {
+    toast.error(err?.body?.detail === 'rate_limited' ? 'Aguarde alguns segundos antes de reenviar.' : 'Falha ao enviar webhook.');
+  } finally {
+    setTimeout(() => { b.disabled = false; }, 800);
+  }
+}));
 document.querySelectorAll('#wh-modal [data-close], #wh-modal').forEach((el) => el.addEventListener('click', (e) => {
   if (e.target === el) document.getElementById('wh-modal').classList.add('hidden');
 }));

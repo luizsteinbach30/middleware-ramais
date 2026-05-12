@@ -2,6 +2,40 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.1.3] — 2026-05-12
+
+### Added
+- **Botão "Coletar agora"** na tela de Coletas. Dispara uma execução
+  imediata de `collect_extensions` sem esperar o ciclo do scheduler.
+  Rate-limit de 30 s por usuário admin pra evitar martelar o USCall.
+  Endpoint: `POST /api/collections/run`.
+- **Botões "Enviar agora"** (extensions / devices / results) na tela de
+  Webhook logs. Diferente do "Testar" (que manda payload sintético),
+  o "Enviar agora" pega o último snapshot real e dispara o webhook
+  configurado. Para `devices` reexecuta o job de monitoramento (que
+  dispara o webhook ao fim). Rate-limit de 15 s. Endpoint:
+  `POST /api/webhooks/send/{event_type}`.
+
+### Fixed
+- **Auto-update via painel web não funcionava**. O endpoint
+  `/api/system/update` chamava o instalador legado (tarball + NSSM/
+  systemctl), que assume uma instalação tradicional com serviço e
+  venv — nada disso existe no `.exe` standalone. Agora, quando o app
+  detecta que está rodando empacotado (`sys.frozen`), o endpoint usa
+  o mesmo fluxo do banner amarelo: baixa o `.exe` novo, lança um
+  `.bat` helper detached que aguarda o PID atual morrer, troca o
+  binário e re-abre o app. Em seguida sinaliza shutdown imediato da
+  janela Tk + uvicorn, permitindo que o swap aconteça.
+- Lógica de swap de `.exe` foi extraída de `desktop.py` para o módulo
+  compartilhado `middleware_monitor.updater.standalone` para evitar
+  duplicação entre o botão da janela Tk e o botão do painel web.
+
+### Changed
+- Tela de Webhook logs reorganizou os botões superiores em dois grupos
+  visuais ("Enviar agora" em azul, "Teste" em cinza) pra deixar claro
+  o que cada um dispara — antes só havia "Testar" e ele era confundido
+  com envio real.
+
 ## [2.1.2] — 2026-05-12
 
 ### Added
