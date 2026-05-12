@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Versão para build manual (ex.: 2.0.1)"
+        description: "Versão para build manual (ex.: 2.1.0)"
         required: true
 
 permissions:
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build-tarball:
-    name: Build source tarball + SHA256SUMS
+    name: Build source tarball
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.version }}
@@ -51,12 +51,14 @@ jobs:
           cp -r src pyproject.toml alembic.ini docs README.md CHANGELOG.md "$STAGE/" 2>/dev/null || true
           cp -r scripts "$STAGE/" 2>/dev/null || true
           tar --owner=0 --group=0 --numeric-owner --sort=name -czf "dist/$STAGE.tar.gz" "$STAGE"
-          ( cd dist && sha256sum "$STAGE.tar.gz" > SHA256SUMS )
+          ( cd dist && sha256sum "$STAGE.tar.gz" > SHA256SUMS_tarball.txt )
 
       - uses: actions/upload-artifact@v4
         with:
           name: source-tarball
-          path: dist/
+          path: |
+            dist/app-v*.tar.gz
+            dist/SHA256SUMS_tarball.txt
 
   build-linux-installer:
     name: Build Linux .run installer
@@ -82,17 +84,17 @@ jobs:
 
       - name: Hash installer
         run: |
-          ( cd dist && sha256sum middleware-monitor-installer-*.run >> SHA256SUMS_INSTALLERS )
+          ( cd dist && sha256sum middleware-monitor-installer-*.run > SHA256SUMS_linux.txt )
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-installer
           path: |
             dist/middleware-monitor-installer-*.run
-            dist/SHA256SUMS_INSTALLERS
+            dist/SHA256SUMS_linux.txt
 
-  build-windows-installer:
-    name: Build Windows .exe installer
+  build-windows-exe:
+    name: Build Windows standalone .exe (PyInstaller)
     runs-on: windows-latest
     needs: build-tarball
     steps:
@@ -103,36 +105,40 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Inno Setup
+      - name: Install build deps
         shell: pwsh
         run: |
-          # Use Chocolatey (pre-installed on windows-latest) — auto-resolves
-          # the current stable version and avoids hardcoded URLs that 404.
-          choco install innosetup -y --no-progress --limit-output
-          "C:\Program Files (x86)\Inno Setup 6" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
+          python -m pip install --upgrade pip wheel setuptools
+          python -m pip install --upgrade pyinstaller==6.10.0
+          python -m pip install -e ".[metrics]"
 
-      - name: Build installer
+      - name: Build .exe via PyInstaller
         shell: pwsh
         run: |
-          .\packaging\windows\build_installer.ps1 -Version ${{ needs.build-tarball.outputs.version }}
+          $version = "${{ needs.build-tarball.outputs.version }}"
           New-Item -ItemType Directory -Force dist | Out-Null
-          Get-ChildItem packaging\windows\inno -Filter "MiddlewareMonitorSetup-*.exe" |
-            ForEach-Object {
-              Copy-Item $_.FullName dist\
-              "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" | Add-Content dist\SHA256SUMS_INSTALLERS
-            }
+          if (Test-Path build\pyinstaller) { Remove-Item -Recurse -Force build\pyinstaller }
+          python -m PyInstaller --noconfirm --clean --distpath dist --workpath build\pyinstaller `
+            packaging\windows\exe\MiddlewareMonitor.spec
+          $src = "dist\MiddlewareMonitor.exe"
+          $final = "dist\MiddlewareMonitor-$version.exe"
+          if (-not (Test-Path $src)) { throw "PyInstaller did not produce $src" }
+          Move-Item $src $final
+          $hash = (Get-FileHash $final -Algorithm SHA256).Hash.ToLower()
+          "$hash  MiddlewareMonitor-$version.exe" | Set-Content dist\SHA256SUMS_windows.txt
+          Get-Item $final | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-installer
+          name: windows-exe
           path: |
-            dist/MiddlewareMonitorSetup-*.exe
-            dist/SHA256SUMS_INSTALLERS
+            dist/MiddlewareMonitor-*.exe
+            dist/SHA256SUMS_windows.txt
 
   publish-release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-tarball, build-linux-installer, build-windows-installer]
+    needs: [build-tarball, build-linux-installer, build-windows-exe]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
@@ -152,9 +158,12 @@ jobs:
 
       - name: Aggregate SHA256SUMS
         run: |
-          cat dist/SHA256SUMS dist/SHA256SUMS_INSTALLERS 2>/dev/null | sort > dist/SHA256SUMS.txt
-          mv dist/SHA256SUMS.txt dist/SHA256SUMS
-          rm -f dist/SHA256SUMS_INSTALLERS
+          # Strip any CRLF that Windows runners may have produced.
+          for f in dist/SHA256SUMS_*.txt; do
+            [ -f "$f" ] && tr -d '\r' < "$f" >> dist/SHA256SUMS.tmp
+          done
+          sort -u dist/SHA256SUMS.tmp > dist/SHA256SUMS
+          rm -f dist/SHA256SUMS.tmp dist/SHA256SUMS_*.txt
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -163,7 +172,7 @@ jobs:
           body_path: dist/RELEASE_NOTES.md
           files: |
             dist/app-v*.tar.gz
-            dist/MiddlewareMonitorSetup-*.exe
+            dist/MiddlewareMonitor-*.exe
             dist/middleware-monitor-installer-*.run
             dist/SHA256SUMS
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}

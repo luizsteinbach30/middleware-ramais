@@ -2,6 +2,53 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.1.0] — 2026-05-12
+
+Pivô na entrega no Windows: **abandonamos o instalador Inno Setup +
+serviço Windows** e adotamos um **único `.exe` standalone** com janela
+nativa (Tkinter), log integrado e auto-update no estilo Discord/OBS.
+
+### Added
+- `src/middleware_monitor/desktop.py` — entrypoint desktop que sobe o
+  servidor uvicorn em thread daemon, expõe janela com status em tempo
+  real, tail do log com cores por nível, abre o painel web e gerencia
+  auto-update.
+- **Auto-update no Windows**: banner amarelo "Nova versão disponível"
+  que aparece quando há release nova no GitHub; 1 clique baixa, troca
+  o `.exe` e reabre.
+- `packaging/windows/exe/MiddlewareMonitor.spec` — PyInstaller spec
+  que gera `MiddlewareMonitor-X.Y.Z.exe` (~30 MB, sem dependências).
+- `packaging/windows/exe/build_exe.ps1` — build local rápido.
+- Workflow `release.yml` reescrito: job `build-windows-exe` substitui
+  `build-windows-installer`, usa PyInstaller direto, sem Inno Setup ou
+  NSSM.
+- MANUAL reescrito explicando o novo fluxo: clique-duplo → janela
+  com status + log + auto-update.
+
+### Changed
+- Dados no Windows agora ficam em `%LOCALAPPDATA%\MiddlewareMonitor\`
+  (escrita sem Admin) em vez de `C:\ProgramData\MiddlewareMonitor\`.
+- `APP_HOST` padrão no Windows passa a ser `127.0.0.1` (loopback);
+  para expor na rede, edite o `desktop.py` (futuramente faremos UI
+  para isso).
+- `APP_SECRET_KEY` é gerada e armazenada em `secret.key` no diretório
+  de dados, isolado do executável.
+
+### Removed
+- `packaging/windows/inno/` — script Inno Setup descartado.
+- `packaging/windows/payload/` — scripts de pós-instalação para serviço
+  Windows não são mais necessários.
+- `packaging/windows/build_installer.ps1` — substituído por
+  `packaging/windows/exe/build_exe.ps1`.
+
+### Notes
+- O Linux **continua igual**: instalação via `.run` self-extracting
+  com systemd e auto-update por cron 00:00. Funciona bem e não havia
+  motivo para mudar.
+- Se você instalou a v2.0.2 anteriormente (que registrou um serviço
+  Windows), desinstale pelo Painel de Controle antes de rodar a v2.1.0,
+  caso contrário os dois processos podem disputar a porta 8080.
+
 ## [2.0.2] — 2026-05-12
 
 ### Added

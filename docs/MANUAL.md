@@ -1,271 +1,188 @@
 # Manual de instalação e uso
 
-Guia prático para instalar o **Middleware USCall Monitor** em servidores de cliente. A partir da v2.0, a instalação é feita por um **instalador self-contained** — não há mais comandos manuais de download, descompactação ou criação de usuário.
+Guia prático para usar o **Middleware USCall Monitor** nos servidores. A partir da v2.1.0 a entrega no Windows é um **único `.exe` standalone** — sem instalador, sem serviço, sem dependências.
 
 ---
 
-## 1. O que você baixa
+## 1. O que baixar
 
-A partir do [GitHub Releases](https://github.com/luizsteinbach30/middleware-ramais/releases/latest), pegue **apenas o arquivo correspondente ao SO do servidor**:
+A partir do [GitHub Releases](https://github.com/luizsteinbach30/middleware-ramais/releases/latest), pegue o arquivo correspondente ao SO:
 
-| Servidor | Arquivo |
-|---|---|
-| Windows Server / 10+ (x64) | `MiddlewareMonitorSetup-X.Y.Z.exe` |
-| Linux (Debian/Ubuntu/RHEL/Alma — x64) | `middleware-monitor-installer-X.Y.Z.run` |
+| Servidor | Arquivo | Como usar |
+|---|---|---|
+| **Windows** 10 / Server 2019+ | `MiddlewareMonitor-X.Y.Z.exe` | Clique duplo. Pronto. |
+| **Linux** Debian/Ubuntu/RHEL | `middleware-monitor-installer-X.Y.Z.run` | `sudo bash middleware-monitor-installer-X.Y.Z.run` |
 
-Tanto o `.exe` quanto o `.run` **incluem tudo dentro** (Python, dependências, NSSM ou systemd, scripts, app) — você **não precisa de internet no servidor** para instalar, só para baixar o arquivo no seu PC.
-
-> Para conferir integridade, baixe também `SHA256SUMS` e verifique:
-> - Windows (PowerShell): `Get-FileHash MiddlewareMonitorSetup-X.Y.Z.exe -Algorithm SHA256`
-> - Linux: `sha256sum middleware-monitor-installer-X.Y.Z.run`
+Não há instalador no Windows. **Um único `.exe` contém tudo**: Python embutido, servidor web, banco de dados, scheduler, painel — cerca de **30 MB**.
 
 ---
 
-## 2. Instalação no Windows
+## 2. Windows — `MiddlewareMonitor-X.Y.Z.exe`
 
-1. Copie `MiddlewareMonitorSetup-X.Y.Z.exe` para o servidor.
-2. Clique com o botão direito → **Executar como administrador**.
-3. Avance no wizard. Tudo é instalado em `C:\Program Files\MiddlewareMonitor`, com dados em `C:\ProgramData\MiddlewareMonitor`.
-4. Marque a opção **"Criar atalho na Área de Trabalho"** se quiser acesso rápido.
-5. Ao final, o **Painel de Controle** abre automaticamente.
+### 2.1 Iniciar
 
-**Não precisa instalar nada antes** (nem Python, nem NSSM, nem Visual C++). Tudo está dentro do `.exe`.
+1. Baixe `MiddlewareMonitor-X.Y.Z.exe` para qualquer pasta (Desktop, Documentos, etc.).
+2. **Clique duplo**. Não precisa Administrador.
+3. Aparece uma janela com:
 
-### Painel de Controle (recomendado)
+- **Banner amarelo no topo** (só quando há atualização): clique em **Atualizar agora** para baixar a versão nova, fechar o app e reabrir já atualizado.
+- **Indicador Status** (verde "Rodando" / vermelho "Erro" / amarelo "Iniciando…").
+- **URL clicável** que abre o painel web (`http://localhost:8080/`).
+- Botões: **Abrir Painel**, **Pasta de Logs**, **Verificar atualização**, **Fechar**.
+- **Aba "Log de execução"**: tail em tempo real do que o servidor está fazendo, com cor por nível (INFO branco, WARN amarelo, ERROR vermelho).
+- **Aba "Sobre"**: caminho dos dados, repositório, canal e credenciais iniciais.
 
-Após instalar há **dois atalhos novos**:
+### 2.2 Parar o servidor
 
-- **Menu Iniciar → Middleware USCall Monitor → Painel do Middleware**
-- **Área de Trabalho → Middleware Monitor** (se você marcou no wizard)
+- Clique em **Fechar** na janela, ou simplesmente feche a janela (`X`). O servidor encerra junto.
+- Não há serviço Windows. Quando você fecha o app, o servidor para.
+- Para rodar sempre: coloque um atalho do `.exe` em `shell:startup` (`Win+R` → digite `shell:startup`). O app abrirá automaticamente no logon.
 
-Ao abrir esse painel, você vê uma janela pequena com:
+### 2.3 Onde ficam os dados
 
-- **Status do serviço** em tempo real (Running / Stopped, com cor).
-- **Iniciar** — sobe o serviço.
-- **Parar (Finalizar)** — derruba o serviço.
-- **Reiniciar Serviço** — para e sobe novamente.
-- **Abrir Painel** — abre `http://localhost:8080/` no navegador.
-- Links para "Abrir pasta de logs" e "Ver log da instalação".
+Tudo em **`%LOCALAPPDATA%\MiddlewareMonitor\`** (cole isso no Explorer):
 
-O painel pede UAC só quando você clica em Iniciar/Parar/Reiniciar; o resto não exige.
-
-### Verificar via linha de comando
-
-```powershell
-Get-Service MiddlewareMonitor
-Invoke-RestMethod http://localhost:8080/api/system/healthz
+```
+MiddlewareMonitor\
+├── db\app.db          (banco SQLite — backup = copiar este arquivo)
+├── backups\           (snapshots manuais)
+├── tmp\               (arquivos de update temporários)
+├── logs\
+│   ├── app.log        (log de execução)
+│   └── crash.log      (só existe se o app falhou ao iniciar)
+└── secret.key         (chave de criptografia — guarde junto com o backup do .db)
 ```
 
-A primeira mostra `Status: Running`. A segunda retorna `{ status: "ok" }`.
+Para mover o app de uma máquina pra outra, basta copiar essa pasta + o `.exe`.
 
-### Reiniciar / parar / iniciar pelo PowerShell
+### 2.4 Atualização automática (estilo Discord/OBS)
 
-```powershell
-Start-Service MiddlewareMonitor       # iniciar
-Stop-Service  MiddlewareMonitor       # parar (finalizar)
-Restart-Service MiddlewareMonitor     # reiniciar
-```
+Logo após iniciar, o app verifica o GitHub Releases em segundo plano:
 
-### Logs
+- **Sem atualização**: aparece "Você está na versão mais recente." no canto superior direito.
+- **Com atualização**: aparece o **banner amarelo** com "Nova versão disponível: X.Y.Z". O painel continua funcionando normalmente.
 
-```powershell
-Get-Content C:\ProgramData\MiddlewareMonitor\logs\app.log -Wait -Tail 50
-```
+Clique em **Atualizar agora**:
+1. Baixa o `.exe` novo para `%LOCALAPPDATA%\MiddlewareMonitor\tmp\`.
+2. Fecha o app atual.
+3. Substitui o `.exe` antigo pelo novo via script `.bat` helper.
+4. Reabre a versão nova automaticamente.
 
-### Desinstalar
-
-Menu Iniciar → **Middleware USCall Monitor** → **Desinstalar Middleware USCall Monitor**.
-Os dados em `C:\ProgramData\MiddlewareMonitor` são **preservados** (banco, backups, logs). Se quiser apagar tudo, remova essa pasta manualmente.
+Você também pode forçar a checagem com o botão **Verificar atualização**.
 
 ---
 
-## 3. Instalação no Linux
+## 3. Linux — `middleware-monitor-installer-X.Y.Z.run`
 
-1. Copie `middleware-monitor-installer-X.Y.Z.run` para o servidor.
-2. Execute como root:
+No Linux mantemos a instalação como **serviço systemd** (mais natural no Linux).
 
-   ```bash
-   sudo bash middleware-monitor-installer-X.Y.Z.run
-   ```
-
-3. O instalador faz todo o resto: cria usuário `mmonitor`, monta `/opt/middleware-monitor`, instala dependências offline, gera chave secreta, roda migrações, registra o serviço systemd e inicia.
-4. Ao final, a tela mostra a URL: `http://<ip-do-servidor>:8080/`.
-
-### Pré-requisito
-
-Apenas `python3` no servidor (3.11 ou superior). Se faltar, o instalador tenta instalar via `apt-get` ou `dnf` automaticamente.
-
-### CLI rápida — `middleware-monitor-ctl`
-
-O instalador coloca o comando `middleware-monitor-ctl` em `/usr/local/bin`. Funciona como atalho rápido:
+### 3.1 Instalar
 
 ```bash
-middleware-monitor-ctl status        # mostra status do serviço
-middleware-monitor-ctl start         # inicia
-middleware-monitor-ctl stop          # finaliza
-middleware-monitor-ctl restart       # reinicia
-middleware-monitor-ctl open          # abre o painel no navegador padrão
-middleware-monitor-ctl logs          # acompanha logs em tempo real
-middleware-monitor-ctl install-log   # mostra o log da instalação
+sudo bash middleware-monitor-installer-X.Y.Z.run
 ```
 
-Em desktops Linux (GNOME/KDE/XFCE) também há um atalho **"Middleware USCall Monitor"** no menu de aplicações que abre o painel web no navegador.
+Cria usuário `mmonitor`, monta `/opt/middleware-monitor`, registra `middleware-monitor.service` e inicia. URL: `http://<ip>:8080/`.
 
-### Verificar via systemctl (equivalente)
+### 3.2 CLI rápida — `middleware-monitor-ctl`
 
 ```bash
-sudo systemctl status middleware-monitor
-curl -s http://localhost:8080/api/system/healthz
+middleware-monitor-ctl status
+middleware-monitor-ctl start
+middleware-monitor-ctl stop
+middleware-monitor-ctl restart
+middleware-monitor-ctl open       # abre o painel no navegador
+middleware-monitor-ctl logs       # acompanha logs em tempo real
 ```
 
-### Logs
+### 3.3 Dados
 
-```bash
-sudo journalctl -u middleware-monitor -f
-# ou simplesmente:
-middleware-monitor-ctl logs
+```
+/var/lib/middleware-monitor/db/app.db        (banco)
+/etc/middleware-monitor/env                  (config + APP_SECRET_KEY)
 ```
 
-### Reiniciar / parar / iniciar via systemctl
+### 3.4 Atualização automática (Linux)
 
-```bash
-sudo systemctl start middleware-monitor
-sudo systemctl stop middleware-monitor
-sudo systemctl restart middleware-monitor
-```
-
-### Desinstalar
-
-```bash
-sudo systemctl disable --now middleware-monitor
-sudo rm -rf /opt/middleware-monitor /etc/systemd/system/middleware-monitor.service
-sudo rm -f /usr/local/bin/middleware-monitor-ctl /usr/share/applications/middleware-monitor.desktop
-sudo systemctl daemon-reload
-# Apagar dados (opcional):
-sudo rm -rf /var/lib/middleware-monitor /etc/middleware-monitor
-sudo userdel mmonitor
-```
+O serviço consulta o GitHub a cada dia às 00:00 UTC e baixa o tarball novo. Layout versionado em `/opt/middleware-monitor/app/<versão>/` com rollback automático. Sem ação manual necessária.
 
 ---
 
 ## 4. Primeiro acesso (igual nos dois SOs)
 
-1. Abra o navegador em `http://<ip-do-servidor>:8080/`.
-2. Login:
-   - **Usuário:** `admin`
-   - **Senha:** `admin`
-3. O sistema **vai obrigar você a trocar a senha** antes de qualquer outra coisa.
-   - Mínimo 12 caracteres com letras e números.
+1. Abra o painel: `http://localhost:8080/` (Windows) ou `http://<ip>:8080/` (Linux).
+2. **Usuário:** `admin` · **Senha:** `admin`
+3. O sistema **obriga a trocar a senha** antes de qualquer outra coisa.
+   - Mínimo 12 caracteres, com letras e números.
 4. Você cai no Dashboard.
 
-> A senha `admin` só funciona uma vez. Após a troca, a senha antiga é descartada.
+> A senha `admin` só vale uma vez. Depois da troca, a senha antiga não funciona mais.
 
 ---
 
 ## 5. Configuração inicial (5 minutos)
 
-Na sidebar, clique em **Configuração** (`/config`). Preencha nesta ordem:
+Sidebar → **Configuração** (`/config`):
 
 ### a. Identificação do cliente
 - `client_code`: slug que vai no payload de cada webhook (ex.: `acme-matriz`).
 
 ### b. Integração USCall
 - `uscall_host`: domínio sem `https://` (ex.: `uscall.empresa.com.br`).
-- `uscall_token`: clique em **Alterar**, cole o token, pronto.
-- Deixe `verify_ssl` ligado (padrão).
-- Clique em **Testar conexão** — deve ficar verde com a latência.
+- `uscall_token`: clique em **Alterar**, cole o token.
+- `verify_ssl`: deixe ligado.
+- Clique em **Testar conexão** — deve aparecer verde com a latência.
 
-### c. Intervalos de coleta
-- Os padrões já funcionam. Só mexa se houver razão específica (mínimo 10s).
-
-### d. Webhooks (extensions / devices / results)
+### c. Webhooks (extensions / devices / results)
 Para cada tipo que você quer enviar:
-- Ligue o toggle **Habilitado**.
-- Cole a `url` do consumidor.
-- Cole o `token` (Bearer) que o consumidor exige.
-- Clique em **Testar** — confirma que ele recebe o payload.
+- Toggle **Habilitado**.
+- `url` do consumidor.
+- `token` Bearer.
+- **Testar** para confirmar.
 
-Clique em **Salvar configuração** no topo (botão azul). O scheduler aplica os novos intervalos no próximo ciclo.
-
-> **Bug histórico (v2.0.0):** o save mostrava "Falha ao salvar" sem detalhes. A partir da v2.0.1 o toast mostra exatamente qual campo está inválido e por quê.
+Clique em **Salvar configuração**. Pronto.
 
 ---
 
-## 6. Auto-update via GitHub — todo dia 00:00
+## 6. Problemas comuns
 
-Já vem **ligado por padrão** no canal `stable`. Todo dia à meia-noite (UTC) o serviço consulta o GitHub Releases. Quando há nova versão:
-
-1. Download do tarball (`app-vX.Y.Z.tar.gz`) + `SHA256SUMS`.
-2. Verificação SHA256.
-3. Migrações Alembic.
-4. Restart do serviço.
-5. Health-check pós-restart por 60s; se falhar, **rollback automático**.
-
-Para acompanhar / pausar / forçar: tela **`/system/updates`**.
-
-> O **instalador** (.exe / .run) que você usou na instalação **não muda** — as atualizações via GitHub aplicam-se apenas ao código Python da aplicação, não ao Python embutido nem ao NSSM. Para reinstalar o "instalador" inteiro (ex.: ao bumpar o Python ou trocar SO), use a próxima release do instalador.
-
----
-
-## 7. Backup
-
-Backups manuais são **dois arquivos**:
-
-### Windows
-```powershell
-Copy-Item C:\ProgramData\MiddlewareMonitor\db\app.db "$HOME\app-$(Get-Date -F yyyy-MM-dd).db"
-Copy-Item C:\ProgramData\MiddlewareMonitor\env.cmd "$HOME\env-$(Get-Date -F yyyy-MM-dd).cmd"
-```
-
-### Linux
-```bash
-sudo cp /var/lib/middleware-monitor/db/app.db ~/app-$(date +%F).db
-sudo cp /etc/middleware-monitor/env ~/env-$(date +%F)
-```
-
-> **Sem o env (ou env.cmd) você perde os tokens cifrados**. O `APP_SECRET_KEY` ali dentro é a chave que descriptografa os tokens do USCall e dos webhooks. Guarde os dois arquivos juntos.
-
----
-
-## 8. Problemas comuns
-
-| Sintoma | Onde olhar primeiro |
+| Sintoma | O que verificar |
 |---|---|
-| Painel não abre no `:8080` | Serviço parado? `systemctl status` (Linux) / `Get-Service MiddlewareMonitor` (Windows) |
-| `connection refused` | Firewall do servidor bloqueando porta 8080 |
-| Login `admin/admin` não funciona | A senha já foi trocada. Veja [RUNBOOK.md §7](RUNBOOK.md) para resetar |
-| "Falha ao salvar config" no toast | A partir da v2.0.1 o toast mostra o motivo. Se ainda assim falhar, abra `/logs` |
-| Coleta USCall não roda | `/config` → **Testar conexão**; depois `/logs` filtrando módulo `collector` |
-| Pings sempre offline | Firewall do servidor bloqueando ICMP egress |
-| Webhook falhando | `/webhook-logs` → abrir o evento → ver HTTP status e payload |
-| Update falhou | `/system/updates` → linha de histórico mostra o erro |
+| `.exe` abre e fecha imediatamente | Abra `%LOCALAPPDATA%\MiddlewareMonitor\logs\crash.log` |
+| Status "Erro" na janela | Aba **Log de execução** mostra o motivo. Se não ficar claro, abra issue colando o log |
+| `http://localhost:8080/` não abre | Algum firewall/antivírus bloqueando porta 8080? Tente desativar temporariamente para confirmar |
+| `admin/admin` não funciona | A senha já foi trocada. Reset via [RUNBOOK.md §7](RUNBOOK.md) |
+| Banner de update não some | Se a versão nova for igual ou inferior à instalada, o banner some sozinho no próximo check |
+| Falha ao atualizar | Aba **Log de execução** filtrando "updater" mostra o erro exato |
 
-Para outros cenários, [RUNBOOK.md](RUNBOOK.md) tem 8 casos passo a passo.
+Mais detalhes em [RUNBOOK.md](RUNBOOK.md).
 
 ---
 
-## 9. Resumo em uma página
+## 7. Resumo em uma página
 
 ```
-┌─ INSTALAÇÃO ─────────────────────────────────────────────────┐
-│ Windows: clique-duplo em MiddlewareMonitorSetup-X.Y.Z.exe    │
-│          (como Administrador). Next-next-finish.              │
-│                                                              │
-│ Linux:   sudo bash middleware-monitor-installer-X.Y.Z.run    │
-└──────────────────────────────────────────────────────────────┘
-┌─ PRIMEIRO ACESSO ────────────────────────────────────────────┐
-│ http://<ip>:8080/                                            │
-│ Login: admin / admin                                         │
-│ Trocar senha (12+ caract., letras + números)                 │
-└──────────────────────────────────────────────────────────────┘
-┌─ CONFIGURAR ─────────────────────────────────────────────────┐
-│ /config → client_code, uscall_host, uscall_token             │
-│         → habilitar webhooks → Testar → Salvar               │
-└──────────────────────────────────────────────────────────────┘
-┌─ OPERAR ─────────────────────────────────────────────────────┐
-│ Dashboard  /                                                 │
-│ Devices    /devices       ·   Coletas    /collections        │
-│ Logs       /logs          ·   Webhooks   /webhook-logs       │
-│ Updates    /system/updates  (auto, cron 00:00, com rollback) │
-└──────────────────────────────────────────────────────────────┘
+┌─ INSTALAR ────────────────────────────────────────────────────┐
+│ Windows:  baixe MiddlewareMonitor-X.Y.Z.exe → clique duplo.   │
+│           Nenhuma dependência. Não precisa Administrador.     │
+│                                                               │
+│ Linux:    sudo bash middleware-monitor-installer-X.Y.Z.run    │
+└───────────────────────────────────────────────────────────────┘
+┌─ ABRIR / FECHAR (Windows) ────────────────────────────────────┐
+│ Abrir:    clique duplo no .exe (janela com status + log).     │
+│ Fechar:   botão "Fechar" ou X da janela.                      │
+│ Reiniciar: feche e abra de novo.                              │
+└───────────────────────────────────────────────────────────────┘
+┌─ ABRIR / FECHAR (Linux) ──────────────────────────────────────┐
+│ middleware-monitor-ctl start | stop | restart | status        │
+└───────────────────────────────────────────────────────────────┘
+┌─ PRIMEIRO ACESSO ─────────────────────────────────────────────┐
+│ http://localhost:8080/                                        │
+│ Login: admin / admin                                          │
+│ Trocar senha (12+ caracteres com letras e números).           │
+└───────────────────────────────────────────────────────────────┘
+┌─ ATUALIZAÇÃO ─────────────────────────────────────────────────┐
+│ Windows:  banner amarelo "Nova versão disponível" + 1 clique  │
+│ Linux:    cron diário 00:00 UTC, sem ação manual              │
+└───────────────────────────────────────────────────────────────┘
 ```
