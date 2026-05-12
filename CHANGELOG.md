@@ -2,6 +2,27 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.1.1] — 2026-05-12
+
+### Fixed
+- **Janela do CMD piscando a cada ping/arp no Windows.** O `.exe` é
+  construído com `console=False`, e cada chamada a `ping.exe` / `arp.exe`
+  via `asyncio.create_subprocess_exec` herdava o fato do pai não ter
+  console, abrindo uma nova janela momentânea — incômodo visual e
+  potencial impacto de performance ao monitorar centenas de ramais.
+  Agora todos os filhos recebem `creationflags=CREATE_NO_WINDOW`.
+- O `.bat` auxiliar do auto-update também era lançado via `os.startfile`,
+  exibindo uma janela do prompt enquanto o swap acontecia. Agora é
+  spawnado com `CREATE_NO_WINDOW | DETACHED_PROCESS` e stdio em
+  `DEVNULL`, totalmente invisível.
+- O `updater/installer.py` (caminho legado para hosts antigos com
+  serviço Windows) também passou a usar a flag silenciosa em todos os
+  `subprocess.run` (`nssm`, `sc`, `mklink`, `pip`, `alembic`).
+
+### Notes
+- Nenhuma mudança visível no Linux — o `os.name` continua `posix` e o
+  caminho permanece intacto.
+
 ## [2.1.0] — 2026-05-12
 
 Pivô na entrega no Windows: **abandonamos o instalador Inno Setup +

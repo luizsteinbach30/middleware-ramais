@@ -39,6 +39,14 @@ from middleware_monitor.version import __version__
 log = get_logger("updater")
 
 
+def _silent_kwargs() -> dict:
+    """Extra kwargs to pass to ``subprocess.run`` so children don't flash a
+    console window when the parent .exe is built with ``console=False``."""
+    if os.name == "nt":
+        return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)}
+    return {}
+
+
 @dataclass(slots=True)
 class InstallResult:
     success: bool
@@ -110,10 +118,10 @@ def _service_restart() -> None:
     than the main service, so we shell out to the supervisor."""
     if platform.system().lower().startswith("win"):
         try:
-            subprocess.run(["nssm", "restart", "MiddlewareMonitor"], check=True, timeout=30)
+            subprocess.run(["nssm", "restart", "MiddlewareMonitor"], check=True, timeout=30, **_silent_kwargs())
         except (FileNotFoundError, subprocess.CalledProcessError):
-            subprocess.run(["sc", "stop", "MiddlewareMonitor"], check=False, timeout=30)
-            subprocess.run(["sc", "start", "MiddlewareMonitor"], check=False, timeout=30)
+            subprocess.run(["sc", "stop", "MiddlewareMonitor"], check=False, timeout=30, **_silent_kwargs())
+            subprocess.run(["sc", "start", "MiddlewareMonitor"], check=False, timeout=30, **_silent_kwargs())
     else:
         subprocess.run(["systemctl", "restart", "middleware-monitor"], check=True, timeout=30)
 
@@ -210,6 +218,7 @@ async def install_release(
                 [str(venv_python), "-m", "pip", "install", "--no-deps", "-r", str(req)],
                 check=True,
                 timeout=300,
+                **_silent_kwargs(),
             )
 
         # Run alembic upgrade head from the new dir, against current DB.
@@ -220,6 +229,7 @@ async def install_release(
                 check=True,
                 timeout=120,
                 env={**os.environ, "APP_DATA_DIR": str(settings.data_dir)},
+                **_silent_kwargs(),
             )
 
         # Atomic swap of "current" → new dir.
@@ -230,6 +240,7 @@ async def install_release(
                 ["cmd", "/c", "mklink", "/J", str(current_link), str(new_dir)],
                 check=True,
                 timeout=10,
+                **_silent_kwargs(),
             )
         else:
             current_link.symlink_to(new_dir)
@@ -289,7 +300,11 @@ def _rollback(install_root: Path) -> None:
     if current_link.exists() or current_link.is_symlink():
         current_link.unlink()
     if os.name == "nt":
-        subprocess.run(["cmd", "/c", "mklink", "/J", str(current_link), str(previous)], check=False)
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(current_link), str(previous)],
+            check=False,
+            **_silent_kwargs(),
+        )
     else:
         current_link.symlink_to(previous)
     try:
