@@ -95,6 +95,13 @@ install -m 0644 "$BUNDLE_DIR/systemd/middleware-monitor.service" /etc/systemd/sy
 systemctl daemon-reload
 systemctl enable --now middleware-monitor.service
 
+log "==> Installing CLI helper (/usr/local/bin/middleware-monitor-ctl)"
+install -m 0755 "$BUNDLE_DIR/middleware-monitor-ctl" /usr/local/bin/middleware-monitor-ctl
+
+log "==> Installing desktop shortcut (/usr/share/applications)"
+mkdir -p /usr/share/applications
+install -m 0644 "$BUNDLE_DIR/middleware-monitor.desktop" /usr/share/applications/middleware-monitor.desktop || true
+
 log "==> Waiting for the service to respond"
 for _ in $(seq 1 30); do
   if curl -fsS -m 2 http://127.0.0.1:8080/api/system/healthz >/dev/null 2>&1; then
