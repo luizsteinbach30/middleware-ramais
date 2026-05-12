@@ -24,15 +24,19 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     with session_factory() as db:
         cfg = load_config(db)
 
+    # A single user-facing knob drives how often we collect from USCall and
+    # ping/dispatch webhooks. Stored as minutes, applied here in seconds.
+    interval_seconds = max(60, cfg.webhook_interval_minutes * 60)
+
     add_interval_job(
         run_collect_extensions,
         job_id="collect_extensions",
-        seconds=cfg.extensions_interval_seconds,
+        seconds=interval_seconds,
     )
     add_interval_job(
         run_monitor_devices,
         job_id="monitor_devices",
-        seconds=cfg.devices_interval_seconds,
+        seconds=interval_seconds,
     )
     # Retention runs once a day at 00:30 UTC.
     add_cron_job(
@@ -49,8 +53,4 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
         minute=0,
     )
 
-    log.info(
-        "jobs_registered",
-        collect_seconds=cfg.extensions_interval_seconds,
-        monitor_seconds=cfg.devices_interval_seconds,
-    )
+    log.info("jobs_registered", interval_minutes=cfg.webhook_interval_minutes)

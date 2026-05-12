@@ -17,6 +17,7 @@ from middleware_monitor.core.models import (
     User,
     WebhookEvent,
 )
+from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.devices.repository import status_counts
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -64,7 +65,7 @@ def summary(
     )
     return DashboardSummary(
         **counts,
-        last_collection_at=last.collected_at.isoformat(timespec="seconds") if last else None,
+        last_collection_at=iso_utc(last.collected_at) if last else None,
         webhooks_24h=total_w,
         webhooks_24h_ok=ok_w,
         webhooks_24h_fail=total_w - ok_w,
@@ -94,6 +95,6 @@ def timeseries(
     for b in sorted(buckets):
         items = buckets[b]
         on = sum(1 for x in items if x)
-        ts = datetime.fromtimestamp(b * bucket, tz=UTC).replace(tzinfo=None).isoformat(timespec="seconds")
+        ts = iso_utc(datetime.fromtimestamp(b * bucket, tz=UTC)) or ""
         out.append(TimePoint(timestamp=ts, online=on, offline=max(0, total_devices - on)))
     return out

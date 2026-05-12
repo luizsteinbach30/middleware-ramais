@@ -31,9 +31,7 @@ class AppConfigOut(BaseModel):
     uscall_token: Literal["set"] | None = None
     uscall_verify_ssl: bool = True
 
-    extensions_interval_seconds: int = 60
-    devices_interval_seconds: int = 30
-    results_interval_seconds: int = 300
+    webhook_interval_minutes: int = 60
 
     ping_timeout_ms: int = 1000
     ping_concurrency: int = 20
@@ -60,9 +58,7 @@ class AppConfigUpdate(BaseModel):
     uscall_token: str | None = None
     uscall_verify_ssl: bool | None = None
 
-    extensions_interval_seconds: int | None = Field(default=None, ge=10)
-    devices_interval_seconds: int | None = Field(default=None, ge=10)
-    results_interval_seconds: int | None = Field(default=None, ge=10)
+    webhook_interval_minutes: int | None = Field(default=None, ge=1, le=1440)
 
     ping_timeout_ms: int | None = Field(default=None, ge=100, le=10_000)
     ping_concurrency: int | None = Field(default=None, ge=1, le=200)

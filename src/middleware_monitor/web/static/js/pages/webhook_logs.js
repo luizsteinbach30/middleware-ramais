@@ -1,6 +1,7 @@
 import { api, qs } from '/static/js/api.js';
 import { injectIcons } from '/static/js/components/icons.js';
 import { toast } from '/static/js/components/toast.js';
+import { fmtTs } from '/static/js/util/datetime.js';
 
 const state = { type: 'all', status: 'all', page: 1, size: 50 };
 
@@ -25,7 +26,7 @@ async function load() {
   } else {
     tbody.innerHTML = data.items.map((w) => `
       <tr class="hover:bg-gray-700/30 ${w.is_test ? 'bg-indigo-500/5' : ''}">
-        <td class="px-4 py-2.5 font-mono text-xs text-gray-300">${w.timestamp}</td>
+        <td class="px-4 py-2.5 font-mono text-xs text-gray-300">${fmtTs(w.timestamp)}</td>
         <td class="px-4 py-2.5">${badge(w.event_type === 'extensions' ? 'blue' : w.event_type === 'devices' ? 'green' : 'indigo', w.event_type)}${w.is_test ? '<span class="ml-2 text-[10px] uppercase tracking-wider text-indigo-300">test</span>' : ''}</td>
         <td class="px-4 py-2.5 text-right">${badge(httpTone(w.http_status), w.http_status || 'ERR')}</td>
         <td class="px-4 py-2.5 text-right font-mono tabular-nums text-gray-300 text-xs">${w.duration_ms} ms</td>
@@ -54,7 +55,7 @@ async function load() {
 async function openModal(id) {
   try {
     const d = await api('/api/webhook-events/' + id);
-    document.getElementById('wh-modal-meta').textContent = `id #${d.id} · ${d.timestamp}`;
+    document.getElementById('wh-modal-meta').textContent = `id #${d.id} · ${fmtTs(d.timestamp)}`;
     document.getElementById('wh-modal-content').textContent = JSON.stringify({ payload: d.payload, response: d.response_body }, null, 2);
     document.getElementById('wh-modal').classList.remove('hidden');
   } catch (e) { toast.error('Falha ao carregar payload'); }

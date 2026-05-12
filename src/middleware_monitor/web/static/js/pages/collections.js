@@ -1,5 +1,6 @@
 import { api, qs } from '/static/js/api.js';
 import { toast } from '/static/js/components/toast.js';
+import { fmtTs } from '/static/js/util/datetime.js';
 
 const state = { type: 'all', search: '', page: 1, size: 50, selected: null };
 let lastPayload = null;
@@ -20,7 +21,7 @@ async function loadList() {
   list.innerHTML = data.items.map((c) => `
     <button data-id="${c.id}" class="w-full text-left px-4 py-3 hover:bg-gray-700/30 transition ${state.selected === c.id ? 'bg-blue-500/10 ring-1 ring-inset ring-blue-500/30' : ''}">
       <div class="flex items-center justify-between">
-        <div class="font-mono text-xs text-gray-300">${c.collected_at}</div>
+        <div class="font-mono text-xs text-gray-300">${fmtTs(c.collected_at)}</div>
         ${badge(c.type === 'extensions' ? 'blue' : 'indigo', c.type)}
       </div>
       <div class="flex items-center justify-between mt-1.5">
@@ -42,7 +43,7 @@ async function loadDetail() {
   if (state.selected == null) return;
   const d = await api('/api/collections/' + state.selected);
   lastPayload = d.payload;
-  document.getElementById('col-meta').textContent = `id #${d.id} · ${d.collected_at}`;
+  document.getElementById('col-meta').textContent = `id #${d.id} · ${fmtTs(d.collected_at)}`;
   document.getElementById('col-type-badge').innerHTML = badge(d.type === 'extensions' ? 'blue' : 'indigo', d.type);
   document.getElementById('col-viewer').textContent = JSON.stringify(d.payload, null, 2);
 }

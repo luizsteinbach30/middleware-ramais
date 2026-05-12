@@ -1,4 +1,5 @@
 import { api, qs } from '/static/js/api.js';
+import { fmtTs } from '/static/js/util/datetime.js';
 
 const state = { level: 'all', module: 'all', search: '', page: 1, size: 100 };
 let auto = null;
@@ -15,7 +16,7 @@ async function load() {
   const tbody = document.getElementById('logs-tbody');
   tbody.innerHTML = data.items.map((l) => `
     <tr class="hover:bg-gray-700/30 ${l.level === 'ERROR' ? 'bg-red-500/5' : ''}">
-      <td class="px-4 py-2.5 font-mono text-xs text-gray-300">${l.timestamp}</td>
+      <td class="px-4 py-2.5 font-mono text-xs text-gray-300">${fmtTs(l.timestamp)}</td>
       <td class="px-4 py-2.5">${badge(lvlMap[l.level] || 'gray', l.level)}</td>
       <td class="px-4 py-2.5"><span class="px-2 py-0.5 rounded bg-gray-700/60 text-xs font-mono text-gray-300">${l.module}</span></td>
       <td class="px-4 py-2.5 text-gray-200">${l.message}</td>

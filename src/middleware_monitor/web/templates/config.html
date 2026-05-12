@@ -49,14 +49,11 @@
     </div>
   </div>
   <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
-    <h3 class="text-sm font-semibold text-gray-100 mb-4">Intervalos de coleta <span class="text-xs font-normal text-gray-500">· em segundos, mínimo 10</span></h3>
+    <h3 class="text-sm font-semibold text-gray-100 mb-1">Intervalo de envio dos webhooks</h3>
+    <p class="text-xs text-gray-500 mb-4">A cada ciclo a aplicação coleta os ramais no USCall, faz o ping dos dispositivos e dispara os webhooks habilitados. Mínimo 1 minuto, máximo 1440 (24 h).</p>
     <div class="grid md:grid-cols-3 gap-4">
-      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">extensions <span class="font-normal text-gray-500">USCall</span></span>
-        <input id="f-extensions_interval_seconds" type="number" min="10" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
-      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">devices <span class="font-normal text-gray-500">ping/arp</span></span>
-        <input id="f-devices_interval_seconds" type="number" min="10" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
-      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">results</span>
-        <input id="f-results_interval_seconds" type="number" min="10" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">webhook_interval_minutes <span class="font-normal text-gray-500">minutos</span></span>
+        <input id="f-webhook_interval_minutes" type="number" min="1" max="1440" step="1" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
     </div>
   </div>
   <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">

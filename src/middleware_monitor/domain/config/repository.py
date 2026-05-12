@@ -80,9 +80,20 @@ def load_config(db: DBSession) -> AppConfigOut:
     out.uscall_token = "set" if _has_secret(rows, "uscall_token") else None
     out.uscall_verify_ssl = _get(rows, "uscall_verify_ssl", "1") in ("1", "true", "True", True)
 
-    out.extensions_interval_seconds = int(_get(rows, "extensions_interval_seconds", "60"))
-    out.devices_interval_seconds = int(_get(rows, "devices_interval_seconds", "30"))
-    out.results_interval_seconds = int(_get(rows, "results_interval_seconds", "300"))
+    # Single knob that controls how often the app collects and dispatches
+    # webhooks. Stored in minutes (default 60); legacy installs may still have
+    # the old per-type "..._interval_seconds" rows in the DB — fall back to
+    # the largest of them so we never silently speed things up after upgrade.
+    raw = _get(rows, "webhook_interval_minutes", None)
+    if raw is not None:
+        out.webhook_interval_minutes = max(1, int(raw))
+    else:
+        legacy_seconds = [
+            int(_get(rows, k, "0") or 0)
+            for k in ("extensions_interval_seconds", "devices_interval_seconds", "results_interval_seconds")
+        ]
+        legacy_max = max(legacy_seconds) if any(legacy_seconds) else 0
+        out.webhook_interval_minutes = max(1, legacy_max // 60) if legacy_max else 60
 
     out.ping_timeout_ms = int(_get(rows, "ping_timeout_ms", "1000"))
     out.ping_concurrency = int(_get(rows, "ping_concurrency", "20"))
@@ -134,15 +145,9 @@ def update_config(db: DBSession, payload: AppConfigUpdate, *, user_id: int | Non
         write("uscall_verify_ssl", payload.uscall_verify_ssl)
 
     interval_changed = False
-    for k in (
-        "extensions_interval_seconds",
-        "devices_interval_seconds",
-        "results_interval_seconds",
-    ):
-        v = getattr(payload, k)
-        if v is not None:
-            write(k, v)
-            interval_changed = True
+    if payload.webhook_interval_minutes is not None:
+        write("webhook_interval_minutes", int(payload.webhook_interval_minutes))
+        interval_changed = True
 
     for k in (
         "ping_timeout_ms",
@@ -179,8 +184,9 @@ def update_config(db: DBSession, payload: AppConfigUpdate, *, user_id: int | Non
             from middleware_monitor.core.scheduler import reschedule
 
             cfg = load_config(db)
-            reschedule("collect_extensions", cfg.extensions_interval_seconds)
-            reschedule("monitor_devices", cfg.devices_interval_seconds)
+            seconds = max(60, cfg.webhook_interval_minutes * 60)
+            reschedule("collect_extensions", seconds)
+            reschedule("monitor_devices", seconds)
         except Exception:  # noqa: BLE001 — best-effort reschedule
             pass
 

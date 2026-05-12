@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.api.deps import get_current_user, get_session
 from middleware_monitor.core.models import User
+from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.collections.repository import (
     get_snapshot,
     list_snapshots,
@@ -47,7 +48,7 @@ def list_(
             SnapshotMeta(
                 id=r.id,
                 type=r.type,
-                collected_at=r.collected_at.isoformat(timespec="seconds"),
+                collected_at=iso_utc(r.collected_at) or "",
                 payload_hash=r.payload_hash[:12],
                 size_bytes=r.size_bytes,
             )
@@ -75,7 +76,7 @@ def detail(
     return {
         "id": snap.id,
         "type": snap.type,
-        "collected_at": snap.collected_at.isoformat(timespec="seconds"),
+        "collected_at": iso_utc(snap.collected_at),
         "payload_hash": snap.payload_hash,
         "size_bytes": snap.size_bytes,
         "payload": payload,
