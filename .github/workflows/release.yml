@@ -3,14 +3,21 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versão para build manual (ex.: 2.0.1)"
+        required: true
 
 permissions:
   contents: write
 
 jobs:
-  build:
-    name: Build artifacts
+  build-tarball:
+    name: Build source tarball + SHA256SUMS
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -19,28 +26,122 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Validate version matches tag
+      - id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate version matches code
         run: |
           PY_VERSION=$(python -c "import sys; sys.path.insert(0, 'src'); from middleware_monitor.version import __version__; print(__version__)")
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          if [ "$PY_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::version.py says $PY_VERSION but tag is $TAG_VERSION"
+          if [ "$PY_VERSION" != "${{ steps.ver.outputs.version }}" ]; then
+            echo "::error::src/middleware_monitor/version.py says $PY_VERSION but tag/input is ${{ steps.ver.outputs.version }}"
             exit 1
           fi
 
-      - name: Build tarball
+      - name: Build source tarball
         run: |
           set -euo pipefail
-          VER="${GITHUB_REF_NAME#v}"
+          VER="${{ steps.ver.outputs.version }}"
           STAGE="app-v${VER}"
           mkdir -p dist "$STAGE"
           cp -r src pyproject.toml alembic.ini docs README.md CHANGELOG.md "$STAGE/" 2>/dev/null || true
-          # Lock file (simple — same as install set):
-          python -m pip install -q pip-tools
-          (echo "fastapi"; echo "uvicorn[standard]"; echo "sqlalchemy"; echo "alembic"; echo "pydantic"; echo "pydantic-settings"; echo "structlog"; echo "httpx"; echo "jinja2"; echo "passlib[bcrypt]"; echo "itsdangerous"; echo "cryptography"; echo "apscheduler"; echo "python-multipart"; echo "packaging") > requirements.in
-          pip-compile --quiet --resolver=backtracking requirements.in -o "$STAGE/requirements.lock" || cp requirements.in "$STAGE/requirements.lock"
+          cp -r scripts "$STAGE/" 2>/dev/null || true
           tar --owner=0 --group=0 --numeric-owner --sort=name -czf "dist/$STAGE.tar.gz" "$STAGE"
           ( cd dist && sha256sum "$STAGE.tar.gz" > SHA256SUMS )
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-tarball
+          path: dist/
+
+  build-linux-installer:
+    name: Build Linux .run installer
+    runs-on: ubuntu-latest
+    needs: build-tarball
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y makeself
+
+      - name: Build installer
+        env:
+          VERSION: ${{ needs.build-tarball.outputs.version }}
+        run: bash packaging/linux/build_installer.sh
+
+      - name: Hash installer
+        run: |
+          ( cd dist && sha256sum middleware-monitor-installer-*.run >> SHA256SUMS_INSTALLERS )
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-installer
+          path: |
+            dist/middleware-monitor-installer-*.run
+            dist/SHA256SUMS_INSTALLERS
+
+  build-windows-installer:
+    name: Build Windows .exe installer
+    runs-on: windows-latest
+    needs: build-tarball
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $url = "https://files.jrsoftware.org/is/6/innosetup-6.2.2.exe"
+          $exe = "$env:TEMP\innosetup.exe"
+          Invoke-WebRequest $url -OutFile $exe
+          Start-Process -FilePath $exe -ArgumentList "/SP-","/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
+          "C:\Program Files (x86)\Inno Setup 6" | Out-File -Append -Encoding ascii $env:GITHUB_PATH
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          .\packaging\windows\build_installer.ps1 -Version ${{ needs.build-tarball.outputs.version }}
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Get-ChildItem packaging\windows\inno -Filter "MiddlewareMonitorSetup-*.exe" |
+            ForEach-Object {
+              Copy-Item $_.FullName dist\
+              "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" | Add-Content dist\SHA256SUMS_INSTALLERS
+            }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            dist/MiddlewareMonitorSetup-*.exe
+            dist/SHA256SUMS_INSTALLERS
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-tarball, build-linux-installer, build-windows-installer]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Generate release notes
         run: |
@@ -50,12 +151,20 @@ jobs:
             echo "Release ${GITHUB_REF_NAME}" > dist/RELEASE_NOTES.md
           fi
 
+      - name: Aggregate SHA256SUMS
+        run: |
+          cat dist/SHA256SUMS dist/SHA256SUMS_INSTALLERS 2>/dev/null | sort > dist/SHA256SUMS.txt
+          mv dist/SHA256SUMS.txt dist/SHA256SUMS
+          rm -f dist/SHA256SUMS_INSTALLERS
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           body_path: dist/RELEASE_NOTES.md
           files: |
-            dist/*.tar.gz
+            dist/app-v*.tar.gz
+            dist/MiddlewareMonitorSetup-*.exe
+            dist/middleware-monitor-installer-*.run
             dist/SHA256SUMS
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}

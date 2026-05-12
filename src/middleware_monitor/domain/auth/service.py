@@ -112,19 +112,28 @@ def change_password(db: DBSession, user: User, *, current: str, new_password: st
     log.info("password_changed", user_id=user.id)
 
 
-def bootstrap_admin(db: DBSession, *, username: str = "admin", password: str | None = None) -> tuple[User, str]:
-    """Create the initial admin if missing. Returns (user, plaintext_password).
+DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_PASSWORD = "admin"  # noqa: S105 — forced rotation on first login
 
-    The plaintext password is the temporary password generated when not
-    provided — the caller (installer) MUST display it once and discard.
+
+def bootstrap_admin(
+    db: DBSession,
+    *,
+    username: str = DEFAULT_ADMIN_USERNAME,
+    password: str | None = None,
+) -> tuple[User, str]:
+    """Create the initial admin if missing. Returns ``(user, plaintext_password)``.
+
+    The default credentials are ``admin`` / ``admin``. The user is created with
+    ``must_change_password=True`` so the first successful login is forced to
+    rotate the password before doing anything else (mínimo 12 caracteres com
+    letras e números — ver ``is_strong_password``).
     """
-    import secrets
-
     user = db.scalar(select(User).where(User.username == username))
     if user is not None:
         return user, ""
 
-    plaintext = password or secrets.token_urlsafe(12)
+    plaintext = password or DEFAULT_ADMIN_PASSWORD
     user = User(
         username=username,
         password_hash=hash_password(plaintext),

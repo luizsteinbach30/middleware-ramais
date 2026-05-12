@@ -59,6 +59,27 @@ def add_interval_job(func: Any, *, job_id: str, seconds: int, **kwargs: Any) -> 
     )
 
 
+def add_cron_job(
+    func: Any,
+    *,
+    job_id: str,
+    hour: int = 0,
+    minute: int = 0,
+    **kwargs: Any,
+) -> None:
+    """Cron-style job. Defaults to 00:00 every day (UTC)."""
+    sched = get_scheduler()
+    sched.add_job(
+        func,
+        "cron",
+        hour=hour,
+        minute=minute,
+        id=job_id,
+        replace_existing=True,
+        **kwargs,
+    )
+
+
 def reschedule(job_id: str, seconds: int) -> None:
     sched = get_scheduler()
     if sched.get_job(job_id):

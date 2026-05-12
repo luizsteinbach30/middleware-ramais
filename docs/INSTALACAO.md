@@ -1,123 +1,131 @@
-# Guia de instalação
+# Instalação (referência avançada)
 
-## Pré-requisitos
+Para o passo-a-passo do dia-a-dia, **use [docs/MANUAL.md](MANUAL.md)** — este documento é só referência para casos não cobertos lá.
 
-| Plataforma | Requisitos |
-|---|---|
-| Linux | Debian 11+/Ubuntu 20.04+, root, `python3.11+`, `curl`, `tar` |
-| Windows | Windows 10/Server 2019+, admin, `python 3.11+`, [NSSM](https://nssm.cc/download) no PATH |
+## Construir os instaladores localmente
 
-Em ambos: a porta `8080` (default) deve estar livre e o servidor precisa de
-saída HTTPS para o USCall e para `api.github.com`.
+Os instaladores prontos vivem em [GitHub Releases](https://github.com/luizsteinbach30/middleware-ramais/releases). Se você precisar gerar a partir do código (ex.: ambiente sem internet para baixar do GitHub):
 
-## Linux
-
-### Instalação automática (recomendada)
-
-Como `root`:
+### Linux `.run`
 
 ```bash
-curl -fsSL https://github.com/<org>/middleware-monitor/releases/latest/download/install.sh -o install.sh
-chmod +x install.sh
-./install.sh                 # versão mais recente do canal stable
-./install.sh v2.0.0          # pinar uma versão
+# Em uma máquina de build com python3.11+, internet e makeself.
+bash packaging/linux/build_installer.sh
+# Saída: dist/middleware-monitor-installer-X.Y.Z.run
 ```
 
-O script:
-1. Cria usuários de sistema `mmonitor` (serviço) e `mmupdater` (watcher).
-2. Cria `/opt/middleware-monitor/{app,venv}` e `/var/lib/middleware-monitor/{db,backups,tmp}`.
-3. Baixa o tarball + `SHA256SUMS`, valida o hash, extrai em `app/<X.Y.Z>/`.
-4. Monta venv e instala `requirements.lock`.
-5. Cria `current` apontando para a versão recém-instalada.
-6. Gera `/etc/middleware-monitor/env` com `APP_SECRET_KEY` aleatório.
-7. Roda `alembic upgrade head`.
-8. Cria o admin e imprime a senha temporária na tela.
-9. Habilita `middleware-monitor.service` e o timer `middleware-monitor-updater.timer`.
-
-Validação:
-```bash
-systemctl status middleware-monitor
-curl -s http://localhost:8080/api/system/healthz
-```
-
-Acesse `http://<servidor>:8080/`, faça login com a senha impressa, troque-a
-quando solicitado.
-
-### Desinstalação
-
-```bash
-./packaging/linux/uninstall.sh           # mantém /var/lib (DB)
-./packaging/linux/uninstall.sh --purge   # remove tudo
-```
-
-## Windows
-
-### Instalação automática
-
-Em PowerShell **administrador**:
+### Windows `.exe`
 
 ```powershell
-# Garantir NSSM no PATH (https://nssm.cc/download)
-iwr -useb https://github.com/<org>/middleware-monitor/releases/latest/download/install.ps1 | iex
+# Em um Windows com Python 3.11+ e Inno Setup 6 instalado (iscc.exe no PATH).
+.\packaging\windows\build_installer.ps1 -Version 2.0.0
+# Saída: packaging\windows\inno\MiddlewareMonitorSetup-X.Y.Z.exe
 ```
 
-O script:
-1. Cria `C:\Program Files\MiddlewareMonitor\{app,venv,current}` e
-   `C:\ProgramData\MiddlewareMonitor\{db,backups,tmp,logs}`.
-2. Baixa, verifica e extrai a release.
-3. Cria venv e instala dependências.
-4. Cria `current` como junction (`mklink /J`) para a versão.
-5. Gera `env.cmd` com `APP_SECRET_KEY` aleatório.
-6. Roda `alembic upgrade head` e bootstrapa o admin.
-7. Instala o serviço **MiddlewareMonitor** via NSSM com auto-start e
-   rotação de logs (10MB).
+Os scripts de build **baixam** o Python embeddable, as wheels e o NSSM **na máquina de build**, e empacotam tudo dentro do instalador. O servidor de destino não precisa de internet.
 
-Validação:
-```powershell
-nssm status MiddlewareMonitor
-Invoke-RestMethod http://localhost:8080/api/system/healthz
+---
+
+## Layout em disco depois da instalação
+
+### Linux
+
+```
+/opt/middleware-monitor/
+├── current → app/<versão>/    (symlink atualizado pelo auto-update)
+├── app/
+│   └── 2.0.0/
+└── venv/                       (Python isolado)
+/etc/middleware-monitor/
+└── env                         (APP_SECRET_KEY + URLs + portas)
+/var/lib/middleware-monitor/
+├── db/app.db                   (SQLite WAL)
+├── backups/
+├── tmp/
+└── logs/
+/etc/systemd/system/middleware-monitor.service
 ```
 
-### Desinstalação
+### Windows
 
-```powershell
-.\packaging\windows\uninstall.ps1            # mantém ProgramData
-.\packaging\windows\uninstall.ps1 -Purge     # remove tudo
+```
+C:\Program Files\MiddlewareMonitor\
+├── current → app\<versão>\     (junction NTFS)
+├── app\
+│   └── 2.0.0\
+├── python\                     (Python embeddable)
+├── wheels\                     (wheels offline)
+├── bin\nssm.exe
+└── scripts\
+C:\ProgramData\MiddlewareMonitor\
+├── db\app.db
+├── backups\
+├── tmp\
+├── logs\app.log + app.err
+└── env.cmd
 ```
 
-## Configuração inicial
+---
 
-Após o primeiro login (forçando troca de senha), em `/config`:
+## Variáveis de ambiente
 
-1. Preencha `client_code` (slug que vai no payload dos webhooks).
-2. Em **Integração USCall**, configure `uscall_host` (sem `https://`) e o
-   `uscall_token`. Clique em **Testar conexão**.
-3. Ajuste **intervalos de coleta** se necessário (mínimo 10s).
-4. Em **Webhooks**, ative os tipos desejados e cadastre `url` + `token`.
-   Use **Testar** para validar.
-5. Salve. O scheduler é re-aplicado automaticamente.
+Todas vivem em `env` (Linux) ou `env.cmd` (Windows):
 
-## Auto-update
+| Variável | Padrão | Para que serve |
+|---|---|---|
+| `APP_HOST` | `0.0.0.0` | Bind do servidor HTTP |
+| `APP_PORT` | `8080` | Porta HTTP |
+| `APP_DATA_DIR` | `/var/lib/middleware-monitor` ou `C:\ProgramData\MiddlewareMonitor` | Onde fica DB, backups, tmp, logs |
+| `APP_SECRET_KEY` | gerado na instalação | Chave de derivação para criptografia de tokens + assinatura de sessão. **Não troque sem rotacionar tokens.** |
+| `APP_LOG_LEVEL` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR` |
+| `APP_LOG_JSON` | `true` em prod, `false` em dev | Logs JSON estruturados |
+| `APP_COOKIE_SECURE` | `false` | `true` quando atrás de HTTPS |
+| `APP_UPDATE_REPO` | `luizsteinbach30/middleware-ramais` | Repositório GitHub onde o updater procura novas versões |
+| `APP_UPDATE_CHANNEL` | `stable` | `stable` ou `beta` |
 
-- Habilitado por padrão, canal `stable`.
-- Para alterar canal: `/system/updates` → seletor `Canal` → `beta`.
-- Para desligar: `/system/updates` → toggle **Auto-update**.
-- Para forçar verificação: botão **Verificar agora**.
-- Para aplicar uma versão disponível: botão **Atualizar agora** (requer admin).
+Após editar o arquivo, reinicie o serviço para aplicar.
 
-## Backup
+---
+
+## Modo desenvolvedor
+
+Sem instalador, rodando direto do código (para hackear features):
 
 ```bash
-# Linux (com app rodando — graças ao WAL):
-sudo -u mmonitor /opt/middleware-monitor/venv/bin/python -c \
-  "import sqlite3; sqlite3.connect('/var/lib/middleware-monitor/db/app.db').execute('VACUUM INTO ?', ['/var/lib/middleware-monitor/backups/app-$(date +%Y%m%d).db'])"
+git clone https://github.com/luizsteinbach30/middleware-ramais.git
+cd middleware-ramais
+python3.11 -m venv .venv
+source .venv/bin/activate     # ou .venv\Scripts\activate no Windows
+pip install -e ".[dev,metrics]"
 
-# Windows: copiar C:\ProgramData\MiddlewareMonitor\db\app.db (o WAL torna safe)
+# Configure
+export APP_DATA_DIR=$(pwd)/_data
+export APP_SECRET_KEY=$(python -c "import secrets;print(secrets.token_urlsafe(64))")
+
+# Migrações
+python -m alembic upgrade head
+
+# Cria admin/admin
+python scripts/bootstrap_admin.py
+
+# Sobe o servidor
+python -m middleware_monitor
+# Acesse http://127.0.0.1:8080  · login: admin / admin
 ```
 
-A chave `APP_SECRET_KEY` é tão crítica quanto o backup do DB — sem ela os
-tokens cifrados não voltam. Guarde o `env`/`env.cmd` no mesmo cofre do backup.
+Testes:
+```bash
+pytest -q
+```
 
-## Troubleshooting rápido
+---
 
-Ver [RUNBOOK.md](RUNBOOK.md) para diagnóstico passo-a-passo.
+## Migração de v1.0 para v2.0
+
+Se você tinha a v1.0 (que usava arquivos JSON em `data/`), há um script que importa para o banco SQLite:
+
+```bash
+python scripts/migrate_from_v1.py /caminho/para/data-v1
+```
+
+Idempotente — pode rodar várias vezes. Migra `config.json`, `devices.json`, `webhook_logs.json` e `collections/extensions/*.json`. Tokens são re-cifrados em repouso.

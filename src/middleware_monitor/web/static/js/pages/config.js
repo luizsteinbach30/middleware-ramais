@@ -102,7 +102,7 @@ function renderWebhooks(webhooks) {
   `).join('');
   Object.entries(webhooks || {}).forEach(([k, w]) => renderMasked(`webhooks.${k}.token`, w.token === 'set'));
   list.querySelectorAll('[data-wh-enabled]').forEach((c) => c.addEventListener('change', () => { dirty.add('wh.' + c.dataset.whEnabled); setDirty(true); }));
-  list.querySelectorAll('[data-wh-url]').forEach((i) => i.addEventListener('input', () => { dirty.add('wh.' + i.dataset.whUrl); setDirty(true); }));
+  list.querySelectorAll('[data-wh-url]').forEach((i) => i.addEventListener('input', () => { dirty.add('wh.' + i.dataset.whUrl + '.url'); setDirty(true); }));
   list.querySelectorAll('[data-wh-test]').forEach((b) => b.addEventListener('click', async () => {
     try { const r = await api('/api/webhooks/test/' + b.dataset.whTest, { method: 'POST' });
       toast[r.ok ? 'success' : 'error'](r.ok ? 'Teste enviado' : 'Falha'); }
@@ -128,33 +128,70 @@ FIELDS.forEach((k) => {
 
 document.getElementById('cfg-reload').addEventListener('click', load);
 
+function readField(k) {
+  const el = document.getElementById('f-' + k);
+  if (!el) return undefined;
+  if (el.type === 'checkbox') return el.checked;
+  if (el.type === 'number') {
+    const v = el.value.trim();
+    return v === '' ? null : +v;
+  }
+  return el.value;
+}
+
+function explainError(e) {
+  if (!e) return 'Falha desconhecida.';
+  if (e.status === 422 && e.body && Array.isArray(e.body.detail)) {
+    return e.body.detail.map((d) => {
+      const field = (d.loc || []).filter((x) => x !== 'body').join('.');
+      return `${field}: ${d.msg}`;
+    }).join('  ·  ');
+  }
+  if (e.status === 403) return 'Sessão expirou ou falha de segurança (CSRF). Faça logout e login.';
+  if (e.status === 401) return 'Não autenticado.';
+  return e.message || 'Falha ao salvar.';
+}
+
 document.getElementById('cfg-save').addEventListener('click', async () => {
+  // Only send fields the user actually changed (or all fields if dirty is global).
   const payload = {};
   for (const k of FIELDS) {
-    const el = document.getElementById('f-' + k);
-    if (!el) continue;
-    if (el.type === 'checkbox') payload[k] = el.checked;
-    else if (el.type === 'number') payload[k] = +el.value;
-    else payload[k] = el.value;
+    if (!dirty.has(k)) continue;
+    const v = readField(k);
+    if (v !== undefined) payload[k] = v;
   }
-  if (tokenChanges['uscall_token'] !== undefined) payload.uscall_token = tokenChanges['uscall_token'];
+  if (tokenChanges['uscall_token'] !== undefined) {
+    payload.uscall_token = tokenChanges['uscall_token'];
+  }
   const webhooks = {};
   ['extensions', 'devices', 'results'].forEach((k) => {
     const en = document.querySelector(`[data-wh-enabled="${k}"]`);
     const url = document.querySelector(`[data-wh-url="${k}"]`);
     const tok = tokenChanges[`webhooks.${k}.token`];
     const upd = {};
-    if (en) upd.enabled = en.checked;
-    if (url) upd.url = url.value.trim();
+    if (en && dirty.has('wh.' + k)) upd.enabled = en.checked;
+    if (url && dirty.has('wh.' + k + '.url')) upd.url = url.value.trim();
     if (tok !== undefined) upd.token = tok;
     if (Object.keys(upd).length) webhooks[k] = upd;
   });
   if (Object.keys(webhooks).length) payload.webhooks = webhooks;
+
+  if (Object.keys(payload).length === 0) {
+    toast.info('Nada para salvar.');
+    return;
+  }
+
+  const btn = document.getElementById('cfg-save');
+  btn.disabled = true;
   try {
     await api('/api/config', { method: 'PUT', body: payload });
     toast.success('Configuração salva.');
-    load();
-  } catch (e) { toast.error('Falha ao salvar.'); }
+    await load();
+  } catch (e) {
+    toast.error(explainError(e));
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 document.getElementById('cfg-test-uscall').addEventListener('click', async () => {

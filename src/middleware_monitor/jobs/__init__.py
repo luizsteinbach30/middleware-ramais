@@ -6,7 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
-from middleware_monitor.core.scheduler import add_interval_job
+from middleware_monitor.core.scheduler import add_cron_job, add_interval_job
 from middleware_monitor.domain.config.repository import load_config
 
 log = get_logger("jobs")
@@ -34,15 +34,19 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
         job_id="monitor_devices",
         seconds=cfg.devices_interval_seconds,
     )
-    add_interval_job(
+    # Retention runs once a day at 00:30 UTC.
+    add_cron_job(
         run_retention,
         job_id="retention_daily",
-        seconds=24 * 60 * 60,
+        hour=0,
+        minute=30,
     )
-    add_interval_job(
+    # Update check runs once a day at 00:00 UTC, as required by the operator.
+    add_cron_job(
         run_update_check,
         job_id="update_check",
-        seconds=max(60, 60 * 60),  # placeholder; updater itself reads its own interval
+        hour=0,
+        minute=0,
     )
 
     log.info(

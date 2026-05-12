@@ -2,6 +2,37 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.0.1] — 2026-05-12
+
+### Added
+- **Instalador Windows `.exe` self-contained** (Inno Setup + Python
+  embeddable + wheels offline + NSSM). Não exige Python, NSSM ou internet
+  no servidor de destino.
+- **Instalador Linux `.run` self-extracting** (makeself) com wheels
+  offline. Só exige `python3.11+` (instalado automaticamente via apt/dnf
+  se faltar).
+- Workflow `release.yml` agora gera **ambos os instaladores** + tarball
+  fonte ao publicar uma tag `vX.Y.Z`.
+- Job `update_check` migrado para **cron diário às 00:00 UTC**.
+- Job `retention_daily` agora roda 00:30 UTC (era a cada 24h interval).
+
+### Changed
+- **Default admin agora é `admin` / `admin`** com troca obrigatória no
+  primeiro login. Substitui a senha temporária aleatória da v2.0.0 que
+  ficava no log do instalador.
+- UI de configuração só envia campos que foram efetivamente alterados
+  (dirty tracking), evitando rejeitar o save por validação de campos
+  intactos.
+
+### Fixed
+- **Save de configuração falhava silenciosamente** quando um input
+  numérico estivesse vazio (`+"" = 0` violava `ge=1`/`ge=10`). Agora
+  inputs vazios viram `null` no payload e o toast exibe a mensagem real
+  do backend (`ping_concurrency: Input should be greater than or equal
+  to 1`, por exemplo).
+- Botão `Salvar configuração` agora desabilita durante o request e
+  re-habilita ao final, evitando duplo-click acidental.
+
 ## [2.0.0] — 2026-05-09
 
 Reescrita completa da fundação. Compatibilidade do banco quebra; use
