@@ -2,6 +2,7 @@ import { api } from '/static/js/api.js';
 import { latencyChart } from '/static/js/components/charts.js';
 import { injectIcons } from '/static/js/components/icons.js';
 import { toast } from '/static/js/components/toast.js';
+import { fmtTs } from '/static/js/util/datetime.js';
 
 const id = location.pathname.split('/').pop();
 let window_ = '24h';
@@ -25,12 +26,12 @@ async function load() {
       <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
         <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Status lógico</div>
         <div class="mt-2">${d.logical_status === 'available' ? badge('blue', 'disponível') : d.logical_status === 'unavailable' ? badge('yellow', 'indisponível') : badge('gray', '—')}</div>
-        <div class="text-xs text-gray-500 mt-2">Último seen ${d.last_seen_at || '—'}</div>
+        <div class="text-xs text-gray-500 mt-2">Último seen ${fmtTs(d.last_seen_at)}</div>
       </div>
       <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
         <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Rede</div>
         <div class="mt-2">${d.network_status === 'online' ? badge('green', 'online') : d.network_status === 'offline' ? badge('red', 'offline') : badge('gray', '—')}</div>
-        <div class="text-xs text-gray-500 mt-2">Último ping ${d.last_ping_at || '—'}</div>
+        <div class="text-xs text-gray-500 mt-2">Último ping ${fmtTs(d.last_ping_at)}</div>
       </div>
       <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
         <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Latência atual</div>
@@ -48,7 +49,7 @@ async function load() {
 
     document.getElementById('dd-pings').innerHTML = pings.map((p) => `
       <tr class="hover:bg-gray-700/30">
-        <td class="px-4 py-2 text-gray-300 font-mono text-xs">${(p.timestamp || '').replace('T', ' ').slice(0, 19)}</td>
+        <td class="px-4 py-2 text-gray-300 font-mono text-xs">${fmtTs(p.timestamp)}</td>
         <td class="px-4 py-2">${p.online ? badge('green', 'online') : badge('red', 'offline')}</td>
         <td class="px-4 py-2 text-right font-mono tabular-nums text-gray-300">${p.latency_ms != null ? p.latency_ms + ' ms' : '—'}</td>
       </tr>

@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.api.deps import (
@@ -18,6 +17,7 @@ from middleware_monitor.api.deps import (
 )
 from middleware_monitor.core.models import Collection, UpdateHistory, User
 from middleware_monitor.core.scheduler import get_scheduler
+from middleware_monitor.core.time import iso_utc
 from middleware_monitor.settings import get_settings
 from middleware_monitor.updater.installer import install_release
 from middleware_monitor.updater.service import get_state, run_update_check
@@ -102,7 +102,7 @@ def version_info(_user: User = Depends(get_current_user)) -> VersionOut:
         current=__version__,
         channel=settings.update_channel,
         auto_update=bool(state.get("auto_update", True)),
-        last_check_at=state.get("last_check_at").isoformat(timespec="seconds") if state.get("last_check_at") else None,
+        last_check_at=iso_utc(state.get("last_check_at")),
         last_check_ok=bool(state.get("last_check_ok")),
         available_version=str(getattr(available, "version", "")) or None,
         available_published_at=getattr(available, "published_at", None),
@@ -152,7 +152,7 @@ def history(
     return [
         UpdateHistoryItem(
             id=r.id,
-            timestamp=r.timestamp.isoformat(timespec="seconds"),
+            timestamp=iso_utc(r.timestamp) or "",
             from_version=r.from_version,
             to_version=r.to_version,
             channel=r.channel,

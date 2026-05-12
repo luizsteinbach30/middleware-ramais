@@ -7,7 +7,7 @@ const tokenChanges = {}; // key -> new plaintext (or '' to clear)
 
 const FIELDS = [
   'client_code', 'uscall_host', 'uscall_verify_ssl',
-  'extensions_interval_seconds', 'devices_interval_seconds', 'results_interval_seconds',
+  'webhook_interval_minutes',
   'ping_timeout_ms', 'ping_concurrency', 'device_ping_retention_days',
   'webhook_log_retention_days', 'collection_retention_days', 'system_log_retention_days',
 ];

@@ -17,6 +17,7 @@ from middleware_monitor.api.deps import (
 )
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.models import User, WebhookEvent
+from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.webhooks.sender import WebhookSender
 
 router = APIRouter(prefix="/api", tags=["webhooks"])
@@ -72,7 +73,7 @@ def list_(
         items=[
             WebhookEventOut(
                 id=r.id,
-                timestamp=r.timestamp.isoformat(timespec="seconds"),
+                timestamp=iso_utc(r.timestamp) or "",
                 event_type=r.event_type,
                 url=r.url,
                 http_status=r.http_status,
@@ -107,7 +108,7 @@ def detail(
         payload = e.payload
     return {
         "id": e.id,
-        "timestamp": e.timestamp.isoformat(timespec="seconds"),
+        "timestamp": iso_utc(e.timestamp),
         "event_type": e.event_type,
         "url": e.url,
         "http_status": e.http_status,

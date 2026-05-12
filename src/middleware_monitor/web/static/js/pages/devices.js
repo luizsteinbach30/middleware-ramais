@@ -1,6 +1,7 @@
 import { api, qs } from '/static/js/api.js';
 import { injectIcons } from '/static/js/components/icons.js';
 import { toast } from '/static/js/components/toast.js';
+import { fmtTs } from '/static/js/util/datetime.js';
 
 const state = {
   search: '', network: 'all', logical: 'all', page: 1, size: 50,
@@ -74,7 +75,7 @@ async function load() {
           <td class="px-4 py-2.5">${logicalBadge(d.logical_status)}</td>
           <td class="px-4 py-2.5">${networkBadge(d.network_status)}</td>
           <td class="px-4 py-2.5 text-right font-mono tabular-nums text-gray-300">${d.latency_ms != null ? d.latency_ms + ' ms' : '—'}</td>
-          <td class="px-4 py-2.5 text-gray-500 text-xs">${(d.last_seen_at || '—').replace('T', ' ').slice(0, 19)}</td>
+          <td class="px-4 py-2.5 text-gray-500 text-xs">${fmtTs(d.last_seen_at)}</td>
           <td class="px-4 py-2.5 text-right">
             <div class="inline-flex gap-1">
               <button data-refresh="${d.id}" class="p-1.5 rounded text-gray-400 hover:bg-gray-700 hover:text-gray-100" title="Forçar ping"><span data-icon="refresh"></span></button>

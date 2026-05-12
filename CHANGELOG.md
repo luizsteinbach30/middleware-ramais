@@ -2,6 +2,41 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.1.2] — 2026-05-12
+
+### Added
+- **Intervalo único e configurável de envio de webhooks** (em minutos,
+  default 60, mínimo 1, máximo 1440). Substitui os três antigos
+  `extensions_interval_seconds` / `devices_interval_seconds` /
+  `results_interval_seconds` por um único `webhook_interval_minutes` no
+  formulário de configuração. A cada ciclo a aplicação coleta os ramais
+  no USCall, faz o ping dos dispositivos e dispara todos os webhooks
+  habilitados. Reescalona o scheduler imediatamente ao salvar.
+- `web/static/vendor/tailwindcss.js` (≈400 KB) — Tailwind agora é
+  embarcado **dentro do `.exe`** e servido como asset estático, em vez
+  de carregar do CDN. A UI passa a funcionar em ambientes sem acesso à
+  internet (ex.: servidores corporativos restritos).
+
+### Fixed
+- **Timestamps em UTC sendo exibidos como se fossem locais** (causando
+  diferença de 3 h em Brasília). A API agora serializa todos os
+  timestamps com sufixo `Z` (`"2026-05-12T16:41:02Z"`) e o frontend usa
+  `new Date(...).toLocaleString('pt-BR', { hour12: false })` para
+  apresentar no fuso do navegador. Aplicado em Logs, Webhook events,
+  Snapshots de coleta, Dispositivos, Detalhe do dispositivo, Dashboard
+  e histórico de atualizações.
+- **UI quebrava sem internet** porque o `base.html` carregava Tailwind
+  de `https://cdn.tailwindcss.com`. Agora aponta para
+  `/static/vendor/tailwindcss.js` (asset local), eliminando dependência
+  externa em tempo de execução.
+
+### Migration notes
+- Instalações que já tinham `extensions_interval_seconds` /
+  `devices_interval_seconds` / `results_interval_seconds` gravados no
+  DB são migradas no boot: o maior dos três (em segundos) é convertido
+  para minutos e populado como `webhook_interval_minutes`. Se nada foi
+  configurado, o default é 60 minutos.
+
 ## [2.1.1] — 2026-05-12
 
 ### Fixed

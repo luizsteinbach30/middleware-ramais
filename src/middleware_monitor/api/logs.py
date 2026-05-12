@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.api.deps import get_current_user, get_session
 from middleware_monitor.core.models import SystemLog, User
+from middleware_monitor.core.time import iso_utc
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 
@@ -58,7 +59,7 @@ def list_(
         items=[
             LogOut(
                 id=r.id,
-                timestamp=r.timestamp.isoformat(timespec="seconds"),
+                timestamp=iso_utc(r.timestamp) or "",
                 level=r.level,
                 module=r.module,
                 message=r.message,

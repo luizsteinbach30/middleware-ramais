@@ -2,6 +2,7 @@ import { api } from '/static/js/api.js';
 import { multiLineChart } from '/static/js/components/charts.js';
 import { toast } from '/static/js/components/toast.js';
 import { injectIcons } from '/static/js/components/icons.js';
+import { fmtTs } from '/static/js/util/datetime.js';
 
 const KPI = [
   { key: 'total', label: 'Devices', tone: 'gray', hint: 'Total monitorado' },
@@ -43,7 +44,7 @@ async function load() {
     document.getElementById('sys-next').innerHTML = ver.available_version
       ? `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset bg-blue-500/15 text-blue-400 ring-blue-500/30">${ver.available_version} disponível</span>`
       : '—';
-    document.getElementById('sys-check').textContent = ver.last_check_at || '—';
+    document.getElementById('sys-check').textContent = fmtTs(ver.last_check_at);
     document.getElementById('sys-auto').innerHTML = ver.auto_update
       ? `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset bg-green-500/15 text-green-400 ring-green-500/30">Ativado</span>`
       : `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset bg-gray-500/15 text-gray-400 ring-gray-500/30">Desligado</span>`;

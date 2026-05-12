@@ -17,6 +17,7 @@ from middleware_monitor.api.deps import (
     require_csrf,
 )
 from middleware_monitor.core.models import User
+from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.devices.repository import (
     get_device,
     history_aggregate,
@@ -143,7 +144,7 @@ async def refresh_one(device_id: int, db: DBSession = Depends(get_session)) -> d
         "online": online,
         "latency_ms": latency,
         "took_ms": int((time.perf_counter() - started) * 1000),
-        "timestamp": datetime.now(UTC).replace(tzinfo=None).isoformat(timespec="seconds"),
+        "timestamp": iso_utc(datetime.now(UTC)),
     }
 
 

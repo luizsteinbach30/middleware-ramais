@@ -1,6 +1,7 @@
 import { api } from '/static/js/api.js';
 import { injectIcons } from '/static/js/components/icons.js';
 import { toast } from '/static/js/components/toast.js';
+import { fmtTs } from '/static/js/util/datetime.js';
 
 function badge(tone, text, dot = false) {
   const tones = { green: 'bg-green-500/15 text-green-400 ring-green-500/30', red: 'bg-red-500/15 text-red-400 ring-red-500/30', yellow: 'bg-yellow-500/15 text-yellow-400 ring-yellow-500/30', blue: 'bg-blue-500/15 text-blue-400 ring-blue-500/30', gray: 'bg-gray-500/15 text-gray-400 ring-gray-500/30' };
@@ -12,7 +13,7 @@ async function load() {
   const ver = await api('/api/system/version');
   document.getElementById('upd-current').textContent = ver.current;
   document.getElementById('upd-channel-badge').outerHTML = `<span id="upd-channel-badge">${badge(ver.channel === 'beta' ? 'yellow' : 'green', ver.channel)}</span>`;
-  document.getElementById('upd-last-check').textContent = `Último check: ${ver.last_check_at || '—'}`;
+  document.getElementById('upd-last-check').textContent = `Último check: ${fmtTs(ver.last_check_at)}`;
   document.getElementById('upd-channel').value = ver.channel;
   document.getElementById('upd-auto').checked = ver.auto_update;
   document.getElementById('upd-auto-label').textContent = ver.auto_update ? 'Ativado' : 'Desligado';
@@ -30,7 +31,7 @@ async function load() {
   const hist = await api('/api/system/update-history');
   document.getElementById('upd-history').innerHTML = hist.map((u) => `
     <tr class="hover:bg-gray-700/30">
-      <td class="px-4 py-2.5 font-mono text-xs text-gray-300">${u.timestamp}</td>
+      <td class="px-4 py-2.5 font-mono text-xs text-gray-300">${fmtTs(u.timestamp)}</td>
       <td class="px-4 py-2.5 font-mono text-xs text-gray-400">${u.from_version}</td>
       <td class="px-4 py-2.5 font-mono text-xs text-gray-200 font-semibold">${u.to_version}</td>
       <td class="px-4 py-2.5">${badge(u.channel === 'beta' ? 'yellow' : 'gray', u.channel)}</td>
