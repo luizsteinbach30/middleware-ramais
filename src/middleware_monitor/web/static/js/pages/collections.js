@@ -1,4 +1,5 @@
 import { api, qs } from '/static/js/api.js';
+import { injectIcons } from '/static/js/components/icons.js';
 import { toast } from '/static/js/components/toast.js';
 import { fmtTs } from '/static/js/util/datetime.js';
 
@@ -51,6 +52,21 @@ async function loadDetail() {
 document.getElementById('col-type').addEventListener('change', (e) => { state.type = e.target.value; state.page = 1; loadList(); });
 document.getElementById('col-prev').addEventListener('click', () => { if (state.page > 1) { state.page--; loadList(); } });
 document.getElementById('col-next').addEventListener('click', () => { state.page++; loadList(); });
+document.getElementById('col-run').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span data-icon="refresh" class="animate-spin"></span>Coletando…';
+  try {
+    await api('/api/collections/run', { method: 'POST' });
+    toast.success('Coleta disparada. O snapshot novo aparece em alguns segundos.');
+    setTimeout(loadList, 2500);
+  } catch (err) {
+    toast.error(err?.body?.detail === 'rate_limited' ? 'Aguarde 30 s antes de nova coleta.' : 'Falha ao disparar coleta.');
+  } finally {
+    setTimeout(() => { btn.disabled = false; btn.innerHTML = original; }, 1200);
+  }
+});
 document.querySelector('[data-action="copy"]').addEventListener('click', async () => {
   if (!lastPayload) return;
   await navigator.clipboard.writeText(JSON.stringify(lastPayload, null, 2)); toast.success('Copiado.');
@@ -64,4 +80,5 @@ document.querySelector('[data-action="download"]').addEventListener('click', () 
   a.click();
 });
 
+injectIcons();
 loadList();

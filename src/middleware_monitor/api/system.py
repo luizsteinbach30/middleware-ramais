@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+import threading
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session as DBSession
@@ -15,6 +17,7 @@ from middleware_monitor.api.deps import (
     require_admin,
     require_csrf,
 )
+from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import Collection, UpdateHistory, User
 from middleware_monitor.core.scheduler import get_scheduler
 from middleware_monitor.core.time import iso_utc
@@ -22,6 +25,8 @@ from middleware_monitor.settings import get_settings
 from middleware_monitor.updater.installer import install_release
 from middleware_monitor.updater.service import get_state, run_update_check
 from middleware_monitor.version import __version__
+
+log = get_logger("api.system")
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -127,11 +132,58 @@ async def check_update() -> dict[str, object]:
     dependencies=[Depends(require_csrf), Depends(require_admin)],
 )
 async def apply_update() -> dict[str, object]:
-    release = (get_state().get("available"))
+    release = get_state().get("available")
     if release is None:
-        return {"ok": False, "reason": "no_update_available"}
+        # No release cached — try to refresh from GitHub right now so the
+        # user doesn't have to click "verificar" first.
+        release = await run_update_check()
+        if release is None:
+            return {"ok": False, "reason": "no_update_available"}
+
+    # Standalone single-exe path: this is the ONLY path that works for the
+    # PyInstaller build delivered as MiddlewareMonitor-X.Y.Z.exe. Any
+    # tarball-based install (installer.py) assumes a venv + service and
+    # silently fails inside the .exe.
+    if getattr(sys, "frozen", False):
+        from middleware_monitor.desktop import get_data_dir, request_shutdown
+        from middleware_monitor.updater.standalone import (
+            UpdateError,
+            apply_standalone_update,
+            find_exe_asset,
+        )
+
+        asset = find_exe_asset(getattr(release, "assets", []))
+        if asset is None:
+            raise HTTPException(
+                status_code=500,
+                detail="no_exe_asset_in_release",
+            )
+        try:
+            apply_standalone_update(
+                asset_url=asset["url"],
+                asset_name=asset["name"],
+                data_dir=get_data_dir(),
+            )
+        except (UpdateError, OSError) as exc:
+            log.error("standalone_update_failed", error=str(exc))
+            raise HTTPException(status_code=500, detail=f"download_failed: {exc}") from exc
+
+        # Helper batch is now waiting for our PID to die. Give the HTTP
+        # response a moment to flush, then signal the Tk main loop to
+        # tear everything down. The helper picks up the swap and relaunches.
+        log.info("standalone_update_scheduled", version=str(getattr(release, "version", "")))
+        threading.Timer(1.0, request_shutdown).start()
+        return {
+            "ok": True,
+            "mode": "standalone",
+            "started_for": str(getattr(release, "version", "")),
+            "shutdown_in_seconds": 1,
+        }
+
+    # Legacy tarball-based path (kept for non-frozen installations that
+    # ship with their own service supervisor).
     asyncio.create_task(install_release(release))  # type: ignore[arg-type]
-    return {"ok": True, "started_for": str(getattr(release, "version", ""))}
+    return {"ok": True, "mode": "legacy", "started_for": str(getattr(release, "version", ""))}
 
 
 @router.get("/update-history", response_model=list[UpdateHistoryItem])

@@ -7,10 +7,19 @@
       <h1 class="text-lg font-semibold text-gray-100">Webhook logs</h1>
       <p class="text-xs text-gray-400 mt-0.5">Histórico das chamadas enviadas pelo middleware</p>
     </div>
-    <div class="flex items-center gap-2">
-      <button data-test-type="extensions" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Testar extensions</button>
-      <button data-test-type="devices" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Testar devices</button>
-      <button data-test-type="results" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Testar results</button>
+    <div class="flex flex-wrap items-center gap-2">
+      <div class="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/10 ring-1 ring-inset ring-blue-500/30">
+        <span class="text-[10px] uppercase tracking-wider text-blue-300 font-semibold px-1">Enviar agora</span>
+        <button data-send-type="extensions" class="inline-flex items-center gap-1.5 rounded-md font-medium bg-blue-500 hover:bg-blue-400 text-white px-2 py-1 text-xs disabled:opacity-50">extensions</button>
+        <button data-send-type="devices" class="inline-flex items-center gap-1.5 rounded-md font-medium bg-blue-500 hover:bg-blue-400 text-white px-2 py-1 text-xs disabled:opacity-50">devices</button>
+        <button data-send-type="results" class="inline-flex items-center gap-1.5 rounded-md font-medium bg-blue-500 hover:bg-blue-400 text-white px-2 py-1 text-xs disabled:opacity-50">results</button>
+      </div>
+      <div class="flex items-center gap-1 px-2 py-1 rounded-lg ring-1 ring-inset ring-gray-700">
+        <span class="text-[10px] uppercase tracking-wider text-gray-400 font-semibold px-1">Teste</span>
+        <button data-test-type="extensions" class="inline-flex items-center gap-1.5 rounded-md font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 px-2 py-1 text-xs">extensions</button>
+        <button data-test-type="devices" class="inline-flex items-center gap-1.5 rounded-md font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 px-2 py-1 text-xs">devices</button>
+        <button data-test-type="results" class="inline-flex items-center gap-1.5 rounded-md font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 px-2 py-1 text-xs">results</button>
+      </div>
     </div>
   </div>
 </div>
