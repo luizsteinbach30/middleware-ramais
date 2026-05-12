@@ -81,13 +81,62 @@ robocopy (Join-Path $Root "docs") (Join-Path $AppOut "docs") /E /NFL /NDL /NJH /
 Copy-Item (Join-Path $Root "README.md") $AppOut
 Copy-Item (Join-Path $Root "CHANGELOG.md") $AppOut
 
-Write-Host "==> Downloading NSSM $NssmVersion" -ForegroundColor Cyan
-$nssmZip = Join-Path $env:TEMP "nssm-$NssmVersion.zip"
-Invoke-WebRequest "https://nssm.cc/release/nssm-$NssmVersion.zip" -OutFile $nssmZip
-$nssmExtract = Join-Path $env:TEMP "nssm-$NssmVersion"
-if (Test-Path $nssmExtract) { Remove-Item -Recurse -Force $nssmExtract }
-Expand-Archive -Force -Path $nssmZip -DestinationPath (Split-Path $nssmExtract)
-Copy-Item (Join-Path $nssmExtract "win64\nssm.exe") (Join-Path $Build "nssm.exe")
+Write-Host "==> Acquiring NSSM (Chocolatey first, fallback to direct download)" -ForegroundColor Cyan
+$nssmFinal = Join-Path $Build "nssm.exe"
+$nssmOk = $false
+
+# Strategy 1: Chocolatey (already installed on GitHub windows-latest runners).
+if (Get-Command choco -ErrorAction SilentlyContinue) {
+  try {
+    choco install nssm -y --no-progress --limit-output 2>&1 | Out-Null
+    $candidates = @(
+      "C:\ProgramData\chocolatey\lib\NSSM\tools\nssm.exe",
+      "C:\ProgramData\chocolatey\lib\NSSM\tools\win64\nssm.exe",
+      "C:\ProgramData\chocolatey\bin\nssm.exe"
+    )
+    foreach ($c in $candidates) {
+      if (Test-Path $c) {
+        Copy-Item $c $nssmFinal
+        $nssmOk = $true
+        Write-Host "    NSSM via Chocolatey ($c)"
+        break
+      }
+    }
+  } catch {}
+}
+
+# Strategy 2: nssm.cc with retries (in case Chocolatey wasn't available).
+if (-not $nssmOk) {
+  $urls = @(
+    "https://nssm.cc/release/nssm-$NssmVersion.zip",
+    "https://nssm.cc/ci/nssm-$NssmVersion.zip"
+  )
+  foreach ($url in $urls) {
+    for ($attempt = 1; $attempt -le 3 -and -not $nssmOk; $attempt++) {
+      try {
+        $nssmZip = Join-Path $env:TEMP "nssm-$NssmVersion.zip"
+        Invoke-WebRequest $url -OutFile $nssmZip -TimeoutSec 30
+        $nssmExtract = Join-Path $env:TEMP "nssm-extract"
+        if (Test-Path $nssmExtract) { Remove-Item -Recurse -Force $nssmExtract }
+        Expand-Archive -Force -Path $nssmZip -DestinationPath $nssmExtract
+        $found = Get-ChildItem $nssmExtract -Filter nssm.exe -Recurse |
+                   Where-Object { $_.FullName -match "win64" } |
+                   Select-Object -First 1
+        if ($found) {
+          Copy-Item $found.FullName $nssmFinal
+          $nssmOk = $true
+          Write-Host "    NSSM via $url (attempt $attempt)"
+        }
+      } catch {
+        Write-Host "    NSSM attempt $attempt from $url failed: $($_.Exception.Message)"
+        Start-Sleep -Seconds (5 * $attempt)
+      }
+    }
+    if ($nssmOk) { break }
+  }
+}
+
+if (-not $nssmOk) { throw "Could not acquire NSSM via Chocolatey or any mirror" }
 
 Write-Host "==> Copying install scripts" -ForegroundColor Cyan
 Copy-Item (Join-Path $Payload "scripts\postinstall.ps1")      (Join-Path $Build "scripts\postinstall.ps1")
