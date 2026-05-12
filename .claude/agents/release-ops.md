@@ -56,10 +56,47 @@ docs/
 ## SemVer e branching
 
 - `main` é sempre estável.
-- `develop` é integração contínua; releases são cortados a partir de `main`.
+- **Toda mudança em `main` vem via branch + Pull Request.** Push direto é exceção (apenas hotfix com autorização explícita do usuário).
+- Branches: `feature/<slug>`, `fix/<slug>`, `chore/<slug>`, `docs/<slug>`.
 - Tags vêm de `main`: `vX.Y.Z`. Pré-releases: `vX.Y.Z-rc.N`.
 - Workflow `release.yml` é disparado por `tag push v*`.
 - `version.py` (`src/middleware_monitor/version.py`) carrega `__version__`. CI valida que `__version__ == tag.strip("v")`.
+
+## Processo de release (obrigatório a cada mudança em main)
+
+Toda mudança em `main` que deve chegar nos servidores de cliente segue este fluxo:
+
+1. **Branch e PR**
+   - Criar `feature/<slug>` ou `fix/<slug>` a partir de `main`.
+   - Commits Conventional Commits (`feat:`, `fix:`, `chore:`, `feat!:` para breaking).
+   - `git push -u origin <branch>` → `gh pr create` com test plan, screenshots se UI, breaking changes destacados.
+   - Aguardar revisão; merge via UI (preserva histórico) ou `gh pr merge --squash` quando combinado.
+   - Apagar a branch local e remota após merge.
+
+2. **Bump de versão no PR**
+   - Editar `src/middleware_monitor/version.py`:
+     - `feat` → MINOR (`2.0.1` → `2.1.0`)
+     - `fix` → PATCH (`2.0.1` → `2.0.2`)
+     - `feat!` / `BREAKING CHANGE` → MAJOR (`2.0.1` → `3.0.0`)
+   - Atualizar `CHANGELOG.md` com seção da nova versão.
+
+3. **Tag e release (após merge em main)**
+   ```bash
+   git checkout main && git pull
+   git tag -a vX.Y.Z -m "vX.Y.Z — <resumo>"
+   git push origin vX.Y.Z
+   ```
+   Isso dispara `release.yml` automaticamente.
+
+4. **Acompanhar e validar**
+   - `gh run watch` para acompanhar a build.
+   - Se algum job falhar, investigar **imediatamente** (não deixar release semi-pronta).
+   - Confirmar os 3 artefatos publicados na página de Release:
+     - `app-vX.Y.Z.tar.gz`
+     - `middleware-monitor-installer-X.Y.Z.run`
+     - `MiddlewareMonitorSetup-X.Y.Z.exe`
+     - `SHA256SUMS`
+   - Validar sha256sum local antes de divulgar.
 
 ## Conteúdo de cada release publicado
 
