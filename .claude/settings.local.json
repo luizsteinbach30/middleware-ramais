@@ -81,7 +81,12 @@
       "Bash(git pull *)",
       "Bash(gh release *)",
       "Bash(rm -rf /tmp/v2.0.1)",
-      "Bash(gh issue create --title 'chore\\(release\\): SHA256SUMS está faltando o hash do .run Linux' --body ' *)"
+      "Bash(gh issue create --title 'chore\\(release\\): SHA256SUMS está faltando o hash do .run Linux' --body ' *)",
+      "Bash(git commit -m 'fix\\(release\\): build wheel with '\\\\''pip wheel --no-deps'\\\\'' \\(embeddable Python lacks venv\\) *)",
+      "Bash(.venv/Scripts/python.exe -m pip install --upgrade --quiet pyinstaller==6.10.0)",
+      "Bash(rm -rf build/pyinstaller dist)",
+      "Bash(.venv/Scripts/python.exe -m PyInstaller --noconfirm --clean --distpath dist --workpath build/pyinstaller packaging/windows/exe/MiddlewareMonitor.spec)",
+      "Bash(taskkill //F //IM MiddlewareMonitor.exe)"
     ],
     "additionalDirectories": [
       "c:\\Projetos\\middleware-ramais",
