@@ -2,6 +2,29 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.0.2] — 2026-05-12
+
+### Added
+- **Painel de Controle nativo no Windows** (WinForms via PowerShell).
+  Atalho no Menu Iniciar e na Área de Trabalho (opcional). Mostra status
+  em tempo real e tem botões para Iniciar, Parar (Finalizar), Reiniciar,
+  Abrir Painel web e Abrir Logs. Não exige PowerShell aberto pelo
+  usuário — UAC é solicitado só nos botões de ação.
+- **Atalhos no Menu Iniciar** (Windows): "Painel do Middleware",
+  "Abrir Aplicação", "Pasta de Logs" e "Desinstalar".
+- **CLI Linux `middleware-monitor-ctl`** instalada em `/usr/local/bin`.
+  Comandos: `start`, `stop`, `restart`, `status`, `open`, `logs`,
+  `install-log`. Funciona como atalho rápido sem precisar lembrar
+  `systemctl`.
+- **Atalho `.desktop` Linux** em `/usr/share/applications` (aparece no
+  menu de aplicações em ambientes XDG/GNOME/KDE).
+
+### Fixed
+- O instalador anterior abria o navegador antes do serviço estar pronto
+  em algumas máquinas. Agora abre primeiro o Painel de Controle, que
+  mostra o status em tempo real e permite abrir o navegador quando
+  o serviço estiver `Running`.
+
 ## [2.0.1] — 2026-05-12
 
 ### Added

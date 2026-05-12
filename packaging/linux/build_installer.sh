@@ -40,7 +40,9 @@ cp "$ROOT/README.md" "$BUILD/app/"
 cp "$ROOT/CHANGELOG.md" "$BUILD/app/"
 cp "$ROOT/packaging/linux/middleware-monitor.service" "$BUILD/systemd/"
 cp "$ROOT/packaging/linux/payload/install-bundle.sh" "$BUILD/install-bundle.sh"
-chmod +x "$BUILD/install-bundle.sh"
+cp "$ROOT/packaging/linux/payload/middleware-monitor-ctl" "$BUILD/middleware-monitor-ctl"
+cp "$ROOT/packaging/linux/payload/middleware-monitor.desktop" "$BUILD/middleware-monitor.desktop"
+chmod +x "$BUILD/install-bundle.sh" "$BUILD/middleware-monitor-ctl"
 
 if ! command -v makeself >/dev/null; then
   echo "==> Installing makeself"

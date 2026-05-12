@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# middleware-monitor-ctl — start/stop/restart/status/open/logs for the
+# Middleware USCall Monitor service. Installed to /usr/local/bin by the
+# bundled installer.
+set -euo pipefail
+
+SERVICE=middleware-monitor
+URL="${MM_URL:-http://localhost:8080/}"
+DATA_DIR="${MM_DATA_DIR:-/var/lib/middleware-monitor}"
+
+usage() {
+  cat <<EOF
+Uso: middleware-monitor-ctl <comando>
+
+Comandos:
+  start       inicia o serviço
+  stop        finaliza o serviço
+  restart     reinicia o serviço
+  status      mostra o status atual
+  open        abre o painel no navegador padrão
+  logs        acompanha os logs em tempo real (Ctrl+C para sair)
+  install-log mostra o log da instalação
+
+Atalhos:
+  Se o seu desktop suporta XDG, há um atalho "Middleware USCall Monitor"
+  no menu de aplicações que abre o painel no navegador.
+EOF
+}
+
+cmd="${1:-status}"
+case "$cmd" in
+  start)        sudo systemctl start  "$SERVICE" ;;
+  stop)         sudo systemctl stop   "$SERVICE" ;;
+  restart)      sudo systemctl restart "$SERVICE" ;;
+  status)       systemctl status "$SERVICE" --no-pager ;;
+  open)
+    if command -v xdg-open >/dev/null; then xdg-open "$URL"
+    elif command -v open >/dev/null; then open "$URL"
+    else echo "Abra manualmente: $URL"; fi ;;
+  logs)         sudo journalctl -u "$SERVICE" -f ;;
+  install-log)  cat "$DATA_DIR/logs/install.log" 2>/dev/null || echo "Sem log em $DATA_DIR/logs/install.log" ;;
+  -h|--help|help) usage ;;
+  *)            usage; exit 2 ;;
+esac

@@ -26,18 +26,45 @@ Tanto o `.exe` quanto o `.run` **incluem tudo dentro** (Python, dependências, N
 1. Copie `MiddlewareMonitorSetup-X.Y.Z.exe` para o servidor.
 2. Clique com o botão direito → **Executar como administrador**.
 3. Avance no wizard. Tudo é instalado em `C:\Program Files\MiddlewareMonitor`, com dados em `C:\ProgramData\MiddlewareMonitor`.
-4. Ao final, a janela exibe **"Instalação concluída"** e abre automaticamente o navegador em http://127.0.0.1:8080/.
+4. Marque a opção **"Criar atalho na Área de Trabalho"** se quiser acesso rápido.
+5. Ao final, o **Painel de Controle** abre automaticamente.
 
 **Não precisa instalar nada antes** (nem Python, nem NSSM, nem Visual C++). Tudo está dentro do `.exe`.
 
-### Verificar que está rodando
+### Painel de Controle (recomendado)
+
+Após instalar há **dois atalhos novos**:
+
+- **Menu Iniciar → Middleware USCall Monitor → Painel do Middleware**
+- **Área de Trabalho → Middleware Monitor** (se você marcou no wizard)
+
+Ao abrir esse painel, você vê uma janela pequena com:
+
+- **Status do serviço** em tempo real (Running / Stopped, com cor).
+- **Iniciar** — sobe o serviço.
+- **Parar (Finalizar)** — derruba o serviço.
+- **Reiniciar Serviço** — para e sobe novamente.
+- **Abrir Painel** — abre `http://localhost:8080/` no navegador.
+- Links para "Abrir pasta de logs" e "Ver log da instalação".
+
+O painel pede UAC só quando você clica em Iniciar/Parar/Reiniciar; o resto não exige.
+
+### Verificar via linha de comando
 
 ```powershell
 Get-Service MiddlewareMonitor
 Invoke-RestMethod http://localhost:8080/api/system/healthz
 ```
 
-A primeira deve mostrar `Status: Running`. A segunda retorna `{ status: "ok" }`.
+A primeira mostra `Status: Running`. A segunda retorna `{ status: "ok" }`.
+
+### Reiniciar / parar / iniciar pelo PowerShell
+
+```powershell
+Start-Service MiddlewareMonitor       # iniciar
+Stop-Service  MiddlewareMonitor       # parar (finalizar)
+Restart-Service MiddlewareMonitor     # reiniciar
+```
 
 ### Logs
 
@@ -45,17 +72,9 @@ A primeira deve mostrar `Status: Running`. A segunda retorna `{ status: "ok" }`.
 Get-Content C:\ProgramData\MiddlewareMonitor\logs\app.log -Wait -Tail 50
 ```
 
-### Reiniciar / parar / iniciar o serviço
-
-```powershell
-Restart-Service MiddlewareMonitor   # ou
-Stop-Service MiddlewareMonitor
-Start-Service MiddlewareMonitor
-```
-
 ### Desinstalar
 
-Painel de Controle → **Programas** → **Middleware USCall Monitor** → Desinstalar.
+Menu Iniciar → **Middleware USCall Monitor** → **Desinstalar Middleware USCall Monitor**.
 Os dados em `C:\ProgramData\MiddlewareMonitor` são **preservados** (banco, backups, logs). Se quiser apagar tudo, remova essa pasta manualmente.
 
 ---
@@ -76,7 +95,23 @@ Os dados em `C:\ProgramData\MiddlewareMonitor` são **preservados** (banco, back
 
 Apenas `python3` no servidor (3.11 ou superior). Se faltar, o instalador tenta instalar via `apt-get` ou `dnf` automaticamente.
 
-### Verificar que está rodando
+### CLI rápida — `middleware-monitor-ctl`
+
+O instalador coloca o comando `middleware-monitor-ctl` em `/usr/local/bin`. Funciona como atalho rápido:
+
+```bash
+middleware-monitor-ctl status        # mostra status do serviço
+middleware-monitor-ctl start         # inicia
+middleware-monitor-ctl stop          # finaliza
+middleware-monitor-ctl restart       # reinicia
+middleware-monitor-ctl open          # abre o painel no navegador padrão
+middleware-monitor-ctl logs          # acompanha logs em tempo real
+middleware-monitor-ctl install-log   # mostra o log da instalação
+```
+
+Em desktops Linux (GNOME/KDE/XFCE) também há um atalho **"Middleware USCall Monitor"** no menu de aplicações que abre o painel web no navegador.
+
+### Verificar via systemctl (equivalente)
 
 ```bash
 sudo systemctl status middleware-monitor
@@ -87,14 +122,16 @@ curl -s http://localhost:8080/api/system/healthz
 
 ```bash
 sudo journalctl -u middleware-monitor -f
+# ou simplesmente:
+middleware-monitor-ctl logs
 ```
 
-### Reiniciar / parar / iniciar
+### Reiniciar / parar / iniciar via systemctl
 
 ```bash
-sudo systemctl restart middleware-monitor
-sudo systemctl stop middleware-monitor
 sudo systemctl start middleware-monitor
+sudo systemctl stop middleware-monitor
+sudo systemctl restart middleware-monitor
 ```
 
 ### Desinstalar
@@ -102,6 +139,7 @@ sudo systemctl start middleware-monitor
 ```bash
 sudo systemctl disable --now middleware-monitor
 sudo rm -rf /opt/middleware-monitor /etc/systemd/system/middleware-monitor.service
+sudo rm -f /usr/local/bin/middleware-monitor-ctl /usr/share/applications/middleware-monitor.desktop
 sudo systemctl daemon-reload
 # Apagar dados (opcional):
 sudo rm -rf /var/lib/middleware-monitor /etc/middleware-monitor

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Middleware USCall Monitor
+Comment=Abrir o painel web do Middleware USCall Monitor
+Exec=xdg-open http://localhost:8080/
+Icon=network-server
+Terminal=false
+Categories=Network;Monitor;System;
+Keywords=uscall;sip;ramal;telefonia;

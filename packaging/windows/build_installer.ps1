@@ -86,9 +86,11 @@ Expand-Archive -Force -Path $nssmZip -DestinationPath (Split-Path $nssmExtract)
 Copy-Item (Join-Path $nssmExtract "win64\nssm.exe") (Join-Path $Build "nssm.exe")
 
 Write-Host "==> Copying install scripts" -ForegroundColor Cyan
-Copy-Item (Join-Path $Payload "scripts\postinstall.ps1") (Join-Path $Build "scripts\postinstall.ps1")
-Copy-Item (Join-Path $Payload "scripts\uninstall.ps1") (Join-Path $Build "scripts\uninstall.ps1")
-Copy-Item (Join-Path $Payload "scripts\service-wrapper.cmd") (Join-Path $Build "scripts\service-wrapper.cmd")
+Copy-Item (Join-Path $Payload "scripts\postinstall.ps1")      (Join-Path $Build "scripts\postinstall.ps1")
+Copy-Item (Join-Path $Payload "scripts\uninstall.ps1")        (Join-Path $Build "scripts\uninstall.ps1")
+Copy-Item (Join-Path $Payload "scripts\service-wrapper.cmd")  (Join-Path $Build "scripts\service-wrapper.cmd")
+Copy-Item (Join-Path $Payload "scripts\Control.ps1")          (Join-Path $Build "scripts\Control.ps1")
+Copy-Item (Join-Path $Payload "scripts\Control.cmd")          (Join-Path $Build "scripts\Control.cmd")
 
 Write-Host "==> Staging Inno Setup payload" -ForegroundColor Cyan
 $IssPayload = Join-Path $Inno "payload"
