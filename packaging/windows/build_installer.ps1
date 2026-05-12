@@ -55,9 +55,13 @@ Invoke-WebRequest "https://bootstrap.pypa.io/get-pip.py" -OutFile $getPip
 & $Python $getPip --no-warn-script-location | Out-Null
 
 Write-Host "==> Building wheel from current source" -ForegroundColor Cyan
+# We use ``pip wheel . --no-deps`` instead of ``python -m build`` because the
+# Python embeddable distribution does not ship the ``venv`` module that
+# ``build`` needs for its isolated environment.
+& $Python -m pip install --upgrade pip setuptools wheel | Out-Null
 Push-Location $Root
-& $Python -m pip install --upgrade pip build wheel | Out-Null
-& $Python -m build --wheel --outdir (Join-Path $Build "wheels") | Out-Null
+& $Python -m pip wheel . --no-deps --no-build-isolation --wheel-dir (Join-Path $Build "wheels")
+if ($LASTEXITCODE -ne 0) { throw "Failed to build the middleware-monitor wheel" }
 Pop-Location
 
 Write-Host "==> Downloading runtime dependencies as wheels" -ForegroundColor Cyan
