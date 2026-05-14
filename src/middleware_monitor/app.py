@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -76,13 +77,18 @@ def create_app() -> FastAPI:
         scheduler_shutdown(wait=False)
         log.info("app_stopped")
 
+    # Swagger UI + raw OpenAPI ship disabled by default. Since v2.1.4 the app
+    # binds on 0.0.0.0 so anybody on the LAN could otherwise enumerate every
+    # endpoint without authenticating. Operators that need them during local
+    # development can re-enable with APP_EXPOSE_DOCS=1.
+    docs_enabled = os.environ.get("APP_EXPOSE_DOCS", "0").lower() in ("1", "true", "yes")
     app = FastAPI(
         title="Middleware USCall Monitor",
         version=__version__,
         lifespan=lifespan,
-        docs_url="/api/docs",
+        docs_url="/api/docs" if docs_enabled else None,
         redoc_url=None,
-        openapi_url="/api/openapi.json",
+        openapi_url="/api/openapi.json" if docs_enabled else None,
     )
     app.add_middleware(SecurityHeadersMiddleware)
 

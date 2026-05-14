@@ -2,6 +2,44 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.1.4] — 2026-05-12
+
+### Added
+- **Acesso via rede e port-forward.** O `.exe` agora liga em
+  `0.0.0.0:8080` por padrão em vez de só `127.0.0.1`, então qualquer
+  estação da mesma LAN abre `http://<ip-do-servidor>:8080/`. O IP
+  detectado da interface principal aparece ao lado de **LAN:** na
+  janela do app e também na aba **Sobre**, clicável e copiável.
+  Operadores que ainda querem loopback-only podem definir
+  `APP_HOST=127.0.0.1` no ambiente.
+- **Exportar payload de webhook.** Cada linha em
+  `/webhook-events` ganhou um ícone de download que baixa o JSON
+  completo (`webhook-<tipo>-<id>.json`). O modal de visualização
+  também passou a ter os botões **Copiar** e **Baixar JSON** no
+  cabeçalho, com `event_type` agora visível no meta.
+- Manual atualizado com o comando `New-NetFirewallRule` para liberar
+  a porta 8080/TCP no Windows e a recomendação de só expor o painel
+  pela internet atrás de VPN / reverse-proxy com TLS.
+
+### Security (acompanhando a exposição em LAN)
+- **`/api/docs` e `/api/openapi.json` agora vêm desligados por padrão.**
+  Em `0.0.0.0` qualquer host da LAN poderia enumerar endpoints e
+  schemas sem autenticação. Para reativar em desenvolvimento defina
+  `APP_EXPOSE_DOCS=1`.
+- **Aviso visual no app** quando o bind é `0.0.0.0`: linha amarela
+  abaixo do status informando que o painel está em HTTP puro e que
+  exposição na internet exige TLS na frente.
+- Manual destacou que a senha padrão `admin/admin` deve ser trocada
+  via `localhost` **antes** de liberar a porta no firewall — enquanto
+  a senha for o default, qualquer host da LAN pode logar.
+
+### Notes
+- `Coletas` já tinha **Baixar JSON** e **Copiar** no header da v2.0.0;
+  esta release apenas equipara o `Webhook logs` ao mesmo padrão.
+- HTTP puro continua sendo o transporte do painel — exposição em IP
+  público sem TLS expõe credenciais. Para LAN restrita está OK; para
+  internet, ponha um TLS na frente (Caddy/Cloudflare Tunnel/nginx).
+
 ## [2.1.3] — 2026-05-12
 
 ### Added

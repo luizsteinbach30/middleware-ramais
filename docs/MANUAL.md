@@ -38,7 +38,25 @@ Não há instalador no Windows. **Um único `.exe` contém tudo**: Python embuti
 - Não há serviço Windows. Quando você fecha o app, o servidor para.
 - Para rodar sempre: coloque um atalho do `.exe` em `shell:startup` (`Win+R` → digite `shell:startup`). O app abrirá automaticamente no logon.
 
-### 2.3 Onde ficam os dados
+### 2.3 Acessar de outro computador da rede
+
+A partir da v2.1.4 o app já **ouve em todas as interfaces** (`0.0.0.0:8080`), então qualquer máquina da mesma LAN pode abrir `http://<ip-do-servidor>:8080/`. A URL aparece na própria janela do app, ao lado de **LAN:**.
+
+> ⚠️ **Faça o primeiro acesso pelo navegador local da própria máquina (`http://localhost:8080/`) e troque a senha do `admin` ANTES de liberar a porta no firewall.** Enquanto a senha for `admin/admin`, qualquer outra máquina da LAN também consegue entrar.
+
+Se outras máquinas não conseguirem conectar, libere a porta no firewall do Windows. Em PowerShell **como Administrador**, rode uma vez:
+
+```powershell
+New-NetFirewallRule -DisplayName "Middleware USCall Monitor" `
+  -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow `
+  -Profile Private,Domain
+```
+
+Para expor pela internet, faça **port-forward** da porta 8080/TCP do roteador apontando pro IP interno do servidor. Como hoje o painel responde em HTTP puro, recomenda-se publicar **apenas atrás de VPN** ou reverse-proxy com TLS (Caddy, nginx, Cloudflare Tunnel). Não exponha em IP público sem TLS — login passa em claro.
+
+Se preferir voltar ao comportamento antigo (só localhost), defina a variável de ambiente `APP_HOST=127.0.0.1` antes de iniciar o `.exe`.
+
+### 2.4 Onde ficam os dados
 
 Tudo em **`%LOCALAPPDATA%\MiddlewareMonitor\`** (cole isso no Explorer):
 
@@ -55,7 +73,7 @@ MiddlewareMonitor\
 
 Para mover o app de uma máquina pra outra, basta copiar essa pasta + o `.exe`.
 
-### 2.4 Atualização automática (estilo Discord/OBS)
+### 2.5 Atualização automática (estilo Discord/OBS)
 
 Logo após iniciar, o app verifica o GitHub Releases em segundo plano:
 

@@ -67,12 +67,16 @@
 </div>
 <div id="wh-modal" class="hidden fixed inset-0 bg-black/60 z-50 grid place-items-center px-4">
   <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl max-w-2xl w-full" onclick="event.stopPropagation()">
-    <div class="px-5 py-4 border-b border-gray-700 flex items-center justify-between">
-      <div>
+    <div class="px-5 py-4 border-b border-gray-700 flex items-center justify-between gap-4">
+      <div class="min-w-0">
         <h3 class="text-sm font-semibold text-gray-100">Payload enviado</h3>
-        <div id="wh-modal-meta" class="text-xs text-gray-500 mt-0.5 font-mono">—</div>
+        <div id="wh-modal-meta" class="text-xs text-gray-500 mt-0.5 font-mono truncate">—</div>
       </div>
-      <button data-close class="text-gray-400 hover:text-gray-100">×</button>
+      <div class="flex items-center gap-1.5 flex-shrink-0">
+        <button id="wh-modal-copy" class="inline-flex items-center gap-1.5 rounded-md font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs"><span data-icon="copy"></span>Copiar</button>
+        <button id="wh-modal-download" class="inline-flex items-center gap-1.5 rounded-md font-medium bg-blue-500 hover:bg-blue-400 text-white px-2.5 py-1.5 text-xs"><span data-icon="download"></span>Baixar JSON</button>
+        <button data-close class="text-gray-400 hover:text-gray-100 px-2 text-lg leading-none">×</button>
+      </div>
     </div>
     <pre id="wh-modal-content" class="bg-gray-950 px-5 py-4 text-xs font-mono text-gray-300 max-h-96 overflow-auto rounded-b-xl"></pre>
   </div>
