@@ -4,6 +4,7 @@ import { toast } from '/static/js/components/toast.js';
 import { fmtTs } from '/static/js/util/datetime.js';
 
 const state = { type: 'all', status: 'all', page: 1, size: 50 };
+let currentEvent = null; // last event opened in the modal — used by the export buttons
 
 function badge(tone, text, dot=false) {
   const tones = { green: 'bg-green-500/15 text-green-400 ring-green-500/30', red: 'bg-red-500/15 text-red-400 ring-red-500/30', blue: 'bg-blue-500/15 text-blue-400 ring-blue-500/30', yellow: 'bg-yellow-500/15 text-yellow-400 ring-yellow-500/30', gray: 'bg-gray-500/15 text-gray-400 ring-gray-500/30', indigo: 'bg-indigo-500/15 text-indigo-300 ring-indigo-500/30' };
@@ -35,12 +36,14 @@ async function load() {
         <td class="px-4 py-2.5 text-right">
           <div class="inline-flex gap-1">
             <button data-view="${w.id}" class="p-1.5 rounded text-gray-400 hover:bg-gray-700 hover:text-gray-100" title="Ver payload"><span data-icon="eye"></span></button>
+            <button data-download="${w.id}" class="p-1.5 rounded text-gray-400 hover:bg-gray-700 hover:text-gray-100" title="Baixar JSON"><span data-icon="download"></span></button>
             <button data-replay="${w.id}" class="p-1.5 rounded text-gray-400 hover:bg-gray-700 hover:text-gray-100" title="Reenviar"><span data-icon="refresh"></span></button>
           </div>
         </td>
       </tr>
     `).join('');
     tbody.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => openModal(b.dataset.view)));
+    tbody.querySelectorAll('[data-download]').forEach((b) => b.addEventListener('click', () => downloadEvent(b.dataset.download)));
     tbody.querySelectorAll('[data-replay]').forEach((b) => b.addEventListener('click', async () => {
       try { await api(`/api/webhook-events/${b.dataset.replay}/replay`, { method: 'POST' }); toast.success('Reenvio agendado.'); load(); }
       catch (e) { toast.error('Falha ao reenviar'); }
@@ -55,10 +58,32 @@ async function load() {
 async function openModal(id) {
   try {
     const d = await api('/api/webhook-events/' + id);
-    document.getElementById('wh-modal-meta').textContent = `id #${d.id} · ${fmtTs(d.timestamp)}`;
-    document.getElementById('wh-modal-content').textContent = JSON.stringify({ payload: d.payload, response: d.response_body }, null, 2);
+    currentEvent = d;
+    document.getElementById('wh-modal-meta').textContent = `id #${d.id} · ${fmtTs(d.timestamp)} · ${d.event_type}`;
+    document.getElementById('wh-modal-content').textContent = modalText(d);
     document.getElementById('wh-modal').classList.remove('hidden');
+    injectIcons();
   } catch (e) { toast.error('Falha ao carregar payload'); }
+}
+
+function modalText(d) {
+  return JSON.stringify({ payload: d.payload, response: d.response_body }, null, 2);
+}
+
+async function downloadEvent(id) {
+  // When called from the table row we don't have the full payload yet —
+  // fetch it. When called from inside the modal we already do.
+  let d = currentEvent && currentEvent.id === Number(id) ? currentEvent : null;
+  if (!d) {
+    try { d = await api('/api/webhook-events/' + id); }
+    catch (e) { toast.error('Falha ao baixar payload'); return; }
+  }
+  const blob = new Blob([modalText(d)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `webhook-${d.event_type}-${d.id}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 document.getElementById('wh-f-type').addEventListener('change', (e) => { state.type = e.target.value; state.page = 1; load(); });
@@ -96,6 +121,17 @@ document.querySelectorAll('[data-send-type]').forEach((b) => b.addEventListener(
 document.querySelectorAll('#wh-modal [data-close], #wh-modal').forEach((el) => el.addEventListener('click', (e) => {
   if (e.target === el) document.getElementById('wh-modal').classList.add('hidden');
 }));
+document.getElementById('wh-modal-copy').addEventListener('click', async () => {
+  if (!currentEvent) return;
+  try {
+    await navigator.clipboard.writeText(modalText(currentEvent));
+    toast.success('Payload copiado.');
+  } catch (e) { toast.error('Falha ao copiar.'); }
+});
+document.getElementById('wh-modal-download').addEventListener('click', () => {
+  if (!currentEvent) return;
+  downloadEvent(currentEvent.id);
+});
 
 load();
 setInterval(load, 10000);

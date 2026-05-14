@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import queue
+import socket
 import sys
 import threading
 import time
@@ -48,6 +49,35 @@ def request_shutdown() -> None:
 def get_data_dir() -> Path:
     """Public accessor used by the API layer for the standalone-update flow."""
     return _user_data_dir()
+
+
+def _detect_lan_ip() -> str | None:
+    """Best-effort guess of the IPv4 address other machines on the same LAN
+    would use to reach this host. Returns ``None`` if no usable interface is
+    found (rare; the box has no network at all).
+
+    Uses the "connect a UDP socket to a public address" trick — no packet is
+    actually sent, but the OS still resolves which interface would be used,
+    which is exactly the IP we want to advertise."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.settimeout(0.5)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+        if ip and not ip.startswith("127."):
+            return ip
+    except OSError:
+        pass
+    try:
+        for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+            if not ip.startswith("127.") and not ip.startswith("169.254."):
+                return ip
+    except OSError:
+        pass
+    return None
 
 # IMPORTANT: configure data-dir / env BEFORE importing the application,
 # because settings get cached on first import.
@@ -106,7 +136,10 @@ def _bootstrap_env() -> None:
     data_dir = _ensure_data_dir()
     os.environ.setdefault("APP_DATA_DIR", str(data_dir))
     os.environ.setdefault("APP_SECRET_KEY", _ensure_secret(data_dir))
-    os.environ.setdefault("APP_HOST", "127.0.0.1")
+    # Bind on every interface by default so the panel is reachable from other
+    # workstations on the LAN (and through port-forwarding from outside).
+    # Operators that want loopback-only can override with APP_HOST=127.0.0.1.
+    os.environ.setdefault("APP_HOST", "0.0.0.0")
     os.environ.setdefault("APP_PORT", str(DEFAULT_PORT))
     os.environ.setdefault("APP_LOG_LEVEL", "INFO")
     os.environ.setdefault("APP_LOG_JSON", "false")
@@ -379,7 +412,15 @@ class DesktopApp:
         host = os.environ.get("APP_HOST", "127.0.0.1")
         port = int(os.environ.get("APP_PORT", str(DEFAULT_PORT)))
         self.server = ServerThread(host, port)
-        self.url = f"http://{'localhost' if host in ('0.0.0.0', '127.0.0.1') else host}:{port}/"
+        # "url" is what the local user clicks to open the panel — always loopback.
+        # "lan_url" is what other workstations should use; None when binding to
+        # loopback only.
+        self.url = f"http://localhost:{port}/"
+        if host == "0.0.0.0":
+            lan_ip = _detect_lan_ip()
+            self.lan_url = f"http://{lan_ip}:{port}/" if lan_ip else None
+        else:
+            self.lan_url = None
 
         self.update_checker = UpdateChecker(
             current_version=__version__,
@@ -481,6 +522,29 @@ class DesktopApp:
         self.url_label.pack(side="left")
         self.url_label.bind("<Button-1>", lambda _: self._open_panel())
 
+        if self.lan_url:
+            ttk.Label(status_row, text="LAN:", style="Dim.TLabel").pack(side="left", padx=(16, 6))
+            lan_lbl = tk.Label(status_row, text=self.lan_url, bg=PALETTE["bg"], fg=PALETTE["info"], cursor="hand2", font=("Segoe UI", 10, "underline"))
+            lan_lbl.pack(side="left")
+            lan_lbl.bind("<Button-1>", lambda _: webbrowser.open(self.lan_url))
+
+        # Bind=0.0.0.0 means anyone on the LAN can hit the panel. We serve in
+        # plain HTTP, so the session cookie travels in clear and is sniffable
+        # via ARP spoofing. Show a one-liner so the operator sees the risk
+        # before opening the firewall, without having to read the manual.
+        if os.environ.get("APP_HOST") == "0.0.0.0":
+            warn_row = ttk.Frame(self.root, style="TFrame", padding=(20, 0, 20, 6))
+            warn_row.pack(fill="x")
+            tk.Label(
+                warn_row,
+                text="⚠ Painel em HTTP — sessão trafega sem criptografia. Para usar pela internet, ponha TLS na frente (VPN/Caddy/nginx).",
+                bg=PALETTE["bg"],
+                fg=PALETTE["warn"],
+                font=("Segoe UI", 9),
+                anchor="w",
+                justify="left",
+            ).pack(fill="x")
+
         # Buttons row
         btn_row = ttk.Frame(self.root, style="TFrame", padding=(20, 10, 20, 6))
         btn_row.pack(fill="x")
@@ -520,18 +584,29 @@ class DesktopApp:
         # About tab
         about_frame = ttk.Frame(nb, style="Card.TFrame", padding=14)
         nb.add(about_frame, text=" Sobre ")
-        for line in [
+        bind_label = "0.0.0.0 (todas as interfaces)" if os.environ.get("APP_HOST") == "0.0.0.0" else os.environ.get("APP_HOST", "")
+        about_lines = [
             f"Middleware USCall Monitor v{self.version}",
             "",
             f"Dados:         {self.data_dir}",
             f"Repositório:   {os.environ.get('APP_UPDATE_REPO', '')}",
             f"Canal:         {os.environ.get('APP_UPDATE_CHANNEL', '')}",
             "",
+            "Rede:",
+            f"  Bind:        {bind_label}",
+            f"  Local:       {self.url}",
+        ]
+        if self.lan_url:
+            about_lines.append(f"  LAN:         {self.lan_url}")
+            about_lines.append("  (libere a porta 8080/TCP no firewall para outros hosts acessarem)")
+        about_lines += [
+            "",
             "Primeiro acesso:",
             "  usuário:  admin",
             "  senha:    admin",
             "  (será obrigado a trocar no primeiro login)",
-        ]:
+        ]
+        for line in about_lines:
             ttk.Label(about_frame, text=line, style="TLabel", background=PALETTE["bg_alt"]).pack(anchor="w")
 
     # --------- runtime ----------
