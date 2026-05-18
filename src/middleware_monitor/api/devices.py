@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from datetime import UTC, datetime
 
@@ -17,13 +16,14 @@ from middleware_monitor.api.deps import (
     require_csrf,
 )
 from middleware_monitor.core.models import User
+from middleware_monitor.core.tasks import spawn
 from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.devices.repository import (
     get_device,
     history_aggregate,
     list_devices,
-    record_ping,
     recent_pings,
+    record_ping,
     status_counts,
 )
 from middleware_monitor.domain.devices.schemas import (
@@ -157,5 +157,5 @@ async def force_monitor(user: User = Depends(require_admin)) -> dict[str, str]:
     if time.monotonic() - last < _FORCE_RATE_S:
         raise HTTPException(status_code=429, detail="rate_limited")
     _FORCE_LAST_AT[str(user.id)] = time.monotonic()
-    asyncio.create_task(run_monitor_devices())
+    spawn(run_monitor_devices())
     return {"status": "scheduled"}

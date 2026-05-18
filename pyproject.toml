@@ -64,7 +64,36 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "S", "W", "PL", "RUF"]
-ignore = ["S101", "PLR2004", "PLR0913", "S603", "S607"]
+ignore = [
+    "S101",     # assert — used in tests
+    "PLR2004",  # magic value — acceptable in this codebase
+    "PLR0913",  # too many arguments
+    "S603",     # subprocess call — args are validated/constant
+    "S607",     # partial executable path — ping/arp resolved via PATH
+    "S104",     # bind 0.0.0.0 — intentional LAN-access default (v2.1.4)
+    "S105",     # false positives on config-key / token-state strings
+    "S110",     # try/except/pass — deliberate best-effort blocks
+    "S310",     # urlopen — updater fetches release assets over HTTPS
+    "PLC0415",  # import outside top-level — deliberate lazy/local imports
+    "PLW0603",  # global statement — module-level singletons (engine, scheduler)
+    "PLR0912",  # too many branches — desktop/updater bootstrap
+    "PLR0915",  # too many statements — desktop/updater bootstrap
+    "N818",     # exception names without Error suffix — domain naming choice
+]
+
+# FastAPI dependency markers are meant to be called in argument defaults.
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Header",
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Security",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "PLR"]

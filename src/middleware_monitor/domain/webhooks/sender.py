@@ -16,7 +16,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.core.logging import get_logger
@@ -128,7 +127,7 @@ class WebhookSender:
                 payload = json.loads(event.payload)
                 data = payload.get("data")
                 event_type = event.event_type
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return None
         return await self.dispatch(event_type, data, is_test=False, is_replay=True, replay_of=event_id)
 

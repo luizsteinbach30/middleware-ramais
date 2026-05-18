@@ -9,4 +9,4 @@ from middleware_monitor.core.security import (  # re-export
     require_csrf,
 )
 
-__all__ = ["get_session", "get_current_user", "require_admin", "require_csrf"]
+__all__ = ["get_current_user", "get_session", "require_admin", "require_csrf"]

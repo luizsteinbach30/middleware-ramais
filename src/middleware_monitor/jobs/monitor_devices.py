@@ -43,7 +43,9 @@ async def run_monitor_devices() -> None:
     on = 0
     off = 0
 
-    async def probe_one(device_id: int, ip: str, current_mac: str | None) -> tuple[int, bool, int | None, str | None]:
+    async def probe_one(
+        device_id: int, ip: str, current_mac: str | None
+    ) -> tuple[int, bool, int | None, str | None]:
         async with sem:
             latency = await ping.ping(ip, timeout_ms)
         online = latency is not None
@@ -51,7 +53,7 @@ async def run_monitor_devices() -> None:
         if online and current_mac is None:
             try:
                 new_mac = await arp.lookup(ip)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 new_mac = None
         return device_id, online, latency, new_mac
 

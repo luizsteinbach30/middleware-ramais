@@ -29,7 +29,7 @@ class LinuxPingProbe:
     async def ping(self, ip: str, timeout_ms: int) -> int | None:
         if not is_valid_ip(ip):
             return None
-        timeout_s = max(1, int(round(timeout_ms / 1000)))
+        timeout_s = max(1, round(timeout_ms / 1000))
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ping",
@@ -50,7 +50,7 @@ class LinuxPingProbe:
         if not m:
             return None
         try:
-            return int(round(float(m.group(1))))
+            return round(float(m.group(1)))
         except ValueError:
             return None
 

@@ -26,7 +26,6 @@ from middleware_monitor.domain.config.schemas import (
     AppConfigOut,
     AppConfigUpdate,
     WebhookConfig,
-    WebhookConfigUpdate,
 )
 from middleware_monitor.settings import get_settings
 
@@ -187,7 +186,7 @@ def update_config(db: DBSession, payload: AppConfigUpdate, *, user_id: int | Non
             seconds = max(60, cfg.webhook_interval_minutes * 60)
             reschedule("collect_extensions", seconds)
             reschedule("monitor_devices", seconds)
-        except Exception:  # noqa: BLE001 — best-effort reschedule
+        except Exception:
             pass
 
     return load_config(db)

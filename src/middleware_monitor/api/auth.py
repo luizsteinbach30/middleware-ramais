@@ -62,7 +62,9 @@ def login(
     try:
         user = authenticate(db, username=body.username, password=body.password, ip=ip)
     except TooManyAttempts as exc:
-        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="too_many_attempts") from exc
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="too_many_attempts"
+        ) from exc
     except InvalidCredentials as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials") from exc
 

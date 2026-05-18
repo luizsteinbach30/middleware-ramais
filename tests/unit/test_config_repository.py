@@ -35,7 +35,13 @@ def test_clearing_secret(db) -> None:
 def test_webhook_partial_update(db) -> None:
     update_config(
         db,
-        AppConfigUpdate(webhooks={"extensions": WebhookConfigUpdate(enabled=True, url="https://x.test", token="bear")}),
+        AppConfigUpdate(
+            webhooks={
+                "extensions": WebhookConfigUpdate(
+                    enabled=True, url="https://x.test", token="bear"
+                )
+            }
+        ),
         user_id=None,
     )
     cfg = load_config(db)

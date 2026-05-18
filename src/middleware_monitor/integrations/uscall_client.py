@@ -56,7 +56,7 @@ class UscallClient:
                 resp = await client.get(self._url, params=params)
         except httpx.HTTPError as exc:
             raise UscallNetworkError(str(exc)) from exc
-        if resp.status_code == 401 or resp.status_code == 403:
+        if resp.status_code in (401, 403):
             raise UscallAuthError(f"http_{resp.status_code}")
         if resp.status_code >= 400:
             raise UscallProtocolError(f"http_{resp.status_code}")

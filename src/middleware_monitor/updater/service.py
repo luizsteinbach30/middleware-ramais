@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from packaging.version import Version
 
-from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.settings import get_settings
 from middleware_monitor.updater.client import GithubReleasesClient, Release
@@ -15,7 +14,7 @@ log = get_logger("updater")
 _state: dict[str, object] = {
     "last_check_at": None,
     "last_check_ok": False,
-    "available": None,  # type: Release | None
+    "available": None,  # holds a Release once a check finds an update
     "channel": None,
     "auto_update": True,
 }
@@ -42,7 +41,7 @@ async def run_update_check() -> Release | None:
         else:
             log.info("update_check", result="available", target=str(release.version))
         return release
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         _state["last_check_ok"] = False
         log.warning("update_check_failed", error=str(exc))
         return None

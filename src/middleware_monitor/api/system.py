@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import sys
 import threading
 
@@ -20,6 +19,7 @@ from middleware_monitor.api.deps import (
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import Collection, UpdateHistory, User
 from middleware_monitor.core.scheduler import get_scheduler
+from middleware_monitor.core.tasks import spawn
 from middleware_monitor.core.time import iso_utc
 from middleware_monitor.settings import get_settings
 from middleware_monitor.updater.installer import install_release
@@ -69,7 +69,7 @@ def healthz() -> HealthOut:
 
 
 @router.get("/metrics")
-def metrics_endpoint():  # noqa: ANN201
+def metrics_endpoint():
     from fastapi import Response
 
     if not get_settings().metrics_enabled:
@@ -85,12 +85,12 @@ def readyz(db: DBSession = Depends(get_session)) -> ReadyOut:
     reasons: list[str] = []
     try:
         db.execute(text("SELECT 1"))
-    except Exception:  # noqa: BLE001
+    except Exception:
         reasons.append("db_unreachable")
     try:
         if not get_scheduler().running:
             reasons.append("scheduler_not_running")
-    except Exception:  # noqa: BLE001
+    except Exception:
         reasons.append("scheduler_error")
     last = db.scalar(select(Collection).order_by(Collection.collected_at.desc()).limit(1))
     if last is None:
@@ -182,7 +182,7 @@ async def apply_update() -> dict[str, object]:
 
     # Legacy tarball-based path (kept for non-frozen installations that
     # ship with their own service supervisor).
-    asyncio.create_task(install_release(release))  # type: ignore[arg-type]
+    spawn(install_release(release))  # type: ignore[arg-type]
     return {"ok": True, "mode": "legacy", "started_for": str(getattr(release, "version", ""))}
 
 

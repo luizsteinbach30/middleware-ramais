@@ -1,9 +1,7 @@
 import pytest
 
 from middleware_monitor.integrations.uscall_client import (
-    UscallAuthError,
     UscallClient,
-    UscallProtocolError,
 )
 
 

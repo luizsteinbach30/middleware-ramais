@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-
 LOCAL_FMT = "%Y-%m-%d %H:%M:%S"
 
 

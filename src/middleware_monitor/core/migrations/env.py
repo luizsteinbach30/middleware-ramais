@@ -11,8 +11,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from middleware_monitor.core.db import Base
 from middleware_monitor.core import models  # noqa: F401  ensure models are imported
+from middleware_monitor.core.db import Base
 from middleware_monitor.settings import get_settings
 
 config = context.config

@@ -96,8 +96,8 @@ def _hash_file(path: Path) -> str:
 
 
 def _parse_sha256sums(path: Path, target_name: str) -> str:
-    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = line.strip()
+    for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw.strip()
         if not line or line.startswith("#"):
             continue
         parts = line.split()
@@ -118,7 +118,12 @@ def _service_restart() -> None:
     than the main service, so we shell out to the supervisor."""
     if platform.system().lower().startswith("win"):
         try:
-            subprocess.run(["nssm", "restart", "MiddlewareMonitor"], check=True, timeout=30, **_silent_kwargs())
+            subprocess.run(
+                ["nssm", "restart", "MiddlewareMonitor"],
+                check=True,
+                timeout=30,
+                **_silent_kwargs(),
+            )
         except (FileNotFoundError, subprocess.CalledProcessError):
             subprocess.run(["sc", "stop", "MiddlewareMonitor"], check=False, timeout=30, **_silent_kwargs())
             subprocess.run(["sc", "start", "MiddlewareMonitor"], check=False, timeout=30, **_silent_kwargs())
@@ -204,7 +209,11 @@ async def install_release(
         if dry_run:
             log.info("update_dry_run_complete", version=new_version)
             success = True
-            return InstallResult(success=True, new_version=new_version, duration_ms=int((time.perf_counter() - started) * 1000))
+            return InstallResult(
+                success=True,
+                new_version=new_version,
+                duration_ms=int((time.perf_counter() - started) * 1000),
+            )
 
         new_dir.mkdir(parents=True, exist_ok=True)
         with tarfile.open(tar_path, "r:gz") as tar:
@@ -257,7 +266,7 @@ async def install_release(
         success = True
         log.info("update_installed", version=new_version)
 
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         error = f"{type(exc).__name__}: {exc}"
         log.error("update_failed", error=error, version=new_version)
 
@@ -309,7 +318,7 @@ def _rollback(install_root: Path) -> None:
         current_link.symlink_to(previous)
     try:
         _service_restart()
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
 

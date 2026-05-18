@@ -8,10 +8,9 @@ import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 
+import bcrypt
 from fastapi import Cookie, Depends, HTTPException, Request, status
 from itsdangerous import BadSignature, URLSafeSerializer
-import bcrypt
-from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.core.db import get_session
@@ -93,7 +92,12 @@ def get_current_user(
     sess = db.get(SessionModel, raw)
     if sess is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid_session")
-    if sess.expires_at <= datetime.now(UTC).replace(tzinfo=None) if sess.expires_at.tzinfo is None else sess.expires_at <= datetime.now(UTC):
+    now_utc = datetime.now(UTC)
+    if sess.expires_at.tzinfo is None:
+        expired = sess.expires_at <= now_utc.replace(tzinfo=None)
+    else:
+        expired = sess.expires_at <= now_utc
+    if expired:
         db.delete(sess)
         db.commit()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="session_expired")

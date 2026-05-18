@@ -18,6 +18,7 @@ from middleware_monitor.api.deps import (
 )
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.models import User, WebhookEvent
+from middleware_monitor.core.tasks import spawn
 from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.collections.repository import latest as latest_snapshot
 from middleware_monitor.domain.webhooks.sender import WebhookSender
@@ -168,11 +169,9 @@ async def send_now(
         # The devices payload is computed at monitor time, not stored as a
         # snapshot. Just kick the regular job — it pings every device and
         # ends with the same WebhookSender.dispatch("devices", ...).
-        import asyncio
-
         from middleware_monitor.jobs.monitor_devices import run_monitor_devices
 
-        asyncio.create_task(run_monitor_devices())
+        spawn(run_monitor_devices())
         return {"ok": True, "mode": "monitor_triggered"}
 
     snap = latest_snapshot(db, type_=event_type)

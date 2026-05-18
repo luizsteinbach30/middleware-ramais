@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import time
 
@@ -17,6 +16,7 @@ from middleware_monitor.api.deps import (
     require_csrf,
 )
 from middleware_monitor.core.models import User
+from middleware_monitor.core.tasks import spawn
 from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.collections.repository import (
     get_snapshot,
@@ -84,7 +84,7 @@ async def run_now(user: User = Depends(require_admin)) -> dict[str, object]:
     _RUN_LAST_AT[str(user.id)] = time.monotonic()
     from middleware_monitor.jobs.collect_extensions import run_collect_extensions
 
-    asyncio.create_task(run_collect_extensions())
+    spawn(run_collect_extensions())
     return {"status": "scheduled"}
 
 
