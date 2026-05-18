@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
-
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -128,7 +126,7 @@ def dashboard_page(
 
 def _page(name: str, route: str) -> None:
     @router.get(route, response_class=HTMLResponse)
-    def _handler(  # noqa: ANN202
+    def _handler(
         request: Request,
         cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
         db: DBSession = Depends(get_session),

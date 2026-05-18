@@ -48,14 +48,18 @@ def find_exe_asset(assets: list[dict[str, Any]] | list[Any]) -> dict[str, Any] |
         if not name:
             continue
         if name.startswith("MiddlewareMonitor") and name.endswith(".exe"):
-            url = a.get("url") or a.get("download_url") if isinstance(a, dict) else getattr(a, "download_url", "")
+            url = (
+                a.get("url") or a.get("download_url")
+                if isinstance(a, dict)
+                else getattr(a, "download_url", "")
+            )
             return {"name": name, "url": url}
     return None
 
 
 def _download(url: str, dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url, timeout=180) as response, dest.open("wb") as out:  # noqa: S310
+    with urllib.request.urlopen(url, timeout=180) as response, dest.open("wb") as out:
         while True:
             chunk = response.read(64 * 1024)
             if not chunk:

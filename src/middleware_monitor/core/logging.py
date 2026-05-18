@@ -60,7 +60,7 @@ def persist_warn_error(_logger: object, name: str, event_dict: EventDict) -> Eve
                 )
             )
             db.commit()
-    except Exception:  # noqa: BLE001
+    except Exception:
         # Never crash the app on a logging failure.
         pass
     return event_dict

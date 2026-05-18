@@ -113,7 +113,7 @@ def change_password(db: DBSession, user: User, *, current: str, new_password: st
 
 
 DEFAULT_ADMIN_USERNAME = "admin"
-DEFAULT_ADMIN_PASSWORD = "admin"  # noqa: S105 — forced rotation on first login
+DEFAULT_ADMIN_PASSWORD = "admin"
 
 
 def bootstrap_admin(

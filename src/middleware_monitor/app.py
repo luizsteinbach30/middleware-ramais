@@ -41,7 +41,11 @@ from middleware_monitor.core.db import init_engine
 from middleware_monitor.core.logging import configure_logging, get_logger
 from middleware_monitor.core.scheduler import (
     get_scheduler,
+)
+from middleware_monitor.core.scheduler import (
     shutdown as scheduler_shutdown,
+)
+from middleware_monitor.core.scheduler import (
     start as scheduler_start,
 )
 from middleware_monitor.jobs import register_all
@@ -53,7 +57,7 @@ log = get_logger("app")
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):  # noqa: ANN001
+    async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
@@ -113,7 +117,7 @@ def create_app() -> FastAPI:
     app.include_router(web_pages.router)
 
     @app.exception_handler(Exception)
-    async def _unhandled(_request: Request, exc: Exception) -> JSONResponse:  # noqa: ANN202
+    async def _unhandled(_request: Request, exc: Exception) -> JSONResponse:
         log.error("unhandled_exception", error=type(exc).__name__, message=str(exc))
         return JSONResponse({"detail": "internal_error"}, status_code=500)
 

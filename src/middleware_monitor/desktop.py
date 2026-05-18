@@ -25,7 +25,6 @@ import queue
 import socket
 import sys
 import threading
-import time
 import tkinter as tk
 import traceback
 import urllib.request
@@ -156,7 +155,11 @@ class TkLogHandler(logging.Handler):
     def __init__(self, sink: queue.Queue[str]) -> None:
         super().__init__()
         self._sink = sink
-        self.setFormatter(logging.Formatter("%(asctime)s %(levelname)-5s %(name)s | %(message)s", datefmt="%H:%M:%S"))
+        self.setFormatter(
+            logging.Formatter(
+                "%(asctime)s %(levelname)-5s %(name)s | %(message)s", datefmt="%H:%M:%S"
+            )
+        )
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -196,7 +199,7 @@ class ServerThread:
 
         try:
             self._bootstrap_database()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.error = exc
             logging.getLogger("desktop").error("db_bootstrap_failed: %s", exc, exc_info=True)
             return
@@ -218,7 +221,7 @@ class ServerThread:
         def runner() -> None:
             try:
                 self._server.run()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self.error = exc
                 logging.getLogger("desktop").error("server_crashed: %s", exc, exc_info=True)
 
@@ -466,21 +469,53 @@ class DesktopApp:
         style.configure("Card.TFrame", background=PALETTE["bg_alt"])
         style.configure("TLabel", background=PALETTE["bg"], foreground=PALETTE["fg"])
         style.configure("Dim.TLabel", background=PALETTE["bg"], foreground=PALETTE["fg_dim"])
-        style.configure("Title.TLabel", background=PALETTE["bg"], foreground=PALETTE["fg"], font=("Segoe UI Semibold", 12))
-        style.configure("Status.TLabel", background=PALETTE["bg"], foreground=PALETTE["ok"], font=("Segoe UI Semibold", 11))
+        style.configure(
+            "Title.TLabel",
+            background=PALETTE["bg"],
+            foreground=PALETTE["fg"],
+            font=("Segoe UI Semibold", 12),
+        )
+        style.configure(
+            "Status.TLabel",
+            background=PALETTE["bg"],
+            foreground=PALETTE["ok"],
+            font=("Segoe UI Semibold", 11),
+        )
         style.configure("TNotebook", background=PALETTE["bg"], borderwidth=0)
-        style.configure("TNotebook.Tab", background=PALETTE["bg_alt"], foreground=PALETTE["fg_dim"], padding=(14, 6))
-        style.map("TNotebook.Tab", background=[("selected", PALETTE["bg"])], foreground=[("selected", PALETTE["fg"])])
-        style.configure("Accent.TButton", background=PALETTE["accent"], foreground="white", padding=(14, 8), font=("Segoe UI Semibold", 10))
+        style.configure(
+            "TNotebook.Tab",
+            background=PALETTE["bg_alt"],
+            foreground=PALETTE["fg_dim"],
+            padding=(14, 6),
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", PALETTE["bg"])],
+            foreground=[("selected", PALETTE["fg"])],
+        )
+        style.configure(
+            "Accent.TButton",
+            background=PALETTE["accent"],
+            foreground="white",
+            padding=(14, 8),
+            font=("Segoe UI Semibold", 10),
+        )
         style.map("Accent.TButton", background=[("active", "#2563eb")])
-        style.configure("Ghost.TButton", background=PALETTE["bg_alt"], foreground=PALETTE["fg"], padding=(14, 8))
+        style.configure(
+            "Ghost.TButton",
+            background=PALETTE["bg_alt"],
+            foreground=PALETTE["fg"],
+            padding=(14, 8),
+        )
         style.map("Ghost.TButton", background=[("active", "#374151")])
         style.configure("Danger.TButton", background=PALETTE["err"], foreground="white", padding=(14, 8))
         style.map("Danger.TButton", background=[("active", "#dc2626")])
 
         # Update banner (hidden by default)
         self.banner = tk.Frame(self.root, bg=PALETTE["warn"], height=36)
-        self.banner_label = tk.Label(self.banner, text="", bg=PALETTE["warn"], fg="#1f2937", font=("Segoe UI Semibold", 10))
+        self.banner_label = tk.Label(
+            self.banner, text="", bg=PALETTE["warn"], fg="#1f2937", font=("Segoe UI Semibold", 10)
+        )
         self.banner_label.pack(side="left", padx=14, pady=6)
         self.banner_button = tk.Button(
             self.banner,
@@ -518,13 +553,27 @@ class DesktopApp:
         self.status_label.pack(side="left")
 
         ttk.Label(status_row, text="URL:", style="Dim.TLabel").pack(side="left", padx=(24, 6))
-        self.url_label = tk.Label(status_row, text=self.url, bg=PALETTE["bg"], fg=PALETTE["info"], cursor="hand2", font=("Segoe UI", 10, "underline"))
+        self.url_label = tk.Label(
+            status_row,
+            text=self.url,
+            bg=PALETTE["bg"],
+            fg=PALETTE["info"],
+            cursor="hand2",
+            font=("Segoe UI", 10, "underline"),
+        )
         self.url_label.pack(side="left")
         self.url_label.bind("<Button-1>", lambda _: self._open_panel())
 
         if self.lan_url:
             ttk.Label(status_row, text="LAN:", style="Dim.TLabel").pack(side="left", padx=(16, 6))
-            lan_lbl = tk.Label(status_row, text=self.lan_url, bg=PALETTE["bg"], fg=PALETTE["info"], cursor="hand2", font=("Segoe UI", 10, "underline"))
+            lan_lbl = tk.Label(
+                status_row,
+                text=self.lan_url,
+                bg=PALETTE["bg"],
+                fg=PALETTE["info"],
+                cursor="hand2",
+                font=("Segoe UI", 10, "underline"),
+            )
             lan_lbl.pack(side="left")
             lan_lbl.bind("<Button-1>", lambda _: webbrowser.open(self.lan_url))
 
@@ -537,7 +586,10 @@ class DesktopApp:
             warn_row.pack(fill="x")
             tk.Label(
                 warn_row,
-                text="⚠ Painel em HTTP — sessão trafega sem criptografia. Para usar pela internet, ponha TLS na frente (VPN/Caddy/nginx).",
+                text=(
+                    "⚠ Painel em HTTP — sessão trafega sem criptografia. "
+                    "Para usar pela internet, ponha TLS na frente (VPN/Caddy/nginx)."
+                ),
                 bg=PALETTE["bg"],
                 fg=PALETTE["warn"],
                 font=("Segoe UI", 9),
@@ -548,10 +600,24 @@ class DesktopApp:
         # Buttons row
         btn_row = ttk.Frame(self.root, style="TFrame", padding=(20, 10, 20, 6))
         btn_row.pack(fill="x")
-        ttk.Button(btn_row, text="Abrir Painel", command=self._open_panel, style="Accent.TButton").pack(side="left")
-        ttk.Button(btn_row, text="Abrir Pasta de Logs", command=self._open_logs_folder, style="Ghost.TButton").pack(side="left", padx=(8, 0))
-        ttk.Button(btn_row, text="Verificar atualização", command=self._check_for_update_async, style="Ghost.TButton").pack(side="left", padx=(8, 0))
-        ttk.Button(btn_row, text="Fechar", command=self._on_close, style="Danger.TButton").pack(side="right")
+        ttk.Button(
+            btn_row, text="Abrir Painel", command=self._open_panel, style="Accent.TButton"
+        ).pack(side="left")
+        ttk.Button(
+            btn_row,
+            text="Abrir Pasta de Logs",
+            command=self._open_logs_folder,
+            style="Ghost.TButton",
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            btn_row,
+            text="Verificar atualização",
+            command=self._check_for_update_async,
+            style="Ghost.TButton",
+        ).pack(side="left", padx=(8, 0))
+        ttk.Button(
+            btn_row, text="Fechar", command=self._on_close, style="Danger.TButton"
+        ).pack(side="right")
 
         # Notebook with Log tab
         nb = ttk.Notebook(self.root)
@@ -584,7 +650,11 @@ class DesktopApp:
         # About tab
         about_frame = ttk.Frame(nb, style="Card.TFrame", padding=14)
         nb.add(about_frame, text=" Sobre ")
-        bind_label = "0.0.0.0 (todas as interfaces)" if os.environ.get("APP_HOST") == "0.0.0.0" else os.environ.get("APP_HOST", "")
+        bind_label = (
+            "0.0.0.0 (todas as interfaces)"
+            if os.environ.get("APP_HOST") == "0.0.0.0"
+            else os.environ.get("APP_HOST", "")
+        )
         about_lines = [
             f"Middleware USCall Monitor v{self.version}",
             "",
@@ -657,7 +727,10 @@ class DesktopApp:
 
     def _open_panel(self) -> None:
         if not self.server.is_running():
-            messagebox.showinfo("Aguarde", "O servidor ainda está iniciando. Tente novamente em alguns segundos.")
+            messagebox.showinfo(
+                "Aguarde",
+                "O servidor ainda está iniciando. Tente novamente em alguns segundos.",
+            )
             return
         webbrowser.open(self.url)
 
@@ -715,9 +788,14 @@ class DesktopApp:
         def runner() -> None:
             try:
                 _apply_update(release, self.data_dir)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logging.getLogger("updater").error("apply_failed: %s", traceback.format_exc())
-                self.root.after(0, lambda: self.banner_button.configure(state="normal", text="Atualizar agora"))
+                self.root.after(
+                    0,
+                    lambda: self.banner_button.configure(
+                        state="normal", text="Atualizar agora"
+                    ),
+                )
 
         threading.Thread(target=runner, daemon=True, name="update-apply").start()
 
@@ -729,7 +807,7 @@ def main() -> int:
         DesktopApp(root)
         root.mainloop()
         return 0
-    except Exception:  # noqa: BLE001
+    except Exception:
         traceback.print_exc()
         try:
             crash = _user_data_dir() / "logs" / "crash.log"
@@ -739,7 +817,7 @@ def main() -> int:
                 "Falha ao iniciar",
                 f"O Middleware USCall Monitor falhou ao iniciar.\n\nLog: {crash}",
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         return 1
 

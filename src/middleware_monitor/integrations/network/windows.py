@@ -12,7 +12,7 @@ from middleware_monitor.integrations.network.base import (
     is_valid_ip,
     normalize_mac,
 )
-from middleware_monitor.integrations.network.linux import _FINGERPRINTS  # noqa: PLC2701
+from middleware_monitor.integrations.network.linux import _FINGERPRINTS
 
 # Accept both English ("time=") and pt-BR ("tempo=") output.
 _PING_TIME_RE = re.compile(r"(?:time|tempo)[=<]\s*([\d.]+)\s*ms", re.IGNORECASE)
@@ -55,7 +55,7 @@ class WindowsPingProbe:
         if not m:
             return 1  # responded but couldn't parse — assume sub-ms
         try:
-            return int(round(float(m.group(1))))
+            return round(float(m.group(1)))
         except ValueError:
             return None
 

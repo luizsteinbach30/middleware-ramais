@@ -175,5 +175,5 @@ __all__: list[str] = [
 ]
 
 
-def _placate_unused() -> Any:  # noqa: D401  (helper for ruff)
+def _placate_unused() -> Any:
     return UniqueConstraint
