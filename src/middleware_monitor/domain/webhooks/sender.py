@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import WebhookEvent
+from middleware_monitor.core.time import now_local_str
 from middleware_monitor.domain.config.repository import (
     load_config,
     load_secret,
@@ -38,10 +39,14 @@ def _now() -> datetime:
 
 
 def _wrap_payload(event_type: str, data: Any, *, client_code: str, is_test: bool) -> dict[str, Any]:
+    """Build the webhook envelope. ``data`` is forwarded as-is — for
+    ``devices``/``extensions`` it is a flat array, which is the shape the
+    receiving application accepts. ``timestamp`` is local wall-clock time
+    (``'YYYY-MM-DD HH:MM:SS'``, no ``T``/``Z``)."""
     return {
         "event_type": event_type,
         "client_code": client_code,
-        "timestamp": _now().isoformat(timespec="seconds") + "Z",
+        "timestamp": now_local_str(),
         "data": data,
         "test": is_test,
     }
@@ -99,12 +104,19 @@ class WebhookSender:
         return last
 
     async def dispatch_test(self, event_type: str) -> WebhookEvent | None:
-        sample = {
-            "ramal": "3660",
-            "status": "disponivel",
-            "ip": "10.20.30.40",
-            "note": "manual test from /webhooks UI",
-        }
+        # ``data`` is always an array, mirroring the real devices/extensions
+        # payloads, so the receiver can use the same parser for test events.
+        sample = [
+            {
+                "name": "3660",
+                "ip": "10.20.30.40",
+                "logical_status": "disponivel",
+                "status": "online",
+                "latency": 12,
+                "last_ping": now_local_str(),
+                "mac": "00:11:22:33:44:55",
+            }
+        ]
         return await self.dispatch(event_type, sample, is_test=True)
 
     async def replay(self, event_id: int) -> WebhookEvent | None:
