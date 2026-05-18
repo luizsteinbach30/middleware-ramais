@@ -10,6 +10,7 @@ from sqlalchemy import select
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import Device
+from middleware_monitor.core.time import as_local_str
 from middleware_monitor.domain.config.repository import load_config
 from middleware_monitor.domain.devices.repository import record_ping
 from middleware_monitor.domain.webhooks.sender import WebhookSender
@@ -70,11 +71,13 @@ async def run_monitor_devices() -> None:
                 d.mac = new_mac
             snapshot.append(
                 {
-                    "ramal": d.name,
+                    "name": d.name,
                     "ip": d.ip,
+                    "logical_status": d.logical_status,
+                    "status": d.network_status,
+                    "latency": d.latency_ms,
+                    "last_ping": as_local_str(d.last_ping_at),
                     "mac": d.mac,
-                    "network": d.network_status,
-                    "latency_ms": d.latency_ms,
                 }
             )
             if online:
@@ -86,5 +89,7 @@ async def run_monitor_devices() -> None:
     duration_ms = int((time.perf_counter() - started) * 1000)
     log.info("monitor_ok", online=on, offline=off, total=len(devices), duration_ms=duration_ms)
 
+    # ``data`` is a flat array — the shape the receiving application accepts.
+    # The online/offline counts stay in the log line above, not in the payload.
     sender = WebhookSender(session_factory)
-    await sender.dispatch("devices", {"online": on, "offline": off, "items": snapshot})
+    await sender.dispatch("devices", snapshot)

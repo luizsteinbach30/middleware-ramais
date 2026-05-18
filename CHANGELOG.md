@@ -2,6 +2,31 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.1.5] — 2026-05-18
+
+### Fixed
+- **Formato do payload de webhook alinhado ao que o receptor aceita.**
+  O evento `devices` enviava `data` como objeto
+  (`{online, offline, items}`); a aplicação que recebe esperava um
+  array plano. Agora `data` é o array diretamente, sem o invólucro de
+  contadores — os totais online/offline seguem apenas na linha de log
+  `monitor_ok`.
+- **Campos de cada item renomeados** para o contrato do receptor:
+  `ramal` → `name`, `network` → `status`, `latency_ms` → `latency`,
+  e os novos campos `logical_status` (status lógico do USCall) e
+  `last_ping` (último ping em hora local) passam a ser enviados.
+- **`timestamp` do envelope em hora local** no formato
+  `YYYY-MM-DD HH:MM:SS` (sem `T`, sem `Z`), em vez de ISO-8601 UTC.
+  Os timestamps gravados em `webhook_events` continuam em UTC.
+- O payload de **teste** (`/webhooks/test/...`) também passou a ser um
+  array, com a mesma forma de um dispositivo real, para o receptor
+  poder usar o mesmo parser em eventos de teste.
+
+### Tests
+- Nova suíte `tests/unit/test_webhook_payload.py` fixa o contrato:
+  `data` é sempre array, `timestamp` é hora local simples, e o envio
+  de um array de `devices` é aceito com `202`/`200`.
+
 ## [2.1.4] — 2026-05-12
 
 ### Added
