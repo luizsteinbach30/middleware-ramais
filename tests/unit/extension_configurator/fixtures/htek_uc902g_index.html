@@ -1,0 +1,763 @@
+﻿ <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=EmulateIE8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta http-equiv="pragma" content="no-cache">
+    <meta http-equiv="cache-control" content="no-cache">
+    <meta http-equiv="expires" content="0">
+
+    <title>IP Phone</title>
+    <meta name="keywords" content="" />
+    <meta name="description" content="" />
+    <link href="img/base.css" rel="stylesheet" type="text/css" />
+    <link href="img/style.css" rel="stylesheet" type="text/css"/>
+      <script src="js/language.js" type="text/javascript"></script>
+        <script src="Language_0"  type="text/javascript"></script>
+<script type="text/javascript" src="js/jquery.js"></script>
+      <script type="text/javascript" src="js/js.js"></script>
+      <script type="text/JavaScript">
+    function DeleteExpmFile()
+	{
+		var strDelete=confirm(jscs.sure_to_delete_expansion_module_file)
+		if(strDelete)
+		{
+			document.location.href="d_expm.htm";
+		}
+		else
+		{
+			return;
+		}
+	
+	}
+	</script>
+      <style>
+        i{font-style:normal;color:red;font-size:20px}
+        .important{position:relative;}
+        .important span{position:absolute;top:0px;left:10px;font-size:14px;}
+        .text_middle_right h1 p.overstriking{color:red;}
+      </style>
+  </head>
+  <body>
+    <div class="all_wrapper">
+    <div class="all_text">
+    <!-- header start -->
+    <div class="header">
+    <span class="header_right"></span>
+    <a >
+    <span class="logo"></span>
+    </a>
+    <span class="menu">
+    <p>
+      <a href="logout.htm"><script> document.write(jscs.logout);</script></a>
+    </p>
+    <ul id="ul">
+      <li><a href="index.htm" class="hover"><script> document.write(jscs.statusstatu);</script></a></li>
+	  <li><a href="account_profile1.htm"><script> document.write(jscs.profile);</script></a></li>
+      <li><a href="account.htm"><script> document.write(jscs.account);</script></a></li>
+      <li><a href="network.htm"><script> document.write(jscs.network);</script></a></li>
+      <li><a href="dsskey.htm"><script> document.write(jscs.dsskey);</script></a></li>
+      <li><a href="phone.htm"><script> document.write(jscs.phone);</script></a></li>
+      <li><a href="contacts.htm"><script> document.write(jscs.contacts);</script></a></li>
+      <li class="last"><a href="security.htm"><script> document.write(jscs.security);</script></a></li>
+    </ul>
+    </span>
+    </div>
+    <!-- header end -->
+
+    <!-- text start -->
+    <div class="text">
+    <div class="text_top"></div>
+    <div class="text_middle">
+    <div class="text_all">
+
+    <div class="text_middle_right">
+      <span><b><script> document.write(jscs.note);</script></b></span>
+      <h1><script> document.write(jscs.version_right);</script>:<p><script> document.write(jscs.status_font1);</script></p></h1>
+      <h1><script> document.write(jscs.account_status);</script>:<p><script> document.write(jscs.status_font3);</script></p></h1>
+      <h1><script> document.write(jscs.network);</script>:<p><script> document.write(jscs.status_font2);</script></p></h1>
+      <h1><script> document.write(jscs.system_up_time);</script>:<p><script> document.write(jscs.status_font4);</script></p></h1>
+      <h1><script> document.write(jscs.reboot);</script>:<p><script> document.write(jscs.status_font5);</script></p></h1>
+    </div>
+
+    <div class="text_middle_left">
+      <a href="#"><span><script> document.write(jscs.status);</script></span></a>
+    </div>
+
+	
+	<div class="text_middle_content">
+    <div class="text_content">
+        <div class="expkey_font" style="text-align:center; width:100%; color:#00a1e9; font-size:19px;"></div>
+    </div>
+	</div>
+    
+    <div class="text_middle_content">
+    <div class="text_content">
+    <form >    
+      <table >
+        <tbody>
+          <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+          <tr class="kuang_middle">
+            <td width="10"></td>
+            <td width="230" class="font_form">
+              <img src="img/dian.png" class="img1"align="center"/>
+              <script> document.write(jscs.version_middle);</script>
+              <div class="tooltip"><span><img src="img/wh.png"/><em><script> document.write(jscs.question_mask102);</script></em></span></div>
+            </td>
+            <td width="280"></td>
+            <td width="30"></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+        </tbody>
+        
+       <tbody>
+         <tr class="ws_bg">
+          <td width="40"></td>
+          <td width="230"><script> document.write(jscs.product_type);</script></td>
+          <td width="280">UC902G</td>
+          <td></td>
+        </tr>
+      </tbody>
+      
+        <tbody>
+          <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+          <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.firmware_version);</script></td>
+           <td width="280">BOOT--2.42.6.5(2023-01-11 16:44:00)<br>ROM--2.42.6.5.45R14(2023-01-11 16:44:00)<br>DSP--9.0.3RB-VB(Patch 1.0.16M)</td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr height="20"></tr>
+         </tbody>
+       </table>
+
+		<table >
+        <!--<tbody>
+          <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td width="30"></td></tr>
+          <tr class="kuang_middle">
+            <td width="10"></td>
+            <td width="280" class="font_form">
+              <img src="img/dian.png" class="img1"align="center"/>
+              <script> document.write(jscs.exp_version);</script>
+              <div class="tooltip"><span><img src="img/wh.png"/><em><script> document.write(jscs.exp_version_detail);</script></em></span></div>
+            </td>
+            <td width="250"></td>
+            <td width="30"></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td width="30"></td></tr>
+        </tbody>
+      --><!--<tbody>
+         <tr class="ws_bg">
+          <td width="40"></td>
+          <td width="230"><script> document.write(jscs.exp_module_1);</script></td>
+          <td width="280"></td>
+        </tr>
+        </tbody>
+        
+        <tbody>
+          <tr class="ws_bg">
+            <td width="40"></td>
+            <td width="230"></td>
+            <td width="140">
+              <input id="button21" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rs_expm_0.htm'">
+              <script type="text/javascript">document.getElementById('button21').value=jscs.restart;</script>
+            </td>
+            <td width="140">
+              <input id="button31" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rb_expm_0.htm'">
+              <script type="text/javascript">document.getElementById('button31').value=jscs.reboot;</script>
+            </td>
+          </tr>
+        </tbody>
+      --><!--<tbody>
+          <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td></tr>
+          <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.exp_module_2);</script></td>
+           <td width="280"></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td></tr>
+         </tbody>
+         
+        <tbody>
+          <tr class="ws_bg">
+            <td width="40"></td>
+            <td width="230"></td>
+            <td width="140">
+              <input id="button22" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rs_expm_1.htm'">
+              <script type="text/javascript">document.getElementById('button22').value=jscs.restart;</script>
+            </td>
+            <td width="140">
+              <input id="button32" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rb_expm_1.htm'">
+              <script type="text/javascript">document.getElementById('button32').value=jscs.reboot;</script>
+            </td>
+          </tr>
+        </tbody>
+        
+      --><!--<tbody>
+         <tr class="ws_bg">
+          <td width="40"></td>
+          <td width="230"><script> document.write(jscs.exp_module_3);</script></td>
+          <td width="280"></td>
+        </tr>
+        </tbody>
+        
+        <tbody>
+          <tr class="ws_bg">
+            <td width="40"></td>
+            <td width="230"></td>
+            <td width="140">
+              <input id="button23" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rs_expm_2.htm'">
+              <script type="text/javascript">document.getElementById('button23').value=jscs.restart;</script>
+            </td>
+            <td width="140">
+              <input id="button33" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rb_expm_2.htm'">
+              <script type="text/javascript">document.getElementById('button33').value=jscs.reboot;</script>
+            </td>
+          </tr>
+        </tbody>
+      --><!--<tbody>
+          <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td></tr>
+          <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.exp_module_4);</script></td>
+           <td width="280"></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td></tr>
+         </tbody>
+         
+        <tbody>
+          <tr class="ws_bg">
+            <td width="40"></td>
+            <td width="230"></td>
+            <td width="140">
+              <input id="button24" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rs_expm_3.htm'">
+              <script type="text/javascript">document.getElementById('button24').value=jscs.restart;</script>
+            </td>
+            <td width="140">
+              <input id="button34" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rb_expm_3.htm'">
+              <script type="text/javascript">document.getElementById('button34').value=jscs.reboot;</script>
+            </td>
+          </tr>
+        </tbody>
+      --><!--<tbody>
+         <tr class="ws_bg">
+          <td width="40"></td>
+          <td width="230"><script> document.write(jscs.exp_module_5);</script></td>
+          <td width="280"></td>
+        </tr>
+        </tbody>
+        
+        <tbody>
+          <tr class="ws_bg">
+            <td width="40"></td>
+            <td width="230"></td>
+            <td width="140">
+              <input id="button25" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rs_expm_4.htm'">
+              <script type="text/javascript">document.getElementById('button25').value=jscs.restart;</script>
+            </td>
+            <td width="140">
+              <input id="button35" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rb_expm_4.htm'">
+              <script type="text/javascript">document.getElementById('button35').value=jscs.reboot;</script>
+            </td>
+          </tr>
+        </tbody>
+      --><!--<tbody>
+          <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td></tr>
+          <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.exp_module_6);</script></td>
+           <td width="280"></td>
+         </tr>
+        <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td></tr>
+		</tbody>
+		
+        <tbody>
+          <tr class="ws_bg">
+            <td width="40"></td>
+            <td width="230"></td>
+            <td width="140">
+              <input id="button26" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rs_expm_5.htm'">
+              <script type="text/javascript">document.getElementById('button26').value=jscs.restart;</script>
+            </td>
+            <td width="140">
+              <input id="button36" type="button" name="Reboot" style="width:140px;" value="Restart" onClick="document.location='rb_expm_5.htm'">
+              <script type="text/javascript">document.getElementById('button36').value=jscs.reboot;</script>
+            </td>
+          </tr>
+        </tbody>
+      --><!--<tbody>
+         <tr class="ws_bg">
+         <tr height="5"></tr>
+          <td width="40"></td>
+          <td width="230"><script> document.write(jscs.phone_exp_version);</script></td>
+          <td width="280">BOOT--(N/A)<br>IMG--(N/A)<br>    VOIP--(N/A)<br>    ROM--(N/A)<br></td>
+        </tr>
+         </tbody>
+         
+        <tbody>
+          <tr class="ws_bg">
+            <td width="40"></td>
+            <td width="230"></td>
+            <td width="140">
+              <input id="deleteExpmFile" type="button" name="Reboot" style="width:140px;" value="delete" onClick="DeleteExpmFile()">
+              <script type="text/javascript">document.getElementById('deleteExpmFile').value=jscs.delete_all;</script>
+            </td>
+          </tr>
+         <tr height="20"></tr>
+         </tbody>      
+      --><!--<tbody>
+          <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td width="30"></td></tr>
+          <tr class="kuang_middle">
+            <td width="10"></td>
+            <td width="280" class="font_form">
+              <img src="img/dian.png" class="img1"align="center"/>
+              <script> document.write(jscs.ehs_version);</script>             
+            </td>
+            <td width="250"></td>
+            <td width="30"></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td width="30"></td></tr>
+        </tbody>
+
+        <tbody>
+         <tr class="ws_bg">
+          <td width="40"></td>
+          <td width="230"><script> document.write(jscs.phone_exp_version);</script></td>
+          <td width="280"></td>
+        </tr>
+        </tbody>
+
+        <tbody>
+         <tr class="ws_bg">
+          <td width="40"></td>
+          <td width="230"><script> document.write(jscs.ehs_model_version);</script></td>
+          <td width="280"></td>
+        </tr>
+        <tr height="20"></tr>
+        </tbody>
+      --></table>
+
+       <table >
+        <tbody>
+         <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="10"></td>
+           <td width="230" class="font_form">
+             <img src="img/dian.png" class="img1"align="center"/>
+             <script> document.write(jscs.account_status);</script>
+             <div class="tooltip">
+               <span><img src="img/wh.png"/><em><script> document.write(jscs.question_mask103);</script></em></span>
+             </div>
+           </td>
+           <td width="280"></td>
+           <td width="30"></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+       </tbody>
+       
+        <tbody>
+         <tr class="ws_bg">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account1);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+		 
+		 <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account2);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+
+         <!--<tr class="ws_bg">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account3);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+
+         <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account4);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         
+         <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account5);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         
+         <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account6);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account7);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account8);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account9);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account10);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account11);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account12);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account13);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account14);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account15);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.account16);</script></td>
+           <td width="280"><script> document.write(jscs.account_disabled);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+         --><tr height="20"></tr>
+       </tbody>
+      </table>
+
+       <table >
+        <tbody>
+         <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="10"></td>
+           <td width="230" class="font_form">
+             <img src="img/dian.png" class="img1"align="center"/>
+             <script> document.write(jscs.network_middle);</script>
+             <div class="tooltip">
+               <span>
+               <img src="img/wh.png"/>
+               <em><script> document.write(jscs.question_mask104);</script></em>
+               </span>
+            </div>
+           </td>
+           <td width="280"></td>
+           <td width="30"></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         </tbody>
+         
+        <tbody>
+         <tr class="ws_bg">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.ip_mode);</script></td>
+           <td width="280">IPv4</td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         </tbody>
+		 
+        <tbody>
+         <tr class="kuang_top"> <td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.device_type);</script></td>
+           <td width="280"><script> document.write(jscs.device_type_bridge);</script></td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+        </tbody>
+		
+        <tbody>
+		 <tr class="ws_bg">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.mac_address);</script></td>
+           <td width="280">00:1f:c1:21:cf:23</td>
+           <td></td>
+         </tr>
+         </tbody>
+		 
+		<tbody>
+		 <tr class="ws_bg">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.current_time);</script></td>
+           <td width="280">19-05-2026 11:41:00</td>
+           <td></td>
+         </tr>
+         </tbody>
+
+        <tbody>
+          <tr class="ws_bg">
+            <td width="40"></td>
+            <td width="230"><script> document.write(jscs.VLAN_ON_PAGE);</script></td>
+            <td width="280"></td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+	  
+	  <!-- IPv4 Config -->
+      <table >
+        <tbody>
+         
+		 <tr class="kuang_middle">
+           <td width="10"></td>
+           <td width="230" class="font_form">
+             <img src="img/dian.png" class="img1" align="center"/><script> document.write(jscs.wan);</script>
+           </td>
+           <td width="280" ></td>
+           <td width="30"></td>
+         </tr>
+         
+		
+         <tr class="ws_bg">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.wan_port_type);</script></td>
+           <td width="280">DHCP</td>
+           <td></td>
+         </tr>
+		 
+		 <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.wan_ip_address);</script></td>
+           <td width="280">192.168.0.41</td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="ws_bg">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.subnet_mask);</script></td>
+           <td width="280">255.255.255.0</td>
+           <td></td>
+         </tr>
+		 
+		 <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.gateway);</script></td>
+           <td width="280">192.168.0.1</td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="ws_bg">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.primary_dns);</script></td>
+           <td width="280">8.8.8.8</td>
+           <td></td>
+         </tr>
+		 
+		 <tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="40"></td>
+           <td width="230"><script> document.write(jscs.secondary_dns);</script></td>
+           <td width="280">8.8.4.4</td>
+           <td></td>
+         </tr>
+         <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		 
+		 <tr class="ws_bg">
+           <td width="40"></td>
+           <td width="230"></td>
+           <td width="280"></td>
+         </tr>
+         </tbody>
+      </table>
+	  
+    <!-- IPv6 Config -->
+	<table style="display:none">
+        <tbody>
+		    <tr class="kuang_middle">
+              <td width="10"></td>
+              <td width="230" class="font_form">
+                <img src="img/dian.png" class="img1" align="center"/><script> document.write(jscs.wan_v6);</script>
+              </td>
+              <td width="280" ></td>
+              <td width="30"></td>
+            </tr>
+			
+			<!-- Wan口模式 -->
+			<tr class="ws_bg">
+              <td width="40"></td>
+              <td width="230"><script> document.write(jscs.wan_port_type);</script></td>
+              <td width="280">DHCP</td>
+              <td></td>
+            </tr>
+			<!-- Wan口地址 -->
+			<tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+            <tr class="kuang_middle">
+              <td width="40"></td>
+              <td width="230"><script> document.write(jscs.wan_ip_address);</script></td>
+              <td width="280">::/64</td>
+              <td></td>
+            </tr>
+			<!-- GateWay -->
+			<tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+            <tr class="ws_bg">
+              <td width="40"></td>
+              <td width="230"><script> document.write(jscs.gateway);</script></td>
+              <td width="280">::/64</td>
+              <td></td>
+            </tr>
+			<!-- 首要Dns服务器 -->
+			<tr class="kuang_top"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+			<tr class="kuang_middle">
+              <td width="40"></td>
+              <td width="230"><script> document.write(jscs.primary_dns);</script></td>
+              <td width="280"></td>
+              <td></td>
+            </tr>
+			<tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+		    <!-- 备用Dns服务器 -->
+            <tr class="ws_bg">
+              <td width="40"></td>
+              <td width="230"><script> document.write(jscs.secondary_dns);</script></td>
+              <td width="280"></td>
+              <td></td>
+            </tr>
+         </tbody>
+      </table>
+
+      <table >
+        <tbody>
+         <tr class="kuang_top"><td width="10"></td><td width="250"></td><td width="280"></td><td></td></tr>
+         <tr class="kuang_middle">
+           <td width="10"></td>
+           <td width="266" class="font_form">
+             <img src="img/dian.png" class="img1"align="center"/>
+             <script> document.write(jscs.memory_free);</script>
+           </td>
+           <td width="280">39464 KB</td>
+           <td></td>
+         </tr>
+        <tr class="kuang_footer"><td width="10"></td><td width="230"></td><td width="280"></td><td></td></tr>
+        <tr height="20"></tr>
+       </tbody>
+      </table>
+
+      <table >
+        <tbody>
+          <tr class="ws_bg">
+            <td width="10"></td>
+            <td width="266" class="font_form">
+              <img src="img/dian.png" class="img1"align="center"/>
+              <script> document.write(jscs.system_up_time);</script>
+            </td>
+            <td width="280">7 day(s) 23 hour(s) 32 min(s) 36 sec(s)</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <table>
+        <tbody>
+          <tr height="20"></tr>
+          <tr class="ws_bg">
+            <td width="10"></td>
+            <td width="230" class="font_form">
+              <img src="img/dian.png" class="img1"/> <script> document.write(jscs.reboot);</script>
+            </td>
+            <td width="20"></td>
+            <td width="280">
+              <input id="button2" type="button" name="Reboot" style="width:160px;" value="Reboot" onClick="document.location='rb_phone.htm'">
+              <script type="text/javascript">document.getElementById('button2').value=jscs.reboot;</script>
+            </td>
+          </tr>
+          <tr height="20"></tr>
+        </tbody>
+      </table>
+
+    </form>
+    </div>
+    </div>
+    </div>
+    </div>
+    <div class="text_footer"></div>
+    </div>
+    <!-- text end -->
+
+    </div>
+    <!-- footer start -->
+    <div class="footer">
+      Copyright &copy; 2022 All rights reserved.</div>
+    <!-- footer end -->
+    </div>
+  </body>
+</html>

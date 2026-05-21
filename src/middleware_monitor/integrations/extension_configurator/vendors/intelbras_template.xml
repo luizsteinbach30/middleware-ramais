@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  REGRA INVIOLAVEL: este template NAO pode conter secoes/campos que afetem
+  rede do telefone. O aparelho aplica configs parciais (mantem nao-listados),
+  entao o que NAO enviamos fica preservado: IP fixo continua fixo,
+  mascara/gateway/DNS/PPPoE/IPv6/VLAN/QoS/VPN/802.1X intactos.
+
+  Secoes PROIBIDAS aqui:
+    <net>              endereco IP, mascara, gateway, DNS, DHCP, PPPoE, IPv6
+    <vpn>              VPN (OpenVPN, L2TP)
+    <dot1x>            802.1X
+    <qos>              QoS Layer 2/3
+    <hotspot>          Wi-Fi hotspot
+    <web><WebPort/HttpsWebPort/TelnetPort/RemoteControl>  portas/admin remoto
+
+  Secoes PERMITIDAS (apenas estas aparecem aqui):
+    <sip><line index="1">  numero/senha/servidor SIP da linha
+    <web><account index="1">  usuario/senha da web admin
+    <phone><MenuPassword/KeyLockPassword>  senhas de menu e bloqueio
+    <phone><EnableKeyLock/KeyLockTimeout>  bloqueio universal de menu (default 2 / 30s)
+    <dsskey><dssSoft>  function keys (atalhos / Central)
+
+  Validado por teste tests/unit/test_intelbras.py — nao modificar sem rodar pytest.
+-->
+<sysConf>
+    <sip>
+        <line index="1">
+            <PhoneNumber>{phone_number}</PhoneNumber>
+            <DisplayName>{display_name}</DisplayName>
+            <SipName>{sip_name}</SipName>
+            <RegisterAddr>{register_addr}</RegisterAddr>
+            <RegisterPort>5060</RegisterPort>
+            <RegisterUser>{register_user}</RegisterUser>
+            <RegisterPswd>{register_pwd}</RegisterPswd>
+            <RegisterTTL>90</RegisterTTL>
+            <EnableReg>1</EnableReg>
+        </line>
+    </sip>
+{web_admin_xml}
+    <phone>
+        <MenuPassword>{menu_password}</MenuPassword>
+        <KeyLockPassword>{keylock_password}</KeyLockPassword>
+        <EnableKeyLock>{keylock_enable}</EnableKeyLock>
+        <KeyLockTimeout>{keylock_timeout}</KeyLockTimeout>
+    </phone>
+{dss_keys_xml}
+</sysConf>

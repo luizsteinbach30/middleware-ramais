@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  REGRA INVIOLÁVEL: este template NÃO pode conter P-codes que afetem a
+  rede do telefone. O aparelho aplica configs parciais (mantém valores
+  não-listados), então o que NÃO enviamos fica preservado: IP fixo continua
+  fixo, máscara/gateway/DNS/VLAN/HTTP port/802.1X intactos.
+
+  P-codes PROIBIDOS aqui (lista não-exaustiva):
+    NW_Basic_*        — modo IP (DHCP/Static), endereço, máscara, gateway
+    IPv6_*            — config IPv6
+    NW_Adv_VLAN*, NW_Adv_DataVLAN*, NW_Adv_Vlan_*  — VLAN tagging
+    NW_Adv_HTTPPort, NW_Adv_HTTPSPort              — portas de admin
+    NW_Adv_Mode_802_1X, NW_Adv_Identity, NW_Adv_MD5Password — autenticação 802.1X
+    NW_VPN_*          — VPN
+    NW_LLDP_*, NW_CDP_*  — descoberta de switch
+    NW_Adv_Layer3QoS, NW_Adv_Layer2QoS_*  — QoS
+    NW_Adv_HttpAccess, NW_Adv_ReplyToICMP — segurança de rede
+    NW_Wifi*, NW_BT*  — Wi-Fi/Bluetooth
+
+  P-codes da família NW_ PERMITIDOS aqui (única exceção, NTP):
+    NW_Adv_UrlOrIpAddress  — servidor NTP (P30)
+    NW_Adv_DHCPOverrideNTP — política de NTP via DHCP (P144)
+
+  Validado por teste `test_xml_gerado_so_contem_pcodes_permitidos` em
+  tests/unit/test_aplicacao.py — não modificar este arquivo sem rodar pytest.
+-->
+<hl_provision version="1">
+    <config version="1">
+        <!--Profile1/Basic-->
+        <P47 para="Profile1_Sipserver">{sip_server}</P47>
+        <P130 para="Profile1_SipTransport">{sip_transport}</P130>
+        <P31 para="Profile1_SipRegistration">1</P31>
+        <P32 para="Profile1_RegisterExpiration">{register_expiration}</P32>
+        <!--Profile1/Codec-->
+        <P57 para="Profile1_Choice1">{codec_1}</P57>
+        <P58 para="Profile1_Choice2">{codec_2}</P58>
+        <P59 para="Profile1_Choice3">{codec_3}</P59>
+        <P60 para="Profile1_Choice4">{codec_4}</P60>
+        <P61 para="Profile1_Choice5">{codec_5}</P61>
+        <P62 para="Profile1_Choice6">{codec_6}</P62>
+        <!--Account1/Basic-->
+        <P271 para="Account1_Active">{account_active}</P271>
+        <P24082 para="Account1_Profile">0</P24082>
+        <P20000 para="Account1_Label">{label}</P20000>
+        <P25110 para="Account1_Extension">{extension}</P25110>
+        <P35 para="Account1_SipUserId">{user_id}</P35>
+        <P36 para="Account1_AuthenticateID">{auth_id}</P36>
+        <P34 para="Account1_AuthenticatePassword">{password}</P34>
+        <P3 para="Account1_DispalyName">{display_name}</P3>
+        <!--Preferences-->
+        <P64 para="Preference_TimeZone">{timezone}</P64>
+        <P2525 para="Preference_WebLanguage">{web_language}</P2525>
+        <P8621 para="Preference_LcdLanguage">{lcd_language}</P8621>
+        <P30 para="NW_Adv_UrlOrIpAddress">{ntp_server}</P30>
+        <!--Web Admin (so emitido quando nova senha foi configurada no ambiente)-->
+{web_admin_xml}
+        <!--FunctionKeys (renderizado dinamicamente)-->
+{function_keys_xml}
+    </config>
+</hl_provision>
