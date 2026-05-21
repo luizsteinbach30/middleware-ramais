@@ -51,8 +51,13 @@ class VendorAdapter(ABC):
         """Gera o arquivo de configuração a partir do modelo padrão + dados da linha do ambiente."""
 
     @abstractmethod
-    async def send_config(self, ip: str, creds: VendorCredentials, cfg: bytes) -> None:
-        """Envia o arquivo de configuração ao telefone. Pode reiniciar o aparelho."""
+    async def send_config(
+        self, ip: str, creds: VendorCredentials, cfg: bytes, *, fmt: str = "xml",
+    ) -> None:
+        """Envia o arquivo de configuracao ao telefone. Pode reiniciar o aparelho.
+
+        `fmt`: formato do payload (`xml` padrao). HTEK aceita tambem `bin`.
+        """
 
     async def backup_config(self, ip: str, creds: VendorCredentials) -> bytes | None:
         """Lê a configuração atual antes de aplicar a nova. Default: não suportado."""
