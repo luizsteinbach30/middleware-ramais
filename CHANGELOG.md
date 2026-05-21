@@ -2,6 +2,48 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.2.0] — 2026-05-21
+
+### Added
+- **Configurador de Ramais** — módulo novo que migra o projeto standalone
+  `autocfg-ramais` para dentro do middleware. Permite cadastrar ambientes
+  (cada um com um modelo de telefone), preencher uma planilha de ramais e
+  aplicar a configuração em massa nos aparelhos via web GUI deles.
+  - Adapters validados em hardware lab: **HTEK UC902G** (HanLong, Basic/Digest
+    auto) e **Intelbras V-series** (V3001/V3101/V3501/V5501, auth
+    `md5(user:pwd:nonce)`, HTTP/1.0 forçado para contornar bug de chunked).
+  - **Whitelist anti-rede inviolável**: nenhum adapter pode emitir tags ou
+    P-codes de IP/máscara/gateway/DNS/VLAN/VPN/QoS/Wi-Fi. Configs parciais
+    preservam tudo que não é enviado.
+  - Defaults universais Intelbras: `EnableKeyLock=2`, `KeyLockTimeout=30s`
+    (bloqueio do menu habilitado por padrão).
+  - DSS Memory Key com subtype Speed Dial: `<Value>{numero}@{account}/f</Value>`
+    — descoberto via engenharia reversa de backup XML real.
+  - 3 tabelas novas: `extension_environments`, `extension_lines`,
+    `extension_apply_runs` (migration alembic `0002_extension_configurator`,
+    reversível).
+  - Sidebar ganhou seção **Configurador de Ramais** com 2 entries:
+    **Ambientes** + **Relatórios**.
+  - Planilha estilo Excel: Jspreadsheet CE 4.15 (via CDN — vendoring offline
+    em release futura).
+  - Pipeline minimalista (ICMP ping opcional → send) com tracking ao vivo
+    do progresso (polling 1.5s) e rolling delay (default 1s) entre disparos
+    para evitar pico de rede.
+  - Endpoints sob `/api/extension-configurator/` com auth obrigatória, CSRF
+    e `require_admin` em mutações.
+  - 47 testes novos (repository, service, vendors HTEK/Intelbras, API,
+    smoke web).
+- **ADR-0002** documentando a decisão arquitetural do Configurador de Ramais.
+
+### Changed
+- `VendorAdapter.send_config` ganha kwarg `fmt: str = "xml"` (HTEK também
+  aceita `bin`).
+
+### Notes
+- Após o upgrade, rodar `alembic upgrade head` (cria as 3 tabelas novas).
+- Projeto `autocfg-ramais` (POC standalone) foi marcado como arquivado;
+  o código vivo do módulo agora é parte deste repositório.
+
 ## [2.1.5] — 2026-05-18
 
 ### Fixed

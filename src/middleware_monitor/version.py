@@ -5,5 +5,5 @@ The release pipeline reads this file and validates it matches the git tag
 with the latest GitHub release in the configured channel.
 """
 
-__version__ = "2.1.5"
+__version__ = "2.2.0"
 __channel__ = "stable"

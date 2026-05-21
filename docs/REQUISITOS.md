@@ -551,3 +551,69 @@ C:\ProgramData\MiddlewareMonitor\
 - **Webhook:** chamada HTTP POST que esta aplicação faz para um sistema externo.
 - **Canal de update:** `stable` (releases publicados) ou `beta` (pré-releases).
 - **APP_DATA_DIR:** diretório de dados persistentes (DB, backups, tmp).
+- **Ambiente (Configurador):** agrupamento de ramais que compartilham um modelo
+  de telefone e uma `config_padrao` (SIP server, credenciais, function keys etc).
+- **Adapter (Configurador):** implementação por vendor (HTEK, Intelbras) que sabe
+  reconhecer o aparelho, gerar o XML correto e fazer o upload pela web GUI.
+- **Run / ExtensionApplyRun:** uma execução de aplicação em massa, registra
+  `started_at`, `finished_at`, `total`, `ok`, `falha`, `operador`, `forcado`.
+
+---
+
+## 13. Módulo Configurador de Ramais (v2.2.0)
+
+### Objetivo
+Permitir provisionar telefones SIP em massa via web GUI dos próprios aparelhos,
+agrupando-os em ambientes com configuração padrão compartilhada.
+
+### Requisitos funcionais (RF-EC)
+
+- **RF-EC-01** Cadastro de ambientes (CRUD) com nome único (slug) e modelo de
+  telefone (lista `PHONE_MODELS`).
+- **RF-EC-02** Para cada ambiente: planilha editável de linhas (ip, ramal, user
+  auth, senha SIP, servidor SIP, número abreviado, nome visível).
+- **RF-EC-03** `config_padrao` por ambiente armazenada como JSON em
+  `extension_environments.config_padrao` e mesclada com defaults na leitura.
+- **RF-EC-04** Pipeline minimalista de aplicação: ICMP ping opcional → send.
+  Sem fingerprint/discover automático (modelo cadastrado é fonte da verdade).
+- **RF-EC-05** Rolling delay (default 1s) entre disparos para evitar pico de
+  rede; tracking ao vivo via polling do estado in-memory.
+- **RF-EC-06** Por linha persiste `ultimo_status` (ok/erro), `ultimo_erro`,
+  `ultimo_hash_aplicado`, `ultima_aplicacao`, `ultimo_modelo`, `ultimo_mac`.
+- **RF-EC-07** Cada execução cria um `ExtensionApplyRun` com totais e operador.
+- **RF-EC-08** Estados por linha: `pending` | `applied` | `outdated` | `error`,
+  derivados do hash atual vs. último aplicado com OK.
+
+### Requisitos não-funcionais (RNF-EC)
+
+- **RNF-EC-01 — Whitelist anti-rede inviolável.** Adapters jamais emitem tags
+  ou P-codes de rede (IP, máscara, gateway, DNS, DHCP, VLAN, VPN, 802.1X, QoS,
+  Wi-Fi). Configs parciais preservam tudo que não é enviado. Validado por teste
+  explícito em `tests/unit/extension_configurator/test_*.py`.
+- **RNF-EC-02 — Auth obrigatória.** Endpoints GET exigem sessão; mutações
+  exigem CSRF + `require_admin`.
+- **RNF-EC-03 — Idempotência.** `compute_line_hash(env, line)` é determinístico;
+  hash igual ao último aplicado com OK → linha não é reenviada (a menos que
+  `force=True` ou seleção parcial pelo usuário).
+- **RNF-EC-04 — Sessões DB curtas.** I/O com aparelho (segundos a dezenas)
+  nunca segura transação aberta.
+- **RNF-EC-05 — 1 worker Uvicorn.** Estado in-memory (`RunState`/`RowState`)
+  é seguro porque não há concorrência entre workers.
+
+### Adapters suportados (v2.2.0)
+
+| Vendor | Modelo | Auth | Status |
+|---|---|---|---|
+| HTEK (HanLong) | UC902G e família UC9xx | Basic/Digest auto | Validado em lab |
+| Intelbras | V3001, V3101, V3501, V5501 | `md5(user:pwd:nonce)` + HTTP/1.0 | Validado em lab |
+
+### Tabelas novas
+
+- `extension_environments(id PK slug, nome, modelo_telefone, config_padrao JSON, created_at, updated_at)`
+- `extension_lines(id PK uuid, environment_id FK, ip, numero_ramal, user_auth, senha_sip, servidor_sip, numero_abreviado, nome_visivel, ultimo_*)`
+- `extension_apply_runs(id PK, environment_id FK, started_at, finished_at, total, ok, falha, forcado, operador)`
+
+Migration: `0002_extension_configurator` — reversível (up/down testados).
+
+### ADR
+Ver [ADR-0002](ADRs/0002-extension-configurator.md).
