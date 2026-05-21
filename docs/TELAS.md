@@ -517,3 +517,63 @@ Cada bloco repete:
 - [ ] Todos os filtros relevantes refletem na URL.
 - [ ] Páginas degradadas (sem dados, falha de backend) têm estado vazio claro.
 - [ ] Tema escuro consistente em todas as telas; sem flashes de tema claro.
+
+---
+
+## 14. Configurador de Ramais (v2.2.0)
+
+Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
+**Ambientes** e **Relatórios**. Highlight ativo cobre as páginas filhas.
+
+### 14.1 Ambientes (`/extension-configurator/environments`)
+- Grid responsivo de cards (1/2/3 colunas conforme breakpoint).
+- Cada card: nome, modelo do telefone, contagem de ramais, timestamp atualizado.
+- Botão "+ Novo ambiente" abre modal com inputs (Nome + dropdown de modelos).
+- Empty state quando sem ambientes.
+
+### 14.2 Detalhe do ambiente (`/extension-configurator/environments/{id}`)
+- Header sticky com link voltar, nome, subtítulo "modelo · N ramais", links
+  "Config padrão" + botões "Salvar planilha" e "Aplicar".
+- Planilha Jspreadsheet CE com colunas: IP, Ramal, Nome, User auth, Senha SIP,
+  Servidor SIP, Nº abreviado, Status (readonly), Último erro (readonly). Coluna
+  `id` oculta para upsert.
+- Painel "Execução em andamento" aparece após "Aplicar":
+  - Summary: contagem por stage (pending/ping/send/done/error).
+  - Lista de linhas com IP, ramal, stage, mensagem.
+  - Botão "Cancelar" disponível enquanto não finalizou.
+  - Polling a cada 1.5s; ao finalizar, recarrega a planilha pra mostrar
+    status atualizado.
+
+### 14.3 Config padrão (`/extension-configurator/environments/{id}/config`)
+- Form em fieldsets:
+  - **SIP**: servidor padrão, register expiration.
+  - **Credencial atual do aparelho**: web_user/web_password (usados pra autenticar
+    no upload — não vão no XML).
+  - **Nova credencial** (opcional): nova_web_user/nova_web_password — só vão no
+    XML se preenchidos; vazios = não muda a senha do aparelho.
+  - **Validação**: checkbox `validar_conectividade` (ICMP ping antes de send).
+  - **Avançadas (Intelbras)**: menu_password, keylock_password, keylock_enable
+    (0/1/2), keylock_timeout (s).
+- Botão "Salvar" no header → PUT em `/api/extension-configurator/environments/{id}`.
+
+### 14.4 Relatórios (`/extension-configurator/runs`)
+- Tabela do histórico de execuções: Ambiente, Início, Fim, Total, OK, Falha,
+  Operador, Forçado.
+- Empty state quando sem execuções.
+
+### 14.5 Endpoints API consumidos
+
+| Recurso | Método | Path |
+|---|---|---|
+| Phone models | GET | `/api/extension-configurator/phone-models` |
+| Environments | GET | `/api/extension-configurator/environments` |
+| Environments | POST | `/api/extension-configurator/environments` |
+| Environment detail | GET | `/api/extension-configurator/environments/{id}` |
+| Environment update | PUT | `/api/extension-configurator/environments/{id}` |
+| Environment delete | DELETE | `/api/extension-configurator/environments/{id}` |
+| Lines bulk save | PUT | `/api/extension-configurator/environments/{id}/lines` |
+| Apply | POST | `/api/extension-configurator/environments/{id}/apply` |
+| Runs (por env) | GET | `/api/extension-configurator/environments/{id}/runs` |
+| Runs (geral) | GET | `/api/extension-configurator/runs` |
+| Run live | GET | `/api/extension-configurator/runs/{run_id}/live` |
+| Run cancel | POST | `/api/extension-configurator/runs/{run_id}/cancel` |
