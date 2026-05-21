@@ -135,6 +135,39 @@ def test_phone_models_exposto(client, db) -> None:
     assert any("Intelbras" in m for m in models)
 
 
+def test_web_pages_redirecionam_para_login_sem_auth(client) -> None:
+    """Smoke das 4 paginas HTML novas — sem login devem ir para /login."""
+    paths = [
+        "/extension-configurator/environments",
+        "/extension-configurator/runs",
+        "/extension-configurator/environments/lab",
+        "/extension-configurator/environments/lab/config",
+    ]
+    for p in paths:
+        r = client.get(p, follow_redirects=False)
+        assert r.status_code == 302, f"{p} -> {r.status_code}"
+        assert r.headers["location"] == "/login"
+
+
+def test_web_pages_renderizam_com_auth(client, db) -> None:
+    csrf = _authed(client, db)
+    # cria ambiente para a pagina de detail
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Lab", "modelo_telefone": "HTEK UC902G"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    for path in (
+        "/extension-configurator/environments",
+        "/extension-configurator/runs",
+        "/extension-configurator/environments/lab",
+        "/extension-configurator/environments/lab/config",
+    ):
+        r = client.get(path)
+        assert r.status_code == 200, f"{path} -> {r.status_code}"
+        assert "html" in r.headers.get("content-type", "")
+
+
 def test_apply_environment_sem_linhas_devolve_total_zero(client, db) -> None:
     csrf = _authed(client, db)
     client.post(

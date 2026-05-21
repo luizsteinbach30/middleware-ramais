@@ -149,3 +149,49 @@ _page("logs.html", "/logs")
 _page("config.html", "/config")
 _page("system_updates.html", "/system/updates")
 _page("account.html", "/account")
+
+
+# --- Configurador de Ramais (extension configurator) ---
+
+_page("extension_configurator/list.html", "/extension-configurator/environments")
+_page("extension_configurator/runs.html", "/extension-configurator/runs")
+
+
+@router.get(
+    "/extension-configurator/environments/{ambiente_id}",
+    response_class=HTMLResponse,
+)
+def ec_environment_detail_page(
+    request: Request,
+    ambiente_id: str,
+    cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+    db: DBSession = Depends(get_session),
+) -> HTMLResponse:
+    user = _maybe_user(request, db, cookie)
+    if user is None:
+        return RedirectResponse("/login", status_code=302)  # type: ignore[return-value]
+    return _render(
+        get_templates(), request, "extension_configurator/detail.html",
+        user=user,
+        extra={"page": "ec_environment_detail", "ambiente_id": ambiente_id},
+    )
+
+
+@router.get(
+    "/extension-configurator/environments/{ambiente_id}/config",
+    response_class=HTMLResponse,
+)
+def ec_environment_config_page(
+    request: Request,
+    ambiente_id: str,
+    cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+    db: DBSession = Depends(get_session),
+) -> HTMLResponse:
+    user = _maybe_user(request, db, cookie)
+    if user is None:
+        return RedirectResponse("/login", status_code=302)  # type: ignore[return-value]
+    return _render(
+        get_templates(), request, "extension_configurator/config.html",
+        user=user,
+        extra={"page": "ec_environment_config", "ambiente_id": ambiente_id},
+    )

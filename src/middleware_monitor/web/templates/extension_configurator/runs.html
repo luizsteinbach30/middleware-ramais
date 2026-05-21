@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Relatórios — Configurador de Ramais{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center gap-4">
+    <div class="flex-1 min-w-0">
+      <h1 class="text-lg font-semibold text-gray-100">Relatórios</h1>
+      <p class="text-xs text-gray-400 mt-0.5">Histórico de aplicações de configuração em ambientes.</p>
+    </div>
+  </div>
+</div>
+<div class="px-6 py-6">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider">
+        <tr>
+          <th class="text-left px-4 py-3 font-semibold">Ambiente</th>
+          <th class="text-left px-4 py-3 font-semibold">Início</th>
+          <th class="text-left px-4 py-3 font-semibold">Fim</th>
+          <th class="text-right px-4 py-3 font-semibold">Total</th>
+          <th class="text-right px-4 py-3 font-semibold">OK</th>
+          <th class="text-right px-4 py-3 font-semibold">Falha</th>
+          <th class="text-left px-4 py-3 font-semibold">Operador</th>
+          <th class="text-left px-4 py-3 font-semibold">Forçado</th>
+        </tr>
+      </thead>
+      <tbody id="ec-runs-tbody" class="divide-y divide-gray-800"></tbody>
+    </table>
+    <p id="ec-runs-empty" class="hidden p-4 text-xs text-gray-500">Nenhuma execução ainda.</p>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/extension_configurator_runs.js"></script>
+{% endblock %}

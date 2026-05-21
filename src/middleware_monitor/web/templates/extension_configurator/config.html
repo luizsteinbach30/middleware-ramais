@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Config — Ambiente{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center gap-4">
+    <a id="ec-back" href="#" class="text-xs text-gray-400 hover:text-gray-200">←</a>
+    <div class="flex-1 min-w-0">
+      <h1 id="ec-title" class="text-lg font-semibold text-gray-100">Config padrão</h1>
+      <p class="text-xs text-gray-400 mt-0.5">Valores compartilhados por todos os telefones do ambiente.</p>
+    </div>
+    <button id="ec-save" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-sm">Salvar</button>
+  </div>
+</div>
+
+<div class="px-6 py-6 space-y-5 max-w-4xl">
+  <p id="ec-toast" class="hidden text-xs"></p>
+
+  <fieldset class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <legend class="text-sm font-semibold text-gray-100 px-1">SIP</legend>
+    <div class="grid md:grid-cols-2 gap-3 text-xs">
+      <label class="flex flex-col gap-1"><span class="text-gray-300">Servidor SIP padrão</span>
+        <input id="cfg-sip_server" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
+      <label class="flex flex-col gap-1"><span class="text-gray-300">Register expiration (min)</span>
+        <input id="cfg-register_expiration" type="number" min="1" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/></label>
+    </div>
+  </fieldset>
+
+  <fieldset class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <legend class="text-sm font-semibold text-gray-100 px-1">Credencial atual do aparelho <span class="text-gray-500 text-xs font-normal">(usada para login)</span></legend>
+    <div class="grid md:grid-cols-2 gap-3 text-xs">
+      <label class="flex flex-col gap-1"><span class="text-gray-300">Usuário atual</span>
+        <input id="cfg-web_user" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
+      <label class="flex flex-col gap-1"><span class="text-gray-300">Senha atual</span>
+        <input id="cfg-web_password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
+    </div>
+  </fieldset>
+
+  <fieldset class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <legend class="text-sm font-semibold text-gray-100 px-1">Nova credencial <span class="text-gray-500 text-xs font-normal">(opcional — vai no XML)</span></legend>
+    <div class="grid md:grid-cols-2 gap-3 text-xs">
+      <label class="flex flex-col gap-1"><span class="text-gray-300">Novo usuário</span>
+        <input id="cfg-nova_web_user" placeholder="(vazio = não muda)"
+               class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono placeholder-gray-600"/></label>
+      <label class="flex flex-col gap-1"><span class="text-gray-300">Nova senha</span>
+        <input id="cfg-nova_web_password" placeholder="(vazio = não muda)"
+               class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono placeholder-gray-600"/></label>
+    </div>
+  </fieldset>
+
+  <fieldset class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <legend class="text-sm font-semibold text-gray-100 px-1">Validação</legend>
+    <label class="flex items-center gap-3 text-xs cursor-pointer">
+      <input id="cfg-validar_conectividade" type="checkbox" class="accent-blue-500 w-4 h-4"/>
+      <span class="text-gray-200">Validar conectividade (ping) antes de enviar config</span>
+    </label>
+  </fieldset>
+
+  <fieldset class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <legend class="text-sm font-semibold text-gray-100 px-1">Avançadas <span class="text-gray-500 text-xs font-normal">(Intelbras)</span></legend>
+    <div class="grid md:grid-cols-2 gap-3 text-xs">
+      <label class="flex flex-col gap-1"><span class="text-gray-300">Senha do menu</span>
+        <input id="cfg-menu_password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
+      <label class="flex flex-col gap-1"><span class="text-gray-300">Senha de bloqueio do teclado</span>
+        <input id="cfg-keylock_password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
+      <label class="flex flex-col gap-1"><span class="text-gray-300">Bloqueio do menu (EnableKeyLock)</span>
+        <select id="cfg-keylock_enable" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100">
+          <option value="0">Desativado (0)</option><option value="1">Manual (1)</option><option value="2">Ativado (2)</option>
+        </select></label>
+      <label class="flex flex-col gap-1"><span class="text-gray-300">Timeout (s)</span>
+        <input id="cfg-keylock_timeout" type="number" min="0" max="3600"
+               class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
+    </div>
+  </fieldset>
+</div>
+
+<script>window.EC_ENV_ID = {{ ambiente_id | tojson }};</script>
+<script type="module" src="/static/js/pages/extension_configurator_config.js"></script>
+{% endblock %}
