@@ -161,11 +161,89 @@ class LoginAttempt(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
 
 
+class ExtensionEnvironment(Base):
+    """Ambiente do Configurador de Ramais.
+
+    `config_padrao` é JSON serializado (Text) com defaults compartilhados pelas
+    linhas do ambiente: sip_server, web_user/password, ntp, timezone, keylock_*,
+    validar_conectividade, function_keys, etc.
+    """
+
+    __tablename__ = "extension_environments"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    nome: Mapped[str] = mapped_column(String(128), nullable=False)
+    modelo_telefone: Mapped[str] = mapped_column(String(64), nullable=False)
+    config_padrao: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    lines: Mapped[list[ExtensionLine]] = relationship(
+        back_populates="environment", cascade="all, delete-orphan",
+    )
+    runs: Mapped[list[ExtensionApplyRun]] = relationship(
+        back_populates="environment", cascade="all, delete-orphan",
+    )
+
+
+class ExtensionLine(Base):
+    """Linha (telefone) dentro de um Ambiente."""
+
+    __tablename__ = "extension_lines"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # uuid hex
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("extension_environments.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    ip: Mapped[str] = mapped_column(String(45), nullable=False, default="")
+    numero_ramal: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    user_auth: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    senha_sip: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    servidor_sip: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    numero_abreviado: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    nome_visivel: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    ultimo_hash_aplicado: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ultimo_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    ultima_aplicacao: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ultimo_erro: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ultimo_modelo: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ultimo_mac: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    environment: Mapped[ExtensionEnvironment] = relationship(back_populates="lines")
+
+
+class ExtensionApplyRun(Base):
+    """Histórico de execuções de aplicação em massa (Relatórios)."""
+
+    __tablename__ = "extension_apply_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    environment_id: Mapped[str] = mapped_column(
+        ForeignKey("extension_environments.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ok: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    falha: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    forcado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    operador: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    environment: Mapped[ExtensionEnvironment] = relationship(back_populates="runs")
+
+
 __all__: list[str] = [
     "AppConfig",
     "Collection",
     "Device",
     "DevicePing",
+    "ExtensionApplyRun",
+    "ExtensionEnvironment",
+    "ExtensionLine",
     "LoginAttempt",
     "Session",
     "SystemLog",
