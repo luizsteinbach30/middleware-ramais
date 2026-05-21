@@ -29,6 +29,9 @@ from middleware_monitor.api import (
     devices as api_devices,
 )
 from middleware_monitor.api import (
+    extension_configurator as api_extension_configurator,
+)
+from middleware_monitor.api import (
     logs as api_logs,
 )
 from middleware_monitor.api import (
@@ -110,6 +113,7 @@ def create_app() -> FastAPI:
         api_logs.router,
         api_dashboard.router,
         api_system.router,
+        api_extension_configurator.router,
     ):
         app.include_router(r)
 
