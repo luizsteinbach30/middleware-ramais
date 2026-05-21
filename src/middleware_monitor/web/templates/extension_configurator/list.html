@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Ambientes — Configurador de Ramais{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center gap-4">
+    <div class="flex-1 min-w-0">
+      <h1 class="text-lg font-semibold text-gray-100">Ambientes</h1>
+      <p id="ec-count" class="text-xs text-gray-400 mt-0.5">—</p>
+    </div>
+    <button id="ec-new" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-sm">+ Novo ambiente</button>
+  </div>
+</div>
+<div class="px-6 py-6 space-y-4">
+  <div id="ec-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+  <p id="ec-empty" class="hidden text-sm text-gray-500">Nenhum ambiente cadastrado. Clique em "Novo ambiente" para começar.</p>
+</div>
+
+<!-- Modal Novo -->
+<div id="ec-modal" class="hidden fixed inset-0 bg-black/60 z-30 flex items-center justify-center p-4">
+  <div class="bg-gray-900 ring-1 ring-gray-700 rounded-xl p-5 w-full max-w-md space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Novo ambiente</h3>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Nome</span>
+      <input id="ec-new-nome" placeholder="Ex: Unidade 03"
+             class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/>
+    </label>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Modelo do telefone</span>
+      <select id="ec-new-modelo"
+              class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"></select>
+    </label>
+    <div class="flex justify-end gap-2 pt-2">
+      <button id="ec-modal-cancel" class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">Cancelar</button>
+      <button id="ec-modal-create" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs">Criar</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/static/js/pages/extension_configurator_list.js"></script>
+{% endblock %}

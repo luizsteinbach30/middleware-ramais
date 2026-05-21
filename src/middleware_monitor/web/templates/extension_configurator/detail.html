@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ ambiente_id }} — Ambiente{% endblock %}
+{% block body %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.15.0/dist/jspreadsheet.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsuites@4.17.7/dist/jsuites.css">
+<style>
+  .jexcel { background: #1f2937 !important; color: #f3f4f6 !important; }
+  .jexcel thead td { background: #111827 !important; color: #9ca3af !important; border-color: #374151 !important; }
+  .jexcel tbody td { border-color: #374151 !important; background: #1f2937 !important; }
+  .jexcel tbody td.highlight { background: #2563eb33 !important; }
+  .jexcel_corner { background: #111827 !important; border-color: #374151 !important; }
+</style>
+
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center gap-4">
+    <a href="/extension-configurator/environments" class="text-xs text-gray-400 hover:text-gray-200">← Ambientes</a>
+    <div class="flex-1 min-w-0">
+      <h1 id="ec-title" class="text-lg font-semibold text-gray-100">—</h1>
+      <p id="ec-subtitle" class="text-xs text-gray-400 mt-0.5">—</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a id="ec-config-link" href="#" class="text-xs text-gray-400 hover:text-gray-200">Config padrão</a>
+      <button id="ec-save" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">Salvar planilha</button>
+      <button id="ec-apply" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs">Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<div class="px-6 py-6 space-y-4">
+  <div id="ec-toast" class="hidden text-xs"></div>
+  <div id="ec-spreadsheet" class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden"></div>
+
+  <div id="ec-run-panel" class="hidden bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4 space-y-2">
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-gray-100">Execução em andamento</h3>
+      <button id="ec-run-cancel" class="text-xs text-red-400 hover:text-red-300">Cancelar</button>
+    </div>
+    <p id="ec-run-summary" class="text-xs text-gray-400">—</p>
+    <div id="ec-run-rows" class="max-h-64 overflow-auto text-xs"></div>
+  </div>
+</div>
+
+<script>window.EC_ENV_ID = {{ ambiente_id | tojson }};</script>
+<script src="https://cdn.jsdelivr.net/npm/jsuites@4.17.7/dist/jsuites.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.15.0/dist/jspreadsheet.js"></script>
+<script type="module" src="/static/js/pages/extension_configurator_detail.js"></script>
+{% endblock %}

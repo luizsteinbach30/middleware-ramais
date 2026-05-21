@@ -24,6 +24,19 @@
       <span data-icon="{{ icon }}"></span>{{ label }}
     </a>
     {% endfor %}
+
+    <div class="pt-4 mt-2 border-t border-gray-800/80">
+      <div class="px-3 pb-1.5 text-[10px] tracking-wider uppercase text-gray-500">Configurador de Ramais</div>
+      {% set CR_NAV = [
+        ('ec_environments', 'Ambientes',  '/extension-configurator/environments', 'phone'),
+        ('ec_runs',         'Relatórios', '/extension-configurator/runs',         'list'),
+      ] %}
+      {% for id, label, href, icon in CR_NAV %}
+      <a href="{{ href }}" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if page == id or (page == 'ec_environment_detail' and id == 'ec_environments') or (page == 'ec_environment_config' and id == 'ec_environments') or (page == 'ec_run_detail' and id == 'ec_runs') %}bg-blue-500/10 text-blue-300 ring-1 ring-blue-500/30{% else %}text-gray-400 hover:text-gray-100 hover:bg-gray-800/60{% endif %}">
+        <span data-icon="{{ icon }}"></span>{{ label }}
+      </a>
+      {% endfor %}
+    </div>
   </nav>
   <div class="px-3 py-3 border-t border-gray-800 space-y-1">
     <a href="/account" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if page == 'account' %}bg-blue-500/10 text-blue-300{% else %}text-gray-400 hover:text-gray-100 hover:bg-gray-800/60{% endif %}">
