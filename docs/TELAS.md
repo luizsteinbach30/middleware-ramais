@@ -532,36 +532,87 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
 - Empty state quando sem ambientes.
 
 ### 14.2 Detalhe do ambiente (`/extension-configurator/environments/{id}`)
-- Header sticky com link voltar, nome, subtítulo "modelo · N ramais", links
-  "Config padrão" + botões "Salvar planilha" e "Aplicar".
-- Planilha Jspreadsheet CE com colunas: IP, Ramal, Nome, User auth, Senha SIP,
-  Servidor SIP, Nº abreviado, Status (readonly), Último erro (readonly). Coluna
-  `id` oculta para upsert.
+- Header sticky com botão **voltar pill** (chevron + "Ambientes"), nome do
+  ambiente (truncado), subtítulo "modelo · N ramais", link **⚙ Config padrão**
+  e botões **Salvar planilha**, **Aplicar selecionados (N)** (azul, com shadow,
+  desabilitado quando N=0) e **Aplicar tudo**.
+- Pills de status no topo: aplicado / desatualizado / pendente / erro,
+  com contadores em `tabular-nums`.
+- Planilha Jspreadsheet CE (`dist/index.min.js`) em wrapper com card/sombra.
+  Colunas (esquerda → direita):
+  - `id` (hidden), `✓` (checkbox de seleção), `IP`, `Ramal`, `Nome visível`,
+    `User auth`, `Senha SIP`, `Servidor SIP`, `Nº abreviado`, **`Status`**
+    (readonly), **`Modelo`** (readonly), **`MAC`** (readonly),
+    **`Última aplic.`** (readonly), **`Erro`** (readonly).
+- Header sticky uppercase, hover de linha, foco azul no editor, readonly
+  com tom diferenciado.
+- **Smart autofill numérico** (v2.2.1): arrastar o canto da seleção
+  detecta prefixo + sufixo numérico (`HOST01` → `HOST02`,
+  `192.168.0.10` → `192.168.0.11`) — complementa o autofill nativo do
+  Jspreadsheet que só funciona com número puro.
+- **Aviso de senha SIP HTEK** antes de aplicar: alerta quando a senha
+  tem >25 chars ou contém chars fora do safe charset do firmware.
+- Barra de botões secundária (grupo segmentado pill):
+  - **marcar todos** (azul) · **desmarcar** (cinza) · **só erros/pendentes**
+    (amarelo) com ícones SVG.
+  - Toggle **Forçar reaplicação** (track/thumb estilo iOS) que destaca em
+    azul quando ativo.
 - Painel "Execução em andamento" aparece após "Aplicar":
   - Summary: contagem por stage (pending/ping/send/done/error).
   - Lista de linhas com IP, ramal, stage, mensagem.
   - Botão "Cancelar" disponível enquanto não finalizou.
-  - Polling a cada 1.5s; ao finalizar, recarrega a planilha pra mostrar
-    status atualizado.
+  - Polling a cada 1.5s. Stages intermediários (ping/send) mostram
+    *"aplicando…"* na coluna Status (em vez de "desatualizado", que
+    causava flicker incorreto).
+  - Ao finalizar, recarrega a planilha pra mostrar status persistido.
 
 ### 14.3 Config padrão (`/extension-configurator/environments/{id}/config`)
-- Form em fieldsets:
-  - **SIP**: servidor padrão, register expiration.
-  - **Credencial atual do aparelho**: web_user/web_password (usados pra autenticar
-    no upload — não vão no XML).
-  - **Nova credencial** (opcional): nova_web_user/nova_web_password — só vão no
-    XML se preenchidos; vazios = não muda a senha do aparelho.
-  - **Validação**: checkbox `validar_conectividade` (ICMP ping antes de send).
-  - **Avançadas (Intelbras)**: menu_password, keylock_password, keylock_enable
-    (0/1/2), keylock_timeout (s).
+- Header sticky com botão **voltar pill** que mostra o **nome do ambiente**
+  como label, título "Config padrão — {nome}", subtítulo "Modelo: X ·
+  servidor SIP é definido por linha na planilha", botão **Salvar**.
+- Form em cards (`div + h3`, não `fieldset/legend` — o reset CSS do
+  Tailwind deslocava as legends para fora das bordas):
+  - **SIP**: register expiration (servidor SIP **removido** da tela em
+    v2.2.1 — vem só da coluna da planilha).
+  - **Credencial atual do aparelho**: `web_user`/`web_password` (usados
+    pra autenticar no upload — não vão no XML).
+  - **Nova credencial** (opcional): `nova_web_user`/`nova_web_password` —
+    só vão no XML se preenchidos; vazios = não muda a senha do aparelho.
+  - **Validação**: checkbox `validar_conectividade` (ICMP ping antes de
+    send).
+  - **Avançadas (Intelbras)** — só visível quando o modelo é Intelbras:
+    `menu_password`, `keylock_password`, `keylock_enable` (0/1/2),
+    `keylock_timeout` (s).
+  - **Function Keys (HTEK)** / **DSS Keys (Intelbras)** — editor dinâmico
+    com linhas que têm: tecla (LineKey1..4), tipo (Desabilitada/Linha SIP/
+    Discagem rápida/BLF), label, account (HTEK força 0, oculta o campo),
+    e *Valor* (`vem da planilha` selecionando uma coluna ou `fixo` com
+    string livre). Botão **+ adicionar tecla** e **✕** para remover.
 - Botão "Salvar" no header → PUT em `/api/extension-configurator/environments/{id}`.
+- **UX**: após criar um ambiente novo, o usuário cai direto nesta tela
+  (em vez do detail) para configurar credencial e function keys antes da
+  planilha.
 
 ### 14.4 Relatórios (`/extension-configurator/runs`)
 - Tabela do histórico de execuções: Ambiente, Início, Fim, Total, OK, Falha,
-  Operador, Forçado.
+  Operador, Forçado, **Detalhes**.
+- Cada linha é clicável e tem coluna **abrir →** que leva ao detalhe
+  do run.
 - Empty state quando sem execuções.
 
-### 14.5 Endpoints API consumidos
+### 14.5 Detalhe do relatório (`/extension-configurator/runs/{run_id}`) — v2.2.1
+- Header sticky com botão **voltar pill** ("Relatórios"), título
+  "Relatório #{id} — {nome do ambiente}", subtítulo com modelo e data de
+  início, link **Ir para o ambiente**.
+- Linha de **5 cards** com cifras em `tabular-nums`:
+  Total / OK (verde) / Falha (vermelho) / Duração ("Xm Ys") / Operador.
+- Tabela "Linhas do ambiente" — snapshot **atual** das linhas
+  (storage só guarda agregados por run, não snapshot por linha):
+  - IP, Ramal, Nome, **Status** (badge pill colorido: aplicado / desatualizado
+    / pendente / erro), Modelo, MAC, Última aplicação, Erro.
+- Empty state se o ambiente foi removido depois.
+
+### 14.6 Endpoints API consumidos
 
 | Recurso | Método | Path |
 |---|---|---|
@@ -575,5 +626,6 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
 | Apply | POST | `/api/extension-configurator/environments/{id}/apply` |
 | Runs (por env) | GET | `/api/extension-configurator/environments/{id}/runs` |
 | Runs (geral) | GET | `/api/extension-configurator/runs` |
+| Run detail (v2.2.1) | GET | `/api/extension-configurator/runs/{run_id}/detail` |
 | Run live | GET | `/api/extension-configurator/runs/{run_id}/live` |
 | Run cancel | POST | `/api/extension-configurator/runs/{run_id}/cancel` |
