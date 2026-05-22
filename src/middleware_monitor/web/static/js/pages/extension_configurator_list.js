@@ -4,6 +4,43 @@ import { toast } from '/static/js/components/toast.js';
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+const STATUS_PILL = {
+  ok:        { color: "green",  label: "todos aplicados" },
+  pendentes: { color: "yellow", label: "pendentes" },
+  erros:     { color: "red",    label: "erros" },
+  vazio:     { color: "gray",   label: "sem ramais" },
+};
+
+const FILTER_KEY = "ec.list.filters.v1";
+
+// Cache em memoria dos envs vindos do backend (filtrados client-side).
+let _allEnvs = [];
+let _filters = { q: "", modelo: "", status: "" };
+
+function loadFilters() {
+  try {
+    const raw = localStorage.getItem(FILTER_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    _filters = { q: "", modelo: "", status: "", ...parsed };
+  } catch (_e) { /* ignore */ }
+}
+
+function saveFilters() {
+  try { localStorage.setItem(FILTER_KEY, JSON.stringify(_filters)); } catch (_e) { /* ignore */ }
+}
+
+function statusPill(meta) {
+  const p = STATUS_PILL[meta?.agregado] || STATUS_PILL.vazio;
+  // total de ramais com problema p/ ajudar diagnostico rapido
+  let badge = "";
+  if (meta?.error) badge = ` (${meta.error})`;
+  else if (meta?.agregado === "pendentes" && meta?.pending) badge = ` (${meta.pending})`;
+  return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ring-1 ring-inset bg-${p.color}-500/15 text-${p.color}-400 ring-${p.color}-500/30">
+    <span class="w-1.5 h-1.5 rounded-full bg-${p.color}-400"></span>${p.label}${badge}
+  </span>`;
+}
+
 function envCard(e) {
   return `
     <div class="group relative bg-gray-800 hover:bg-gray-800/80 ring-1 ring-gray-700 rounded-xl transition-colors">
@@ -14,7 +51,10 @@ function envCard(e) {
           <span class="text-xs text-gray-500 ml-2 flex-shrink-0">${e.telefones} Ramais</span>
         </div>
         <p class="text-xs text-gray-400 mt-1">${esc(e.modelo_telefone)}</p>
-        <p class="text-[10px] text-gray-500 mt-2">Atualizado: ${esc(e.atualizado_em || '—')}</p>
+        <div class="mt-2 flex items-center justify-between gap-2">
+          ${statusPill(e.status_resumo)}
+          <span class="text-[10px] text-gray-500 truncate">Atualizado: ${esc(e.atualizado_em || '—')}</span>
+        </div>
       </a>
       <button
         data-action="delete"
@@ -30,16 +70,66 @@ function envCard(e) {
     </div>`;
 }
 
+// Match: termos separados por espaco viram AND; cada termo precisa aparecer
+// em searchable (que ja vem lowercase do backend).
+function matchesFilters(env) {
+  if (_filters.modelo && env.modelo_telefone !== _filters.modelo) return false;
+  if (_filters.status && env.status_resumo?.agregado !== _filters.status) return false;
+  const q = _filters.q.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = env.searchable || `${env.nome} ${env.modelo_telefone}`.toLowerCase();
+  return q.split(/\s+/).every(t => t && haystack.includes(t));
+}
+
+function renderGrid() {
+  const total = _allEnvs.length;
+  const visible = _allEnvs.filter(matchesFilters);
+  const hasFilters = !!(_filters.q || _filters.modelo || _filters.status);
+
+  $('#ec-grid').innerHTML = visible.map(envCard).join('');
+  $('#ec-empty').classList.toggle('hidden', total > 0);
+  $('#ec-no-match').classList.toggle('hidden', total === 0 || visible.length > 0);
+
+  const counter = total === 0
+    ? "Nenhum ambiente"
+    : (hasFilters
+        ? `${visible.length} de ${total} ambiente${total === 1 ? '' : 's'}`
+        : `${total} ambiente${total === 1 ? '' : 's'}`);
+  $('#ec-count').textContent = counter;
+}
+
+function syncFilterInputsFromState() {
+  $('#ec-filter-q').value = _filters.q;
+  $('#ec-filter-modelo').value = _filters.modelo;
+  $('#ec-filter-status').value = _filters.status;
+}
+
+function populateModeloFilter(models) {
+  const sel = $('#ec-filter-modelo');
+  const cur = _filters.modelo;
+  // Mostra os modelos que efetivamente existem entre os ambientes carregados,
+  // mais qualquer um do catalogo que estiver em uso.
+  const inUse = new Set(_allEnvs.map(e => e.modelo_telefone).filter(Boolean));
+  const options = ['<option value="">Todos os modelos</option>'];
+  for (const m of models) {
+    const used = inUse.has(m);
+    const label = used ? m : `${m} (não usado)`;
+    options.push(`<option value="${esc(m)}"${used ? '' : ' disabled'}>${esc(label)}</option>`);
+  }
+  sel.innerHTML = options.join('');
+  sel.value = cur;
+}
+
 async function load() {
   const [{ environments }, { models }] = await Promise.all([
     api('/api/extension-configurator/environments'),
     api('/api/extension-configurator/phone-models'),
   ]);
-  $('#ec-count').textContent = `${environments.length} ambiente${environments.length === 1 ? '' : 's'}`;
-  $('#ec-grid').innerHTML = environments.map(envCard).join('');
-  $('#ec-empty').classList.toggle('hidden', environments.length > 0);
-  const sel = $('#ec-new-modelo');
-  sel.innerHTML = models.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+  _allEnvs = environments;
+  populateModeloFilter(models);
+  const newSel = $('#ec-new-modelo');
+  newSel.innerHTML = models.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+  renderGrid();
 }
 
 // --- modal: criar ---
@@ -129,5 +219,34 @@ $('#ec-grid').addEventListener('click', (e) => {
     telefones: btn.dataset.telefones,
   });
 });
+
+// --- filtros ---
+let _filterDebounce = null;
+function onFilterChange() {
+  _filters = {
+    q: $('#ec-filter-q').value,
+    modelo: $('#ec-filter-modelo').value,
+    status: $('#ec-filter-status').value,
+  };
+  saveFilters();
+  renderGrid();
+}
+$('#ec-filter-q').addEventListener('input', () => {
+  if (_filterDebounce) clearTimeout(_filterDebounce);
+  _filterDebounce = setTimeout(onFilterChange, 150);
+});
+$('#ec-filter-modelo').addEventListener('change', onFilterChange);
+$('#ec-filter-status').addEventListener('change', onFilterChange);
+$('#ec-filter-clear').addEventListener('click', () => {
+  _filters = { q: "", modelo: "", status: "" };
+  syncFilterInputsFromState();
+  saveFilters();
+  renderGrid();
+  $('#ec-filter-q').focus();
+});
+
+// Restaura filtros salvos antes do primeiro render.
+loadFilters();
+syncFilterInputsFromState();
 
 load().catch((e) => toast.error('Falha ao carregar: ' + e.message));

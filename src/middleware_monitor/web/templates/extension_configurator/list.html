@@ -10,9 +10,42 @@
     <button id="ec-new" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-sm">+ Novo ambiente</button>
   </div>
 </div>
-<div class="px-6 py-6 space-y-4">
+<div class="px-6 py-4">
+  <div class="flex items-center gap-2 flex-wrap">
+    <div class="relative flex-1 min-w-[260px]">
+      <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"
+           viewBox="0 0 20 20" fill="currentColor">
+        <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/>
+      </svg>
+      <input id="ec-filter-q" type="search"
+             placeholder="Buscar por nome do ambiente, IP, ramal, user auth, MAC…"
+             class="w-full bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg pl-9 pr-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-blue-500"
+             autocomplete="off" />
+    </div>
+    <select id="ec-filter-modelo"
+            class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-gray-100 focus:outline-none focus:ring-blue-500">
+      <option value="">Todos os modelos</option>
+    </select>
+    <select id="ec-filter-status"
+            class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2.5 py-1.5 text-sm text-gray-100 focus:outline-none focus:ring-blue-500">
+      <option value="">Todos os status</option>
+      <option value="ok">✓ Todos aplicados</option>
+      <option value="pendentes">○ Tem pendentes</option>
+      <option value="erros">⚠ Tem erros</option>
+      <option value="vazio">∅ Sem ramais</option>
+    </select>
+    <button id="ec-filter-clear"
+            class="inline-flex items-center gap-1.5 rounded-lg font-medium text-gray-300 hover:text-gray-100 hover:bg-gray-800 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
+      Limpar
+    </button>
+  </div>
+</div>
+
+<div class="px-6 pb-6 space-y-4">
   <div id="ec-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
   <p id="ec-empty" class="hidden text-sm text-gray-500">Nenhum ambiente cadastrado. Clique em "Novo ambiente" para começar.</p>
+  <p id="ec-no-match" class="hidden text-sm text-gray-500">Nenhum ambiente bate com os filtros aplicados.</p>
 </div>
 
 <!-- Modal Novo -->
