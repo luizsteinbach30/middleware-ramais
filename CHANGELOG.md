@@ -2,6 +2,34 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.2.2] — 2026-05-22
+
+### Added
+- **Apagar ambientes** — cada card no `/extension-configurator/environments`
+  ganha ícone de lixeira no canto superior direito (revelado no hover/focus).
+  Abre modal de confirmação em vermelho que exige digitar o **nome exato**
+  do ambiente para habilitar o botão Apagar (padrão GitHub/Vercel — protege
+  contra clique acidental). Cascade no DB já garantia limpeza de linhas e
+  histórico de execuções.
+
+### Changed
+- **Toast centralizado no topo** — substitui o antigo no canto direito.
+  Posicionado no centro horizontal/topo (`z-index: 9999`), com slide-down
+  elástico na entrada e slide-up + fade na saída. Backdrop-blur, ring
+  interno colorido por tom (success/error/info/warn), ícones SVG, sombra
+  dupla. Auto-dismiss 3.2s, clique dismissa instantâneo, stack vertical
+  para múltiplos. API pública inalterada (`toast.success/error/info/warn`)
+  — todas as telas do app (Webhooks, Devices, Coletas, Config, etc.)
+  ganham o novo visual sem alteração de código.
+- Card do ambiente passa a exibir contador como **"N Ramais"** (fixo, sem
+  variação de singular/plural).
+
+### Fixed
+- **Pluralização "ramalis"** — bug pré-existente: o padrão
+  `${n} ramal${n === 1 ? '' : 'is'}` produzia *"16 ramalis"* em vez de
+  *"16 ramais"*. Corrigido em 3 lugares (subtítulo da planilha, toast
+  de aplicar, modal de delete).
+
 ## [2.2.1] — 2026-05-22
 
 ### Fixed
