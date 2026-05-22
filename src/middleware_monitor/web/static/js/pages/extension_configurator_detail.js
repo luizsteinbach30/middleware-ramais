@@ -246,7 +246,7 @@ async function reload() {
   modeloTelefone = env.modelo_telefone || '';
   isHtek = String(modeloTelefone).toLowerCase().startsWith("htek");
   $('#ec-title').textContent = env.nome;
-  $('#ec-subtitle').textContent = `${modeloTelefone} · ${env.linhas.length} ramal${env.linhas.length === 1 ? '' : 'is'}`;
+  $('#ec-subtitle').textContent = `${modeloTelefone} · ${env.linhas.length} ${env.linhas.length === 1 ? 'ramal' : 'ramais'}`;
   $('#ec-config-link').href = `/extension-configurator/environments/${encodeURIComponent(envId)}/config`;
   renderStatusPills(env.linhas);
   buildSheet(env.linhas);
@@ -327,7 +327,7 @@ async function apply({ selectedIds = null } = {}) {
       setApplyButtonsDisabled(false);
       return;
     }
-    toast.success(`Aplicando ${r.total} ramal${r.total === 1 ? '' : 'is'}…`);
+    toast.success(`Aplicando ${r.total} ${r.total === 1 ? 'ramal' : 'ramais'}…`);
     currentRun = r.run_id;
     pollRun();
   } catch (e) {
