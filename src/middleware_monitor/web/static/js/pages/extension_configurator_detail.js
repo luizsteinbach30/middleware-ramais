@@ -31,16 +31,19 @@ const STATUS_META = {
 const statusLabel = (s) => (STATUS_META[s] || STATUS_META.pending).label;
 
 // type:'hidden' = nao aparece. readOnly:true = aparece mas nao edita.
+// Ordem dos campos editaveis pedida pelo usuario:
+// IP, NOME VISIVEL, RAMAL, USER AUTH, SENHA SIP, SERVIDOR SIP, ABREVIADO.
+// Todos como type:"text" para preservar zeros a esquerda (ex: "00001" != 1).
 const COLUMNS = [
   { type: "hidden",   name: "id" },
   { type: "checkbox", name: "_sel",              title: "✓",             width: 36 },
-  { type: "text",     name: "ip",                title: "IP",            width: 130 },
-  { type: "text",     name: "numero_ramal",      title: "Ramal",         width: 90 },
-  { type: "text",     name: "nome_visivel",      title: "Nome visível",  width: 160 },
+  { type: "text",     name: "ip",                title: "IP",            width: 140 },
+  { type: "text",     name: "nome_visivel",      title: "Nome visível",  width: 180 },
+  { type: "text",     name: "numero_ramal",      title: "Ramal",         width: 100 },
   { type: "text",     name: "user_auth",         title: "User auth",     width: 110 },
   { type: "text",     name: "senha_sip",         title: "Senha SIP",     width: 130 },
   { type: "text",     name: "servidor_sip",      title: "Servidor SIP",  width: 180 },
-  { type: "text",     name: "numero_abreviado",  title: "Nº abreviado",  width: 130 },
+  { type: "text",     name: "numero_abreviado",  title: "Nº abreviado",  width: 110 },
   { type: "text",     name: "_status",           title: "Status",        width: 130, readOnly: true },
   { type: "text",     name: "_modelo",           title: "Modelo",        width: 100, readOnly: true },
   { type: "text",     name: "_mac",              title: "MAC",           width: 150, readOnly: true },
@@ -48,7 +51,7 @@ const COLUMNS = [
   { type: "text",     name: "_erro",             title: "Erro",          width: 260, readOnly: true },
 ];
 const COL_INDEX = Object.fromEntries(COLUMNS.map((c, i) => [c.name, i]));
-const EDITABLE_FIELDS = ["ip","numero_ramal","nome_visivel","user_auth","senha_sip","servidor_sip","numero_abreviado"];
+const EDITABLE_FIELDS = ["ip","nome_visivel","numero_ramal","user_auth","senha_sip","servidor_sip","numero_abreviado"];
 
 function rowToArray(l) {
   return COLUMNS.map(c => {
@@ -68,6 +71,11 @@ function rowToArray(l) {
 // for um numero puro. Quando arrastamos textos como "HOST01" ou "192.168.0.10",
 // o fill copia o valor identico. Aqui detectamos N>=2 mudancas contiguas iguais
 // na mesma coluna e re-aplicamos com incremento do numero final.
+//
+// Important: `records` NAO inclui a celula de origem (so as celulas novas
+// preenchidas pelo fill). Por isso o incremento comeca em startNum+1 logo
+// na primeira celula do range (corrige bug: arrastar "3" gerava 3,4,5 e nao
+// 4,5,6 a partir da celula seguinte).
 let _autofillBusy = false;
 function smartAutofill(records) {
   if (_autofillBusy || !records || records.length < 2) return;
@@ -94,8 +102,7 @@ function smartAutofill(records) {
     const startNum = parseInt(m[2], 10);
     const width = m[2].length;
     changes.forEach((c, i) => {
-      if (i === 0) return;
-      const next = prefix + String(startNum + i).padStart(width, "0");
+      const next = prefix + String(startNum + 1 + i).padStart(width, "0");
       updates.push([c.x, c.y, next]);
     });
   });
@@ -108,10 +115,233 @@ function smartAutofill(records) {
   }
 }
 
+// Mascara IPv4 aplicada no <input> durante a edicao da celula.
+// Permite apenas digitos e ponto, max 3 digitos por octeto, max 4 octetos.
+// Insere ponto automaticamente ao completar 3 digitos no octeto atual.
+function maskIPv4OnInput(input) {
+  const raw = String(input.value || "");
+  let v = raw.replace(/[^\d.]/g, "");
+  const parts = v.split(".").slice(0, 4).map(p => p.slice(0, 3));
+  const last = parts[parts.length - 1];
+  if (parts.length < 4 && last && last.length === 3 && !v.endsWith(".")) {
+    parts.push("");
+  }
+  const out = parts.join(".");
+  if (out !== raw) input.value = out;
+}
+
+// Flag p/ ignorar smartAutofill quando o batch veio de um paste (Ctrl+V).
+// Setado em onbeforepaste; consumido no proximo onafterchanges.
+let _pasteInProgress = false;
+
+// Flag p/ ignorar autosave e autofill em mutacoes internas (ex: refresh de id/status pos-save).
+let _silentMutation = false;
+function setCellSilent(rowIdx, fieldName, value) {
+  _silentMutation = true;
+  try { setCell(rowIdx, fieldName, value); } finally { _silentMutation = false; }
+}
+
+// Indicador visual de autosave no header.
+const SAVE_STATUS_CLASSES = {
+  dirty:  "text-[11px] font-medium text-amber-400 transition-opacity",
+  saving: "text-[11px] font-medium text-blue-400 transition-opacity",
+  saved:  "text-[11px] font-medium text-green-400 transition-opacity",
+  idle:   "text-[11px] font-medium text-transparent transition-opacity",
+};
+const SAVE_STATUS_TEXT = {
+  dirty:  "• Edição não salva",
+  saving: "↻ Salvando…",
+  saved:  "✓ Salvo",
+  idle:   "",
+};
+function setSaveStatus(state) {
+  const el = $('#ec-save-status');
+  if (!el) return;
+  el.textContent = SAVE_STATUS_TEXT[state] ?? "";
+  el.className = SAVE_STATUS_CLASSES[state] ?? SAVE_STATUS_CLASSES.idle;
+}
+
+// Debounce 1200ms: cada edicao reseta o timer; quando o usuario para de
+// digitar por 1,2s, dispara save() em modo silencioso (sem toast).
+let _autosaveTimer = null;
+function scheduleAutosave() {
+  setSaveStatus("dirty");
+  if (_autosaveTimer) clearTimeout(_autosaveTimer);
+  _autosaveTimer = setTimeout(async () => {
+    _autosaveTimer = null;
+    setSaveStatus("saving");
+    try {
+      await save({ silent: true });
+      setSaveStatus("saved");
+      setTimeout(() => { if (!_autosaveTimer) setSaveStatus("idle"); }, 2200);
+    } catch (_e) {
+      setSaveStatus("dirty");  // mantem o aviso pra usuario perceber falha
+    }
+  }, 1200);
+}
+
+// ----- Preview esmaecido durante drag-fill ------------------------------------
+// Estende o smart-autofill numerico para qualquer selecao 2D (multi-coluna e/ou
+// multi-linha). Funciona em 2 fases:
+//   1) preview: enquanto o usuario arrasta o corner, render ghosts em cada
+//      coluna mostrando o valor que sera escrito naquela celula.
+//   2) commit: ao soltar, interceptamos cada onbeforechange e substituimos o
+//      valor (que o Jspreadsheet ia replicar) pelo numero incrementado.
+//
+// Padrao de cada coluna eh detectado na ULTIMA linha (y2) da fonte: se acaba
+// com digitos → vira sequencia. Senao, replica o valor literal.
+let _fillPreview = null;       // { x1, y1, x2, y2, sources, targetY }
+let _previewLayer = null;
+let _fillPreviewCleanupTimer = null;
+
+function _clearFillPreviewGhosts() {
+  if (!_previewLayer) return;
+  _previewLayer.innerHTML = "";
+}
+
+function _stopFillPreview() {
+  _fillPreview = null;
+  if (_fillPreviewCleanupTimer) {
+    clearTimeout(_fillPreviewCleanupTimer);
+    _fillPreviewCleanupTimer = null;
+  }
+  _clearFillPreviewGhosts();
+}
+
+function _columnPattern(x, y2) {
+  const lastVal = sheet.getValueFromCoords(x, y2);
+  const lastStr = lastVal == null ? "" : String(lastVal);
+  const m = lastStr.match(/^(.*?)(\d+)$/);
+  if (m) {
+    return {
+      x,
+      hasPattern: true,
+      lastVal: lastStr,
+      prefix: m[1],
+      startNum: parseInt(m[2], 10),
+      width: m[2].length,
+    };
+  }
+  return { x, hasPattern: false, lastVal: lastStr };
+}
+
+function _previewValueFor(x, y) {
+  if (!_fillPreview) return null;
+  if (y <= _fillPreview.y2) return null;
+  if (x < _fillPreview.x1 || x > _fillPreview.x2) return null;
+  const src = _fillPreview.sources.find(s => s.x === x);
+  if (!src) return null;
+  const offset = y - _fillPreview.y2;
+  if (src.hasPattern) {
+    return src.prefix + String(src.startNum + offset).padStart(src.width, "0");
+  }
+  return src.lastVal;  // sem padrao: replica o valor literal
+}
+
+function _renderFillGhosts() {
+  if (!_fillPreview || !_previewLayer || !sheet) return;
+  _clearFillPreviewGhosts();
+  const { x1, x2, y2, targetY } = _fillPreview;
+  if (targetY <= y2) return;
+  for (let x = x1; x <= x2; x++) {
+    for (let y = y2 + 1; y <= targetY; y++) {
+      const value = _previewValueFor(x, y);
+      if (value == null || value === "") continue;
+      const td = _previewLayer.parentElement.querySelector(
+        `td[data-x="${x}"][data-y="${y}"]`,
+      );
+      if (!td) continue;
+      const r = td.getBoundingClientRect();
+      const ghost = document.createElement("div");
+      ghost.className = "ec-fill-ghost";
+      ghost.style.left = `${r.left}px`;
+      ghost.style.top = `${r.top}px`;
+      ghost.style.width = `${r.width}px`;
+      ghost.style.height = `${r.height}px`;
+      ghost.textContent = value;
+      _previewLayer.appendChild(ghost);
+    }
+  }
+}
+
+function attachFillPreview(container) {
+  // Layer absoluto que segura os ghosts (position:fixed nos ghosts internos
+  // — coords sao viewport).
+  _previewLayer = document.createElement("div");
+  _previewLayer.className = "ec-fill-preview-layer";
+  container.appendChild(_previewLayer);
+
+  const onMouseDown = (e) => {
+    if (!sheet) return;
+    const target = e.target;
+    const cursor = (target && getComputedStyle(target).cursor) || "";
+    const looksLikeCorner =
+      cursor === "crosshair" ||
+      (target.classList && (
+        target.classList.contains("jexcel_selection_corner") ||
+        target.classList.contains("jexcel_corner") ||
+        target.classList.contains("corner")
+      ));
+    if (!looksLikeCorner) return;
+    const sc = sheet.selectedCell;
+    if (!Array.isArray(sc) || sc.length < 4) return;
+    const x1 = Math.min(Number(sc[0]), Number(sc[2]));
+    const x2 = Math.max(Number(sc[0]), Number(sc[2]));
+    const y1 = Math.min(Number(sc[1]), Number(sc[3]));
+    const y2 = Math.max(Number(sc[1]), Number(sc[3]));
+    // Computa padrao de cada coluna na linha y2 (ultima linha da fonte).
+    const sources = [];
+    let anyPattern = false;
+    for (let x = x1; x <= x2; x++) {
+      const src = _columnPattern(x, y2);
+      if (src.hasPattern) anyPattern = true;
+      sources.push(src);
+    }
+    if (!anyPattern) return;  // nada pra prever/substituir
+    _fillPreview = { x1, x2, y1, y2, sources, targetY: y2 };
+  };
+
+  const onMouseMove = (e) => {
+    if (!_fillPreview) return;
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const td = under && under.closest && under.closest("td");
+    if (!td || td.dataset.x == null || td.dataset.y == null) return;
+    const y = parseInt(td.dataset.y);
+    if (Number.isNaN(y)) return;
+    if (y <= _fillPreview.y2) {
+      _fillPreview.targetY = _fillPreview.y2;
+      _clearFillPreviewGhosts();
+      return;
+    }
+    _fillPreview.targetY = y;
+    _renderFillGhosts();
+  };
+
+  const onMouseUp = () => {
+    _clearFillPreviewGhosts();
+    // NAO limpa _fillPreview imediatamente: o Jspreadsheet vai disparar
+    // onbeforechange logo em seguida (ja com o batch de fill), e precisamos
+    // do state ativo pra substituir cada valor. Limpamos por timeout de
+    // seguranca caso onafterchanges nao dispare (drag sem range valido).
+    if (_fillPreviewCleanupTimer) clearTimeout(_fillPreviewCleanupTimer);
+    _fillPreviewCleanupTimer = setTimeout(() => {
+      _fillPreview = null;
+      _fillPreviewCleanupTimer = null;
+    }, 200);
+  };
+
+  container.addEventListener("mousedown", onMouseDown, true);
+  document.addEventListener("mousemove", onMouseMove, true);
+  document.addEventListener("mouseup", onMouseUp, true);
+  document.addEventListener("dragend", onMouseUp, true);
+}
+
 function buildSheet(linhas) {
   if (sheet) { try { sheet.destroy(); } catch (_e) {} }
   const container = $('#ec-spreadsheet');
   container.innerHTML = '';
+  _stopFillPreview();
+  _previewLayer = null;
   const data = linhas.map(rowToArray);
   while (data.length < Math.max(linhas.length + 50, 100)) {
     data.push(COLUMNS.map(() => ""));
@@ -129,11 +359,54 @@ function buildSheet(linhas) {
     rowDrag: false,
     columnDrag: false,
     defaultColAlign: "left",
+    onbeforepaste: (_instance, pasted) => {
+      // Sinaliza que a proxima rodada de mudancas vem de paste (Ctrl+V):
+      // o smartAutofill numerico precisa ser pulado pra preservar o valor
+      // original colado em multiplas celulas.
+      _pasteInProgress = true;
+      return pasted;
+    },
+    onbeforechange: (_instance, _cell, x, y, value) => {
+      // Durante drag-fill (com _fillPreview ativo), substitui o valor que o
+      // Jspreadsheet ia replicar pelo numero incrementado da sequencia
+      // calculada na fonte. Funciona por celula, em todas as colunas do range.
+      const xi = parseInt(x);
+      const yi = parseInt(y);
+      const preview = _previewValueFor(xi, yi);
+      if (preview != null) return preview;
+      return value;
+    },
     onafterchanges: (_instance, records) => {
-      smartAutofill(records);
       refreshSelectedCount();
+      if (_silentMutation) return;
+      if (_pasteInProgress) {
+        _pasteInProgress = false;
+        scheduleAutosave();
+        return;
+      }
+      if (_fillPreview) {
+        // O batch ja foi reescrito via onbeforechange — apenas finalizamos.
+        _stopFillPreview();
+        scheduleAutosave();
+        return;
+      }
+      smartAutofill(records);
+      scheduleAutosave();
+    },
+    oneditionstart: (_instance, cell, x, _y) => {
+      if (x !== COL_INDEX.ip) return;
+      // O <input> e injetado pelo Jspreadsheet apos um tick — pegar via rAF.
+      requestAnimationFrame(() => {
+        const input = cell.querySelector("input, textarea");
+        if (!input) return;
+        input.maxLength = 15;
+        input.setAttribute("inputmode", "decimal");
+        input.placeholder = "192.168.0.10";
+        input.addEventListener("input", () => maskIPv4OnInput(input));
+      });
     },
   });
+  attachFillPreview(container);
 }
 
 function isTruthyCell(v) {
@@ -253,22 +526,23 @@ async function reload() {
   refreshSelectedCount();
 }
 
-async function save() {
+async function save({ silent = false } = {}) {
   try {
     const linhas = collectLinhasForSave();
     const env = await api(`/api/extension-configurator/environments/${encodeURIComponent(envId)}/lines`, {
       method: 'PUT', body: { linhas },
     });
-    toast.success(`${env.linhas.length} linha(s) salvas`);
-    // refresca IDs + status sem perder posicao da planilha
+    if (!silent) toast.success(`${env.linhas.length} linha(s) salvas`);
+    // refresca IDs + status sem perder posicao da planilha (mutacoes silenciosas
+    // pra nao re-disparar autosave nem smartAutofill)
     env.linhas.forEach((l, i) => {
-      setCell(i, "id", l.id);
-      setCell(i, "_status", statusLabel(l.status || "pending"));
+      setCellSilent(i, "id", l.id);
+      setCellSilent(i, "_status", statusLabel(l.status || "pending"));
     });
     renderStatusPills(env.linhas);
     return env;
   } catch (e) {
-    toast.error('Erro ao salvar: ' + e.message);
+    if (!silent) toast.error('Erro ao salvar: ' + e.message);
     throw e;
   }
 }

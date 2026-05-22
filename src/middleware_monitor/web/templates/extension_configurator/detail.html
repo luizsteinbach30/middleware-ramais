@@ -134,6 +134,35 @@
   .ec-spreadsheet .jexcel_container::-webkit-scrollbar-thumb:hover { background: #4b5563; }
   .ec-spreadsheet .jexcel_container::-webkit-scrollbar-track { background: transparent; }
 
+  /* Preview esmaecido durante drag-fill (ghosts) */
+  #ec-spreadsheet { position: relative; }
+  .ec-fill-preview-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    z-index: 9;
+  }
+  .ec-fill-ghost {
+    position: fixed;
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    color: rgba(229, 231, 235, 0.55);
+    font-size: 12px;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-variant-numeric: tabular-nums;
+    background: rgba(59, 130, 246, 0.07);
+    border: 1px dashed rgba(96, 165, 250, 0.45);
+    box-sizing: border-box;
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   /* Kbd helper text */
   .ec-kbd {
     background: #111827;
@@ -203,6 +232,7 @@
       <p id="ec-subtitle" class="text-xs text-gray-400 mt-0.5 truncate">—</p>
     </div>
     <a id="ec-config-link" href="#" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">⚙ Config padrão</a>
+    <span id="ec-save-status" class="text-[11px] font-medium text-transparent transition-opacity min-w-[90px]"></span>
     <button id="ec-save" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">Salvar planilha</button>
     <button id="ec-apply-selected" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-4 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-blue-500/20">Aplicar selecionados (0)</button>
     <button id="ec-apply" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">Aplicar tudo</button>
@@ -214,8 +244,10 @@
   <div class="flex items-center justify-between gap-3 flex-wrap text-xs text-gray-400">
     <div class="leading-relaxed max-w-3xl">
       Planilha estilo Excel: clique e arraste para selecionar blocos ·
-      <kbd class="ec-kbd">Ctrl+C</kbd> / <kbd class="ec-kbd">Ctrl+V</kbd> ·
-      arraste o canto inferior direito de uma seleção para preencher (números incrementam automaticamente).
+      <kbd class="ec-kbd">Ctrl+C</kbd> / <kbd class="ec-kbd">Ctrl+V</kbd> (paste mantém o valor original) ·
+      arraste o canto inferior direito de uma seleção para preencher e <strong>incrementar números</strong> automaticamente ·
+      campos como Ramal/Nome são texto (preserva zeros à esquerda, ex.: <code class="text-gray-300">00001</code>) ·
+      IP tem máscara automática · alterações salvam sozinhas após 1,2&nbsp;s.
       <br>Marque o checkbox da coluna <strong>✓</strong> para escolher quais aparelhos enviar — útil quando alguns telefones estão offline e você quer voltar só nesses depois.
     </div>
 

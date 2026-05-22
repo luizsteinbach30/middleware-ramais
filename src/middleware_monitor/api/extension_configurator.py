@@ -44,16 +44,57 @@ router = APIRouter(prefix="/api/extension-configurator", tags=["extension-config
 log = get_logger("api.extension_configurator")
 
 
-def _env_summary(env: ExtensionEnvironment, line_count: int) -> dict[str, Any]:
+def _status_resumo(lines: list[ExtensionLine]) -> dict[str, Any]:
+    """Agrega o status das linhas do ambiente em 1 categoria + contadores."""
+    if not lines:
+        return {"applied": 0, "pending": 0, "error": 0, "agregado": "vazio"}
+    applied = sum(1 for ln in lines if ln.ultimo_status == "applied")
+    error = sum(1 for ln in lines if ln.ultimo_status == "error")
+    pending = len(lines) - applied - error
+    if error > 0:
+        agregado = "erros"
+    elif pending > 0:
+        agregado = "pendentes"
+    else:
+        agregado = "ok"
+    return {
+        "applied": applied, "pending": pending, "error": error,
+        "agregado": agregado,
+    }
+
+
+def _searchable_text(
+    env: ExtensionEnvironment, lines: list[ExtensionLine],
+) -> str:
+    """Texto pre-concatenado pra busca livre client-side (lowercase)."""
+    bits: list[str] = [env.nome or "", env.modelo_telefone or ""]
+    for ln in lines:
+        bits.extend([
+            ln.numero_ramal or "",
+            ln.ip or "",
+            ln.nome_visivel or "",
+            ln.user_auth or "",
+            ln.numero_abreviado or "",
+            ln.ultimo_mac or "",
+            ln.ultimo_modelo or "",
+        ])
+    return " ".join(b for b in bits if b).lower()
+
+
+def _env_summary(
+    env: ExtensionEnvironment, lines: list[ExtensionLine],
+) -> dict[str, Any]:
     runs = sorted(env.runs, key=lambda r: r.started_at, reverse=True)
     last = runs[0] if runs else None
     return {
         "id": env.id,
         "nome": env.nome,
         "modelo_telefone": env.modelo_telefone,
-        "telefones": line_count,
+        "telefones": len(lines),
         "atualizado_em": iso_utc(env.updated_at),
         "ultima_execucao": _run_dict(last) if last else None,
+        "status_resumo": _status_resumo(lines),
+        "searchable": _searchable_text(env, lines),
     }
 
 
@@ -127,7 +168,7 @@ def list_environments(
     db: DBSession = Depends(get_session),
 ) -> dict[str, list[dict[str, Any]]]:
     envs = repo.list_environments(db)
-    out = [_env_summary(e, line_count=len(repo.list_lines(db, e.id))) for e in envs]
+    out = [_env_summary(e, repo.list_lines(db, e.id)) for e in envs]
     return {"environments": out}
 
 
@@ -146,7 +187,7 @@ def create_environment(
     env = repo.create_environment(db, nome=nome, modelo_telefone=modelo)
     db.commit()
     log.info("environment_created", env_id=env.id, modelo=modelo)
-    return _env_summary(env, line_count=0)
+    return _env_summary(env, [])
 
 
 @router.get("/environments/{env_id}")
@@ -187,7 +228,7 @@ def update_environment(
         db, env, nome=payload.nome, config_padrao=payload.config_padrao,
     )
     db.commit()
-    return _env_summary(env, line_count=len(repo.list_lines(db, env_id)))
+    return _env_summary(env, repo.list_lines(db, env_id))
 
 
 @router.delete(
