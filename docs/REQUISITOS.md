@@ -583,6 +583,18 @@ agrupando-os em ambientes com configuração padrão compartilhada.
 - **RF-EC-07** Cada execução cria um `ExtensionApplyRun` com totais e operador.
 - **RF-EC-08** Estados por linha: `pending` | `applied` | `outdated` | `error`,
   derivados do hash atual vs. último aplicado com OK.
+- **RF-EC-09 (v2.2.1)** Seleção parcial: planilha tem coluna `✓` (checkbox).
+  Endpoint `/apply` aceita `selected_ids` no body para reaplicar só linhas
+  específicas (linhas selecionadas ignoram filtro de status). Atalhos:
+  marcar todos, desmarcar, só erros/pendentes.
+- **RF-EC-10 (v2.2.1)** Function Keys / DSS Keys editáveis na config padrão.
+  Cada item: tecla (LineKey1..4), tipo (line / speed_dial / blf / disabled),
+  label, account, valor (`linha` → coluna da planilha, `fixo` → string).
+  HTEK força `account=0` (Account1) — campo escondido na UI.
+- **RF-EC-11 (v2.2.1)** Detalhe de relatório: rota
+  `/extension-configurator/runs/{id}` mostra cards (total/ok/falha/
+  duração/operador) + snapshot atual das linhas (status, modelo, MAC,
+  último erro). Endpoint `/api/.../runs/{id}/detail`.
 
 ### Requisitos não-funcionais (RNF-EC)
 
@@ -600,12 +612,29 @@ agrupando-os em ambientes com configuração padrão compartilhada.
 - **RNF-EC-05 — 1 worker Uvicorn.** Estado in-memory (`RunState`/`RowState`)
   é seguro porque não há concorrência entre workers.
 
-### Adapters suportados (v2.2.0)
+### Adapters suportados
 
-| Vendor | Modelo | Auth | Status |
+| Vendor | Modelos | Auth | Status |
 |---|---|---|---|
-| HTEK (HanLong) | UC902G e família UC9xx | Basic/Digest auto | Validado em lab |
+| HTEK (HanLong) | UC902G, UC912 (v2.2.1), UC924 (v2.2.1) e família UC9xx | Basic/Digest auto | Validado em lab |
 | Intelbras | V3001, V3101, V3501, V5501 | `md5(user:pwd:nonce)` + HTTP/1.0 | Validado em lab |
+
+### Quirks de firmware tratados
+
+- **HTEK URL-decode (v2.2.1)** — o firmware HanLong faz `urldecode(%XX)`
+  no conteúdo de texto dos P-codes ao ler o XML. `vendors/htek.py` aplica
+  `_htek_text()` (`urllib.parse.quote` + `xml_escape`) em **todos** os
+  campos de texto (P3 DispalyName, P34 senha SIP, P35 SipUserId, P36
+  AuthenticateID, P47 Sipserver, P30 NTP, P2 AdminPassword, P8681
+  LogUser, softkey value/label). Sem isso, senhas com `%`, `&`, `<`, `>`
+  viram lixo no aparelho.
+- **HTEK softkey Account1 (v2.2.1)** — o firmware força `account=0`
+  (Account1) nas softkeys; outros valores apontam para perfil
+  inexistente e a tecla não disca. `_render_function_keys` ignora o
+  valor da UI e grava `0`.
+- **Intelbras escape de senha (v2.2.1)** — `_xml_escape_password()`
+  escapa aspas (`"`→`&quot;`, `'`→`&apos;`) em `RegisterPswd` e em
+  `web/account/Password` para evitar corrupção do valor armazenado.
 
 ### Tabelas novas
 

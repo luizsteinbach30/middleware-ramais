@@ -2,6 +2,88 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.2.1] — 2026-05-22
+
+### Fixed
+- **Bug crítico da planilha** — CDN do Jspreadsheet apontava para
+  `dist/jspreadsheet.js` (404), trocado para `dist/index.min.js`. A planilha
+  do Configurador de Ramais não abria.
+- **HTEK URL-decode quirk** — firmware faz URL-decode no XML antes de gravar
+  nos P-codes. Senhas com `%`, `&`, `<`, `>` viravam lixo no aparelho.
+  Nova função `_htek_text()` aplica `urllib.parse.quote` + `xml_escape` em
+  todo campo de texto (P3 DispalyName, P34 senha SIP, P35 SipUserId, P36
+  AuthenticateID, P47 Sipserver, P30 NTP, P2 AdminPassword, P8681 LogUser,
+  softkey value/label).
+- **HTEK softkey `account=0`** — força Account1 em todas as softkeys.
+  Valores diferentes apontavam para perfil inexistente e a tecla não
+  discava.
+- **Intelbras escape de senha** — `_xml_escape_password()` escapa aspas
+  (`"` → `&quot;`, `'` → `&apos;`) em `RegisterPswd` e `web/account/Password`
+  para evitar corrupção do valor armazenado.
+- **Status "aplicado" após apply** — `_apply_row` recalcula o hash com
+  env+linha frescos do DB após send com sucesso, eliminando divergências
+  entre o hash salvo e o hash recomputado no reload (que causavam
+  "outdated" falso na UI).
+- **Toasts no Configurador de Ramais** — bug pré-existente: as páginas
+  chamavam `toast({tone, text})` mas a API exportada é
+  `toast.success/error/info`. Nenhum toast funcionava no módulo.
+
+### Added
+- **Tela de detalhe do relatório** — nova rota
+  `/extension-configurator/runs/{id}` + endpoint
+  `GET /api/extension-configurator/runs/{id}/detail`. Cards com Total/OK/
+  Falha/Duração/Operador + tabela linha-a-linha (IP, ramal, nome, status
+  com badge, modelo, MAC, última aplicação, erro). Listagem de relatórios
+  ganhou link **abrir →** e linha clicável.
+- **Editor de Function Keys (HTEK) / DSS Keys (Intelbras)** na tela
+  Config padrão: tecla (LineKey1..4), tipo (Desabilitada/Linha SIP/
+  Discagem rápida/BLF), label, account, valor (fixo ou da coluna da
+  planilha). Para HTEK o campo Account fica oculto e força `0` no save.
+- **Modelos `HTEK UC912` e `HTEK UC924`** adicionados a `PHONE_MODELS`.
+- **Smart autofill numérico** na planilha — detecta prefixo + sufixo
+  numérico (`RAMAL01` → `RAMAL02`, `192.168.0.10` → `192.168.0.11`)
+  quando o usuário arrasta o canto de uma seleção, complementando o
+  autofill nativo do Jspreadsheet que só funciona com número puro.
+- **Coluna `✓` de seleção** + botões **marcar todos / desmarcar / só erros
+  ou pendentes** + endpoint `/apply` aceita `selected_ids` no body para
+  reaplicar só linhas específicas (útil quando alguns aparelhos estavam
+  offline e o operador volta depois).
+- **Pills de status** (aplicado / desatualizado / pendente / erro) com
+  contadores no topo da planilha.
+- **Aviso de senha SIP problemática para HTEK** antes de aplicar — alerta
+  quando a senha tem mais de 25 caracteres ou contém chars fora do safe
+  charset conhecido do firmware (`A-Za-z0-9!#%*+,-./:=?@_~`).
+- **Toggle "Forçar reaplicação"** — quando ativo, reaplica em todos os
+  aparelhos com IP ignorando o status atual.
+- **Colunas extras na planilha**: Modelo, MAC, Última aplicação, Erro
+  (preenchidas durante o polling do apply em tempo real).
+- **Rolling delay** configurável (default 1s) entre disparos para evitar
+  pico de rede em ambientes grandes.
+
+### Changed
+- **Config padrão**: campo *Servidor SIP* removido da tela — o valor agora
+  vem exclusivamente da coluna `Servidor SIP` da planilha (por linha).
+- **Pós-criação de ambiente**: redireciona para `/config` em vez de
+  `/detail` para o usuário ajustar credencial e function keys antes de
+  começar a mexer na planilha.
+- **Polling de apply**: stages intermediários (`ping`/`send`) mostram
+  *"aplicando…"* em vez de "desatualizado" para evitar flicker de status
+  incorreto durante a execução.
+- **Visual da planilha**: wrapper com card + sombra, header sticky
+  uppercase, hover de linha, readonly diferenciado, foco azul no editor,
+  scrollbar discreta, context menu arredondado.
+- **Botões "marcar todos / desmarcar / só erros"** viraram um grupo
+  segmentado pill com ícones e cores por ação. *"Forçar reaplicação"*
+  virou toggle switch que destaca em azul quando ativo.
+- **Botão "voltar"** padronizado como pill com chevron (consistente em
+  detail/config/run_detail).
+- **Layout Config padrão**: `<fieldset>/<legend>` trocados por
+  `<div>/<h3>` — o reset CSS do Tailwind estava deslocando os títulos
+  para fora das bordas dos cards.
+
+### Tests
+- 93/93 verdes; ruff clean; mypy --strict OK no código tocado.
+
 ## [2.2.0] — 2026-05-21
 
 ### Added
