@@ -2,6 +2,55 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.2.3] — 2026-05-22
+
+### Added
+- **Filtros na lista de ambientes** — barra acima do grid com:
+  - Busca livre que cobre nome do ambiente, modelo, IP, ramal, nome
+    visível, user auth, número abreviado, MAC e modelo aplicado (múltiplos
+    termos = AND).
+  - Select de modelo (só lista modelos em uso; demais aparecem como
+    *(não usado)* desabilitados).
+  - Select de status agregado: `✓ Todos aplicados`, `○ Tem pendentes`,
+    `⚠ Tem erros`, `∅ Sem ramais`.
+  - Botão **Limpar**.
+  - Filtros persistidos em `localStorage`.
+- **Status pill em cada card** — badge colorido (verde/amarelo/vermelho/
+  cinza) com a saúde agregada do ambiente + contagem entre parênteses
+  quando relevante (ex: `⚠ erros (3)`).
+- **Preview esmaecido durante drag-fill** — enquanto o usuário arrasta o
+  canto inferior direito da seleção, ghosts cinza-translúcidos aparecem
+  nas células-destino mostrando o valor que será gravado ao soltar.
+  Suporta seleção 2D (multi-coluna e/ou multi-linha) com sequência por
+  coluna baseada no padrão da última linha da fonte.
+- **Autosave 1200 ms** — após a última edição na planilha, o backend é
+  chamado sozinho com indicador visual no header:
+  `• Edição não salva` (âmbar) → `↻ Salvando…` (azul) → `✓ Salvo` (verde).
+- **Máscara IPv4** no campo IP da planilha — auto-`.` a cada 3 dígitos,
+  apenas dígitos e ponto, máximo 15 caracteres (`inputmode=decimal`).
+
+### Changed
+- **Ordem das colunas da planilha**: IP, Nome visível, Ramal, User auth,
+  Senha SIP, Servidor SIP, Nº abreviado (antes: Nome visível primeiro,
+  depois IP). Todos como `type:'text'` para preservar zeros à esquerda
+  (`00001` permanece `00001`, não vira `1`).
+- **Contador inteligente** no header da lista: passa de `12 ambientes`
+  para `4 de 12 ambientes` quando há filtros aplicados.
+- Backend `_env_summary` passa a receber `list[ExtensionLine]` (não só
+  `line_count`) e devolve `status_resumo` + `searchable` (string
+  lowercase pré-concatenada) — base para a busca rica client-side.
+
+### Fixed
+- **Paste em range** deixa de virar incremento numérico — copiar `3`
+  e colar em 5 linhas agora resulta em `3,3,3,3,3` (e não `3,4,5,6,7`).
+  Implementado via flag `_pasteInProgress` setada em `onbeforepaste` e
+  consumida no `onafterchanges`.
+- **Drag-fill numérico**: arrastar `3` agora gera `4, 5, 6, 7…`
+  (off-by-one anterior gerava `3, 4, 5…`, repetindo o valor original).
+- **Drag-fill com fonte multi-coluna** — cada coluna do range-fonte
+  ganha sequência própria; valor escrito é substituído via
+  `onbeforechange`, garantindo consistência entre o preview e o commit.
+
 ## [2.2.2] — 2026-05-22
 
 ### Added
