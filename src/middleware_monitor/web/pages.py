@@ -195,3 +195,23 @@ def ec_environment_config_page(
         user=user,
         extra={"page": "ec_environment_config", "ambiente_id": ambiente_id},
     )
+
+
+@router.get(
+    "/extension-configurator/runs/{run_id}",
+    response_class=HTMLResponse,
+)
+def ec_run_detail_page(
+    request: Request,
+    run_id: int,
+    cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+    db: DBSession = Depends(get_session),
+) -> HTMLResponse:
+    user = _maybe_user(request, db, cookie)
+    if user is None:
+        return RedirectResponse("/login", status_code=302)  # type: ignore[return-value]
+    return _render(
+        get_templates(), request, "extension_configurator/run_detail.html",
+        user=user,
+        extra={"page": "ec_run_detail", "run_id": run_id},
+    )

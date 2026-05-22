@@ -3,74 +3,111 @@
 {% block body %}
 <div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
   <div class="px-6 py-4 flex items-center gap-4">
-    <a id="ec-back" href="#" class="text-xs text-gray-400 hover:text-gray-200">←</a>
+    <a id="ec-back" href="#"
+       class="inline-flex items-center gap-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-gray-100 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs font-medium transition-colors">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 010 1.06L9.06 10l3.73 3.71a.75.75 0 11-1.06 1.06l-4.25-4.24a.75.75 0 010-1.06l4.25-4.24a.75.75 0 011.06 0z" clip-rule="evenodd"/></svg>
+      <span id="ec-back-label">Voltar</span>
+    </a>
     <div class="flex-1 min-w-0">
       <h1 id="ec-title" class="text-lg font-semibold text-gray-100">Config padrão</h1>
-      <p class="text-xs text-gray-400 mt-0.5">Valores compartilhados por todos os telefones do ambiente.</p>
+      <p id="ec-subtitle" class="text-xs text-gray-400 mt-0.5">Valores compartilhados por todos os telefones do ambiente. O <strong>servidor SIP</strong> é definido por linha na planilha.</p>
     </div>
     <button id="ec-save" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-sm">Salvar</button>
   </div>
 </div>
 
 <div class="px-6 py-6 space-y-5 max-w-4xl">
-  <p id="ec-toast" class="hidden text-xs"></p>
-
-  <fieldset class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
-    <legend class="text-sm font-semibold text-gray-100 px-1">SIP</legend>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">SIP</h3>
     <div class="grid md:grid-cols-2 gap-3 text-xs">
-      <label class="flex flex-col gap-1"><span class="text-gray-300">Servidor SIP padrão</span>
-        <input id="cfg-sip_server" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
-      <label class="flex flex-col gap-1"><span class="text-gray-300">Register expiration (min)</span>
-        <input id="cfg-register_expiration" type="number" min="1" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/></label>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Register expiration (min)</span>
+        <input id="cfg-register_expiration" type="number" min="1" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/>
+      </label>
     </div>
-  </fieldset>
+    <p class="text-[11px] text-gray-500">O servidor SIP é informado por linha na coluna <strong>Servidor SIP</strong> da planilha — uma config aqui seria redundante.</p>
+  </div>
 
-  <fieldset class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
-    <legend class="text-sm font-semibold text-gray-100 px-1">Credencial atual do aparelho <span class="text-gray-500 text-xs font-normal">(usada para login)</span></legend>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Credencial atual do aparelho <span class="text-gray-500 text-xs font-normal">(usada para login)</span></h3>
+    <p class="text-xs text-gray-500">Usuário e senha que os aparelhos do ambiente <strong>já têm hoje</strong>. O sistema usa isso para logar na web GUI e fazer upload do XML. <strong>Não vai no XML.</strong> Default de fábrica: <code>admin</code> / <code>admin</code>.</p>
     <div class="grid md:grid-cols-2 gap-3 text-xs">
-      <label class="flex flex-col gap-1"><span class="text-gray-300">Usuário atual</span>
-        <input id="cfg-web_user" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
-      <label class="flex flex-col gap-1"><span class="text-gray-300">Senha atual</span>
-        <input id="cfg-web_password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Usuário atual</span>
+        <input id="cfg-web_user" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Senha atual</span>
+        <input id="cfg-web_password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/>
+      </label>
     </div>
-  </fieldset>
+  </div>
 
-  <fieldset class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
-    <legend class="text-sm font-semibold text-gray-100 px-1">Nova credencial <span class="text-gray-500 text-xs font-normal">(opcional — vai no XML)</span></legend>
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Nova credencial <span class="text-gray-500 text-xs font-normal">(opcional — vai no XML)</span></h3>
+    <p class="text-xs text-gray-500">Se preenchidos, esses valores <strong>substituem</strong> a credencial admin do aparelho na próxima aplicação. Deixe vazio para <strong>não mexer</strong> na senha web. ⚠ Se mudar, lembre de atualizar a “credencial atual” acima na próxima vez, senão o sistema perde o acesso.</p>
     <div class="grid md:grid-cols-2 gap-3 text-xs">
-      <label class="flex flex-col gap-1"><span class="text-gray-300">Novo usuário</span>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Novo usuário</span>
         <input id="cfg-nova_web_user" placeholder="(vazio = não muda)"
-               class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono placeholder-gray-600"/></label>
-      <label class="flex flex-col gap-1"><span class="text-gray-300">Nova senha</span>
+               class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono placeholder-gray-600"/>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Nova senha</span>
         <input id="cfg-nova_web_password" placeholder="(vazio = não muda)"
-               class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono placeholder-gray-600"/></label>
+               class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono placeholder-gray-600"/>
+      </label>
     </div>
-  </fieldset>
+  </div>
 
-  <fieldset class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
-    <legend class="text-sm font-semibold text-gray-100 px-1">Validação</legend>
-    <label class="flex items-center gap-3 text-xs cursor-pointer">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Validação antes do envio</h3>
+    <p class="text-xs text-gray-500">
+      Antes de enviar a config para cada aparelho, o sistema envia um <strong>ICMP ping</strong> para o IP.
+      Se o aparelho não responde, a linha é marcada como erro e <strong>nada é enviado</strong> (proteção contra
+      configurar o IP errado por engano). Recomendado ativar.
+      <br>⚠ Algumas redes corporativas bloqueiam ICMP — nesse caso, desative aqui senão todas as linhas vão falhar.
+    </p>
+    <label class="flex items-center gap-3 text-xs cursor-pointer select-none">
       <input id="cfg-validar_conectividade" type="checkbox" class="accent-blue-500 w-4 h-4"/>
       <span class="text-gray-200">Validar conectividade (ping) antes de enviar config</span>
     </label>
-  </fieldset>
+  </div>
 
-  <fieldset class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
-    <legend class="text-sm font-semibold text-gray-100 px-1">Avançadas <span class="text-gray-500 text-xs font-normal">(Intelbras)</span></legend>
+  <div id="ec-section-advanced" class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Avançadas <span class="text-gray-500 text-xs font-normal">(apenas modelos Intelbras)</span></h3>
+    <p class="text-xs text-gray-500">Senhas que protegem o menu do telefone e o bloqueio de teclado. Default Intelbras é <code>123</code>.</p>
     <div class="grid md:grid-cols-2 gap-3 text-xs">
-      <label class="flex flex-col gap-1"><span class="text-gray-300">Senha do menu</span>
-        <input id="cfg-menu_password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
-      <label class="flex flex-col gap-1"><span class="text-gray-300">Senha de bloqueio do teclado</span>
-        <input id="cfg-keylock_password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
-      <label class="flex flex-col gap-1"><span class="text-gray-300">Bloqueio do menu (EnableKeyLock)</span>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Senha do menu</span>
+        <input id="cfg-menu_password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Senha de bloqueio do teclado</span>
+        <input id="cfg-keylock_password" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Bloqueio do menu (EnableKeyLock)</span>
         <select id="cfg-keylock_enable" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100">
           <option value="0">Desativado (0)</option><option value="1">Manual (1)</option><option value="2">Ativado (2)</option>
-        </select></label>
-      <label class="flex flex-col gap-1"><span class="text-gray-300">Timeout (s)</span>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Timeout do bloqueio (s)</span>
         <input id="cfg-keylock_timeout" type="number" min="0" max="3600"
-               class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/></label>
+               class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/>
+      </label>
     </div>
-  </fieldset>
+  </div>
+
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-gray-100" id="ec-fk-legend">Function Keys (teclas programáveis)</h3>
+      <button id="ec-fk-add" type="button" class="text-xs text-blue-400 hover:text-blue-300">+ adicionar tecla</button>
+    </div>
+    <p class="text-xs text-gray-500">Cada tecla vai para todos os telefones do ambiente. Quando “valor vem da planilha” está marcado, cada telefone usa o número informado na coluna correspondente da sua linha.</p>
+    <div id="ec-fk-list" class="space-y-2"></div>
+  </div>
 </div>
 
 <script>window.EC_ENV_ID = {{ ambiente_id | tojson }};</script>

@@ -39,6 +39,7 @@ from .service import (
     adapter_for,
     build_row,
     build_template,
+    compute_line_hash,
     pick_lines_to_apply,
 )
 
@@ -96,15 +97,24 @@ async def _apply_row(
         row.finished_at = time.time()
 
     # Sessao curta — atualiza e fecha. Evita segurar transacao durante I/O.
+    # Em caso de sucesso, RECALCULA o hash com env+linha fresh do DB para
+    # garantir match com o `compute_line_hash` do reload (evita "outdated"
+    # falso causado por qualquer divergencia tipo cache/serializacao).
     with session_factory() as db:
         line = db.get(ExtensionLine, row.line_id)
         if line is None:
             return
+        final_hash: str | None = None
+        if status_final == "ok":
+            env = repo.get_environment(db, env_id)
+            final_hash = (
+                compute_line_hash(env, line) if env is not None else row.hash_esperado
+            )
         repo.update_line_status(
             db, line,
             status=status_final,
             erro=err,
-            hash_aplicado=row.hash_esperado if status_final == "ok" else None,
+            hash_aplicado=final_hash,
         )
         db.commit()
 

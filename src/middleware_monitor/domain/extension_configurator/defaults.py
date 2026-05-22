@@ -14,6 +14,8 @@ __all__ = ["PHONE_MODELS", "default_config_padrao"]
 # Lista de modelos suportados (vendors port em PR2).
 PHONE_MODELS: list[str] = [
     "HTEK UC902G",
+    "HTEK UC912",
+    "HTEK UC924",
     "Intelbras V3001",
     "Intelbras V3101",
     "Intelbras V3501",
