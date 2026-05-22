@@ -35,11 +35,27 @@ from __future__ import annotations
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote as _url_quote
 from xml.sax.saxutils import escape as xml_escape
 
 import httpx
 
 from .base import DiscoveryResult, VendorAdapter, VendorCredentials
+
+
+# REGRA HTEK: o firmware faz URL-decode (%XX) no conteudo de texto dos XML
+# enviados via /HLCFG_XML_configuration.htm antes de gravar nos P-codes.
+# Confirmado lab 2026-05-21 (UC902G): senha com `%12` raw vira lixo (byte 0x12);
+# escapada para `%2512` registra normalmente. Por isso TODO valor de texto que
+# vai para o XML do HTEK precisa ser URL-encodado e depois XML-escapado.
+def _htek_text(value: object) -> str:
+    """URL-encode + XML-escape para conteudo de texto de qualquer P-code.
+
+    Apos URL-encode, sobram so chars XML-safe (alfanum + %-_.~), entao o
+    xml_escape e idempotente — mantido por defesa em profundidade.
+    """
+    return xml_escape(_url_quote(str(value or ""), safe=""))
+
 
 _TEMPLATE_PATH = Path(__file__).parent / "htek_template.xml"
 
@@ -273,15 +289,18 @@ class HTEKAdapter(VendorAdapter):
             else:
                 value = str(k.get("value_fixed", "") or "")
             label = str(k.get("label", "") or "")
-            account = int(k.get("account", 255))
+            # HTEK: o aparelho usa account=0 para "Account1" nas softkeys.
+            # Valores diferentes apontam para um perfil inexistente e a tecla
+            # nao disca. (Intelbras eh diferente — ver intelbras.py.)
+            account = 0
             lines.append(
                 f'        <{pcodes["type"]} para="{key_name}_Type">{type_id}</{pcodes["type"]}>'
             )
             lines.append(
-                f'        <{pcodes["value"]} para="{key_name}_Value">{xml_escape(value)}</{pcodes["value"]}>'
+                f'        <{pcodes["value"]} para="{key_name}_Value">{_htek_text(value)}</{pcodes["value"]}>'
             )
             lines.append(
-                f'        <{pcodes["label"]} para="{key_name}_Label">{xml_escape(label)}</{pcodes["label"]}>'
+                f'        <{pcodes["label"]} para="{key_name}_Label">{_htek_text(label)}</{pcodes["label"]}>'
             )
             lines.append(
                 f'        <{pcodes["account"]} para="{key_name}_Account">{account}</{pcodes["account"]}>'
@@ -318,7 +337,7 @@ class HTEKAdapter(VendorAdapter):
 
         ctx: dict[str, str] = {
             "account_active": str(account_active),
-            "sip_server": xml_escape(str(row.get("servidor_sip") or template.get("sip_server", ""))),
+            "sip_server": _htek_text(row.get("servidor_sip") or template.get("sip_server", "")),
             "sip_transport": str(sip_transport),
             "register_expiration": str(template.get("register_expiration", 15)),
             "codec_1": str(codec_ids[0]),
@@ -327,16 +346,16 @@ class HTEKAdapter(VendorAdapter):
             "codec_4": str(codec_ids[3]),
             "codec_5": str(codec_ids[4]),
             "codec_6": str(codec_ids[5]),
-            "label": xml_escape(str(row.get("label") or row.get("conta_sip", ""))),
-            "extension": xml_escape(str(row.get("extension") or row.get("conta_sip", ""))),
-            "user_id": xml_escape(str(row.get("conta_sip", ""))),
-            "auth_id": xml_escape(str(row.get("auth_id") or row.get("conta_sip", ""))),
-            "password": xml_escape(str(row.get("senha_sip", ""))),
-            "display_name": xml_escape(str(row.get("display_name") or row.get("conta_sip", ""))),
+            "label": _htek_text(row.get("label") or row.get("conta_sip", "")),
+            "extension": _htek_text(row.get("extension") or row.get("conta_sip", "")),
+            "user_id": _htek_text(row.get("conta_sip", "")),
+            "auth_id": _htek_text(row.get("auth_id") or row.get("conta_sip", "")),
+            "password": _htek_text(row.get("senha_sip", "")),
+            "display_name": _htek_text(row.get("display_name") or row.get("conta_sip", "")),
             "timezone": str(self._timezone_id(template.get("timezone", "America/Sao_Paulo"))),
             "web_language": str(self._language_id(template.get("web_language", "pt-BR"))),
             "lcd_language": str(self._language_id(template.get("lcd_language", "pt-BR"))),
-            "ntp_server": xml_escape(str(template.get("ntp_server", "a.ntp.br"))),
+            "ntp_server": _htek_text(template.get("ntp_server", "a.ntp.br")),
             "function_keys_xml": self._render_function_keys(
                 template.get("function_keys", []) or [], row,
             ),
@@ -360,9 +379,9 @@ class HTEKAdapter(VendorAdapter):
             return ""
         lines: list[str] = []
         if nova_user:
-            lines.append(f'        <P8681 para="LogUser_Admin">{xml_escape(nova_user)}</P8681>')
+            lines.append(f'        <P8681 para="LogUser_Admin">{_htek_text(nova_user)}</P8681>')
         if nova_pwd:
-            lines.append(f'        <P2 para="AdminPassword">{xml_escape(nova_pwd)}</P2>')
+            lines.append(f'        <P2 para="AdminPassword">{_htek_text(nova_pwd)}</P2>')
         return "\n".join(lines)
 
     _UPLOAD_XML_PATH = "/HLCFG_XML_configuration.htm"

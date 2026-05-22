@@ -268,6 +268,36 @@ def list_all_runs(
     return {"runs": [_run_dict(r) for r in runs]}
 
 
+@router.get("/runs/{run_id}/detail")
+def run_detail(
+    run_id: int,
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Detalhe de um run gravado no DB.
+
+    Estrategia (mesma do autocfg-ramais): o storage so guarda totais por run,
+    nao snapshot por linha. Apresentamos o estado ATUAL das linhas do ambiente
+    como aproximacao — eh o que ficou apos a ultima execucao. Para acompanhar
+    um run em curso, use `/live`.
+    """
+    db_run = db.get(ExtensionApplyRun, run_id)
+    if db_run is None:
+        raise HTTPException(404, "run nao encontrado")
+    env = repo.get_environment(db, db_run.environment_id)
+    lines = repo.list_lines(db, db_run.environment_id) if env else []
+    statuses = (
+        {s["id"]: s for s in compute_statuses(env, lines)} if env else {}
+    )
+    return {
+        "run": _run_dict(db_run),
+        "environment": {
+            "id": env.id, "nome": env.nome, "modelo_telefone": env.modelo_telefone,
+        } if env else None,
+        "linhas": [_line_dict(ln, statuses.get(ln.id, {})) for ln in lines],
+    }
+
+
 @router.get("/runs/{run_id}/live")
 def live_status(
     run_id: str, _user: User = Depends(get_current_user),

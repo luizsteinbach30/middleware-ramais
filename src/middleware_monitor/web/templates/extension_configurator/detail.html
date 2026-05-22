@@ -4,32 +4,259 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.15.0/dist/jspreadsheet.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsuites@4.17.7/dist/jsuites.css">
 <style>
-  .jexcel { background: #1f2937 !important; color: #f3f4f6 !important; }
-  .jexcel thead td { background: #111827 !important; color: #9ca3af !important; border-color: #374151 !important; }
-  .jexcel tbody td { border-color: #374151 !important; background: #1f2937 !important; }
-  .jexcel tbody td.highlight { background: #2563eb33 !important; }
-  .jexcel_corner { background: #111827 !important; border-color: #374151 !important; }
+  /* Wrapper com mesma vibe visual dos cards do middleware */
+  .ec-spreadsheet-wrap {
+    background: #1f2937;
+    border: 1px solid #374151;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2), 0 8px 24px -12px rgba(0,0,0,0.4);
+  }
+
+  /* Base do Jspreadsheet — tema escuro coerente com o middleware */
+  .ec-spreadsheet .jexcel,
+  .ec-spreadsheet .jexcel_container {
+    background: #1f2937;
+    color: #e5e7eb;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    border: none;
+  }
+
+  /* Cabeçalho: levemente translúcido, sticky, tracking elegante */
+  .ec-spreadsheet .jexcel > thead > tr > td {
+    background: #111827;
+    color: #9ca3af;
+    border-color: #374151;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    text-transform: uppercase;
+    font-size: 10.5px;
+    padding: 9px 10px;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+
+  /* Coluna de número das linhas */
+  .ec-spreadsheet .jexcel_corner,
+  .ec-spreadsheet .jexcel > tbody > tr > td:first-child {
+    background: #111827;
+    color: #6b7280;
+    border-color: #374151;
+    font-variant-numeric: tabular-nums;
+    font-size: 10.5px;
+  }
+
+  /* Células */
+  .ec-spreadsheet .jexcel > tbody > tr > td {
+    background: #1f2937;
+    color: #e5e7eb;
+    border-color: #374151;
+    padding: 6px 10px;
+    transition: background-color 80ms ease;
+  }
+
+  /* Hover de linha sutil (não interfere em seleção) */
+  .ec-spreadsheet .jexcel > tbody > tr:hover > td {
+    background: #232b3a;
+  }
+  .ec-spreadsheet .jexcel > tbody > tr:hover > td:first-child {
+    background: #161e2c;
+    color: #9ca3af;
+  }
+
+  /* Colunas readonly (Status / Modelo / MAC / Última / Erro) */
+  .ec-spreadsheet .jexcel > tbody > tr > td.readonly {
+    background: #1a2330;
+    color: #9ca3af;
+    font-size: 11.5px;
+  }
+  .ec-spreadsheet .jexcel > tbody > tr:hover > td.readonly {
+    background: #1f2a3a;
+  }
+
+  /* Célula em edição: foco azul */
+  .ec-spreadsheet .jexcel > tbody > tr > td.editor input,
+  .ec-spreadsheet .jexcel > tbody > tr > td.editor textarea {
+    background: #0f172a;
+    color: #f3f4f6;
+    border: none;
+    outline: 1px solid #3b82f6;
+  }
+
+  /* Realce de seleção */
+  .ec-spreadsheet .jexcel > tbody > tr > td.highlight {
+    background: rgba(59, 130, 246, 0.18) !important;
+    color: #fff !important;
+  }
+  .ec-spreadsheet .jexcel > tbody > tr > td.highlight-selected {
+    background: rgba(59, 130, 246, 0.30) !important;
+  }
+  .ec-spreadsheet .jexcel > tbody > tr > td.selection-top,
+  .ec-spreadsheet .jexcel > tbody > tr > td.selection-bottom,
+  .ec-spreadsheet .jexcel > tbody > tr > td.selection-left,
+  .ec-spreadsheet .jexcel > tbody > tr > td.selection-right {
+    border-color: #3b82f6 !important;
+  }
+
+  /* Checkbox da coluna ✓ */
+  .ec-spreadsheet .jexcel input[type="checkbox"] {
+    accent-color: #3b82f6;
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+  }
+
+  /* Context menu (click direito) */
+  .ec-spreadsheet .jexcel_contextmenu {
+    background: #111827;
+    color: #e5e7eb;
+    border-color: #374151;
+    border-radius: 8px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.4);
+    padding: 4px;
+  }
+  .ec-spreadsheet .jexcel_contextmenu div {
+    color: #e5e7eb;
+    border-radius: 6px;
+  }
+  .ec-spreadsheet .jexcel_contextmenu div:hover {
+    background: #1f2937;
+    color: #93c5fd;
+  }
+
+  /* Scrollbar discreta dentro da planilha */
+  .ec-spreadsheet .jexcel_container::-webkit-scrollbar { height: 10px; width: 10px; }
+  .ec-spreadsheet .jexcel_container::-webkit-scrollbar-thumb {
+    background: #374151; border-radius: 6px; border: 2px solid #1f2937;
+  }
+  .ec-spreadsheet .jexcel_container::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+  .ec-spreadsheet .jexcel_container::-webkit-scrollbar-track { background: transparent; }
+
+  /* Kbd helper text */
+  .ec-kbd {
+    background: #111827;
+    border: 1px solid #374151;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+    font-size: 10.5px;
+    color: #d1d5db;
+  }
+
+  /* Toggle switch (Forçar reaplicação) */
+  .ec-toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 28px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+  .ec-toggle-track {
+    position: absolute;
+    inset: 0;
+    background: #374151;
+    border-radius: 999px;
+    transition: background-color 150ms ease;
+  }
+  .ec-toggle-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: #e5e7eb;
+    border-radius: 999px;
+    transition: transform 150ms ease, background-color 150ms ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  }
+  .ec-toggle-switch input:checked ~ .ec-toggle-track {
+    background: #3b82f6;
+  }
+  .ec-toggle-switch input:checked ~ .ec-toggle-thumb {
+    transform: translateX(12px);
+    background: #ffffff;
+  }
+  .ec-toggle-switch input:focus-visible ~ .ec-toggle-track {
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+  }
+  .ec-toggle:has(input:checked) {
+    background: rgba(59, 130, 246, 0.10);
+    border-color: rgba(59, 130, 246, 0.40);
+  }
+  .ec-toggle:has(input:checked) span.text-gray-300 {
+    color: #93c5fd;
+  }
 </style>
 
 <div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
-  <div class="px-6 py-4 flex items-center gap-4">
-    <a href="/extension-configurator/environments" class="text-xs text-gray-400 hover:text-gray-200">← Ambientes</a>
+  <div class="px-6 py-4 flex items-center gap-3 flex-wrap">
+    <a href="/extension-configurator/environments"
+       class="inline-flex items-center gap-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-gray-100 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs font-medium transition-colors">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 010 1.06L9.06 10l3.73 3.71a.75.75 0 11-1.06 1.06l-4.25-4.24a.75.75 0 010-1.06l4.25-4.24a.75.75 0 011.06 0z" clip-rule="evenodd"/></svg>
+      Ambientes
+    </a>
     <div class="flex-1 min-w-0">
-      <h1 id="ec-title" class="text-lg font-semibold text-gray-100">—</h1>
-      <p id="ec-subtitle" class="text-xs text-gray-400 mt-0.5">—</p>
+      <h1 id="ec-title" class="text-lg font-semibold text-gray-100 truncate">—</h1>
+      <p id="ec-subtitle" class="text-xs text-gray-400 mt-0.5 truncate">—</p>
     </div>
-    <div class="flex items-center gap-2">
-      <a id="ec-config-link" href="#" class="text-xs text-gray-400 hover:text-gray-200">Config padrão</a>
-      <button id="ec-save" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">Salvar planilha</button>
-      <button id="ec-apply" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs">Aplicar</button>
+    <a id="ec-config-link" href="#" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">⚙ Config padrão</a>
+    <button id="ec-save" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">Salvar planilha</button>
+    <button id="ec-apply-selected" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-4 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-blue-500/20">Aplicar selecionados (0)</button>
+    <button id="ec-apply" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">Aplicar tudo</button>
+  </div>
+</div>
+
+<div class="px-6 py-4 space-y-3">
+  <div id="ec-status-pills" class="flex items-center gap-2 text-xs"></div>
+  <div class="flex items-center justify-between gap-3 flex-wrap text-xs text-gray-400">
+    <div class="leading-relaxed max-w-3xl">
+      Planilha estilo Excel: clique e arraste para selecionar blocos ·
+      <kbd class="ec-kbd">Ctrl+C</kbd> / <kbd class="ec-kbd">Ctrl+V</kbd> ·
+      arraste o canto inferior direito de uma seleção para preencher (números incrementam automaticamente).
+      <br>Marque o checkbox da coluna <strong>✓</strong> para escolher quais aparelhos enviar — útil quando alguns telefones estão offline e você quer voltar só nesses depois.
+    </div>
+
+    <div class="flex items-center gap-2 flex-wrap">
+      <div class="inline-flex rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 overflow-hidden divide-x divide-gray-700">
+        <button id="ec-sel-all" type="button"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-blue-300 hover:bg-blue-500/15 hover:text-blue-200 transition-colors">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
+          marcar todos
+        </button>
+        <button id="ec-sel-none" type="button"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-gray-300 hover:bg-gray-700/60 hover:text-gray-100 transition-colors">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.25 10a.75.75 0 01.75-.75h10a.75.75 0 010 1.5H5a.75.75 0 01-.75-.75z" clip-rule="evenodd"/></svg>
+          desmarcar
+        </button>
+        <button id="ec-sel-errors" type="button"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-yellow-300 hover:bg-yellow-500/15 hover:text-yellow-200 transition-colors">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v4a.75.75 0 01-1.5 0v-4A.75.75 0 0110 5zm0 8a.75.75 0 100 1.5.75.75 0 000-1.5z" clip-rule="evenodd"/></svg>
+          só erros/pendentes
+        </button>
+      </div>
+
+      <label class="ec-toggle inline-flex items-center gap-2 rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 hover:bg-gray-700/60 px-3 py-1.5 cursor-pointer transition-colors select-none">
+        <span class="ec-toggle-switch" aria-hidden="true">
+          <input id="ec-force" type="checkbox" class="sr-only"/>
+          <span class="ec-toggle-track"></span>
+          <span class="ec-toggle-thumb"></span>
+        </span>
+        <span class="text-[11px] font-medium text-gray-300">Forçar reaplicação</span>
+      </label>
     </div>
   </div>
 </div>
 
-<div class="px-6 py-6 space-y-4">
-  <div id="ec-toast" class="hidden text-xs"></div>
-  <div id="ec-spreadsheet" class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden"></div>
+<div class="px-6 pb-6">
+  <div class="ec-spreadsheet-wrap">
+    <div id="ec-spreadsheet" class="ec-spreadsheet"></div>
+  </div>
+</div>
 
+<div class="px-6 pb-6">
   <div id="ec-run-panel" class="hidden bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4 space-y-2">
     <div class="flex items-center justify-between">
       <h3 class="text-sm font-semibold text-gray-100">Execução em andamento</h3>
@@ -42,6 +269,6 @@
 
 <script>window.EC_ENV_ID = {{ ambiente_id | tojson }};</script>
 <script src="https://cdn.jsdelivr.net/npm/jsuites@4.17.7/dist/jsuites.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.15.0/dist/jspreadsheet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.15.0/dist/index.min.js"></script>
 <script type="module" src="/static/js/pages/extension_configurator_detail.js"></script>
 {% endblock %}

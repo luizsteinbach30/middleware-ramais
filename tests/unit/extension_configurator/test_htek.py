@@ -110,8 +110,13 @@ async def test_discover_against_mocked_index_digest_auth() -> None:
 
 
 def test_generate_config_produces_valid_htek_xml() -> None:
-    """Gera config XML no formato hl_provision v1 e valida estrutura/P-codes."""
+    """Gera config XML no formato hl_provision v1 e valida estrutura/P-codes.
+
+    Valores de texto sao URL-encodados antes do XML porque o firmware HTEK
+    faz URL-decode (%XX) ao ler o XML — ver _htek_text() em vendors/htek.py.
+    """
     import xml.etree.ElementTree as ET
+    from urllib.parse import unquote
 
     adapter = HTEKAdapter()
     cfg = adapter.generate_config(
@@ -138,30 +143,40 @@ def test_generate_config_produces_valid_htek_xml() -> None:
     config = root.find("config")
     assert config is not None
 
-    # mapa P-code → valor texto
+    # mapa P-code → valor texto (URL-decodado para comparar com original)
     p_map = {p.tag: p.text for p in config}
-    assert p_map["P47"] == "pbx.example.com"        # Sipserver
-    assert p_map["P130"] == "0"                     # SipTransport=UDP
-    assert p_map["P32"] == "30"                     # RegisterExpiration
-    assert p_map["P35"] == "3660"                   # Account1_SipUserId
-    assert p_map["P36"] == "3660"                   # Account1_AuthenticateID
-    assert p_map["P34"] == "s3cret"                 # Account1_AuthenticatePassword
-    assert p_map["P3"] == "Recepção"                # Account1_DispalyName
-    assert p_map["P57"] == "9"                      # G.722 = id 9
-    assert p_map["P58"] == "8"                      # PCMA = id 8
-    assert p_map["P64"] == "18"                     # TimeZone São Paulo
-    assert p_map["P30"] == "a.ntp.br"               # NTP server
+    assert unquote(p_map["P47"] or "") == "pbx.example.com"   # Sipserver
+    assert p_map["P130"] == "0"                                # SipTransport=UDP
+    assert p_map["P32"] == "30"                                # RegisterExpiration
+    assert unquote(p_map["P35"] or "") == "3660"               # Account1_SipUserId
+    assert unquote(p_map["P36"] or "") == "3660"               # Account1_AuthenticateID
+    assert unquote(p_map["P34"] or "") == "s3cret"             # Account1_AuthenticatePassword
+    assert unquote(p_map["P3"] or "") == "Recepção"            # Account1_DispalyName
+    assert p_map["P57"] == "9"                                 # G.722 = id 9
+    assert p_map["P58"] == "8"                                 # PCMA = id 8
+    assert p_map["P64"] == "18"                                # TimeZone São Paulo
+    assert unquote(p_map["P30"] or "") == "a.ntp.br"           # NTP server
 
 
 def test_generate_config_escapes_xml_special_chars() -> None:
+    """Caracteres especiais XML sao URL-encodados (firmware HTEK faz URL-decode).
+
+    `p&w<x>` -> `p%26w%3Cx%3E` no XML; ao decodar volta para o original.
+    """
+    import xml.etree.ElementTree as ET
+    from urllib.parse import unquote
+
     adapter = HTEKAdapter()
     cfg = adapter.generate_config(
         template={},
         row={"conta_sip": "3660", "senha_sip": "p&w<x>", "servidor_sip": "host.x"},
     )
+    root = ET.fromstring(cfg)
+    p_map = {p.tag: (p.text or "") for p in root.find("config")}
+    assert unquote(p_map["P34"]) == "p&w<x>"
+    # garante que o XML literal nao contem os chars problematicos
     text = cfg.decode("utf-8")
-    assert "p&amp;w&lt;x&gt;" in text
-    assert "<P34" in text and "p&w<x>" not in text  # escapado, não literal
+    assert "p&w<x>" not in text  # nao apareceria; aspas/<>/& foram %-encoded
 
 
 def test_generate_config_omite_admin_pwd_quando_nova_senha_nao_definida() -> None:
@@ -179,8 +194,12 @@ def test_generate_config_omite_admin_pwd_quando_nova_senha_nao_definida() -> Non
 
 
 def test_generate_config_emite_admin_pwd_quando_nova_senha_definida() -> None:
-    """Com nova_web_password, emite P2 (AdminPassword) e opcionalmente P8681."""
+    """Com nova_web_password, emite P2 (AdminPassword) e opcionalmente P8681.
+
+    Valores tambem passam por URL-encode (regra _htek_text).
+    """
     import xml.etree.ElementTree as ET
+    from urllib.parse import unquote
     adapter = HTEKAdapter()
     cfg = adapter.generate_config(
         template={"nova_web_user": "suporte", "nova_web_password": "Ambisec@2026"},
@@ -188,8 +207,8 @@ def test_generate_config_emite_admin_pwd_quando_nova_senha_definida() -> None:
     )
     root = ET.fromstring(cfg)
     p_map = {p.tag: (p.text or "") for p in root.find("config")}
-    assert p_map.get("P8681") == "suporte"
-    assert p_map.get("P2") == "Ambisec@2026"
+    assert unquote(p_map.get("P8681") or "") == "suporte"
+    assert unquote(p_map.get("P2") or "") == "Ambisec@2026"
 
 
 def test_generate_config_unknown_codec_raises() -> None:

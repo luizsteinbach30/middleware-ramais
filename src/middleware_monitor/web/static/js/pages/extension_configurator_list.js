@@ -42,16 +42,18 @@ $('#ec-modal').addEventListener('click', (e) => { if (e.target.id === 'ec-modal'
 $('#ec-modal-create').addEventListener('click', async () => {
   const nome = $('#ec-new-nome').value.trim();
   const modelo = $('#ec-new-modelo').value;
-  if (!nome) { toast({ tone: 'error', text: 'Nome obrigatório' }); return; }
+  if (!nome) { toast.error('Nome obrigatório'); return; }
   try {
     const env = await api('/api/extension-configurator/environments', {
       method: 'POST', body: { nome, modelo_telefone: modelo },
     });
     closeModal();
-    location.href = `/extension-configurator/environments/${encodeURIComponent(env.id)}`;
+    // Ambiente recem-criado: leva direto pra config padrao para o usuario
+    // ajustar credencial, function keys e validacao antes de mexer na planilha.
+    location.href = `/extension-configurator/environments/${encodeURIComponent(env.id)}/config`;
   } catch (err) {
-    toast({ tone: 'error', text: 'Erro: ' + err.message });
+    toast.error('Erro: ' + err.message);
   }
 });
 
-load().catch((e) => toast({ tone: 'error', text: 'Falha ao carregar: ' + e.message }));
+load().catch((e) => toast.error('Falha ao carregar: ' + e.message));

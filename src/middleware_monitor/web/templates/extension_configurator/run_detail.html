@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Relatório #{{ run_id }} — Configurador de Ramais{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center gap-4">
+    <a href="/extension-configurator/runs"
+       class="inline-flex items-center gap-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-gray-100 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs font-medium transition-colors">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M12.79 5.23a.75.75 0 010 1.06L9.06 10l3.73 3.71a.75.75 0 11-1.06 1.06l-4.25-4.24a.75.75 0 010-1.06l4.25-4.24a.75.75 0 011.06 0z" clip-rule="evenodd"/></svg>
+      Relatórios
+    </a>
+    <div class="flex-1 min-w-0">
+      <h1 id="ec-rd-title" class="text-lg font-semibold text-gray-100">Relatório #{{ run_id }}</h1>
+      <p id="ec-rd-subtitle" class="text-xs text-gray-400 mt-0.5">—</p>
+    </div>
+    <a id="ec-rd-env-link" href="#" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">Ir para o ambiente</a>
+  </div>
+</div>
+
+<div class="px-6 py-6 space-y-5 max-w-6xl">
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 mb-1">Total</div>
+      <div id="ec-rd-total" class="text-2xl font-semibold text-gray-100 tabular-nums">—</div>
+    </div>
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 mb-1">OK</div>
+      <div id="ec-rd-ok" class="text-2xl font-semibold text-green-400 tabular-nums">—</div>
+    </div>
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 mb-1">Falha</div>
+      <div id="ec-rd-falha" class="text-2xl font-semibold text-red-400 tabular-nums">—</div>
+    </div>
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 mb-1">Duração</div>
+      <div id="ec-rd-duracao" class="text-2xl font-semibold text-gray-100 tabular-nums">—</div>
+    </div>
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
+      <div class="text-gray-400 mb-1">Operador</div>
+      <div id="ec-rd-operador" class="text-base font-medium text-gray-200 truncate">—</div>
+    </div>
+  </div>
+
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-gray-100">Linhas do ambiente</h3>
+      <span class="text-[11px] text-gray-500">snapshot atual das linhas — para acompanhar um run em curso, abra o ambiente</span>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider">
+        <tr>
+          <th class="text-left px-4 py-3 font-semibold">IP</th>
+          <th class="text-left px-4 py-3 font-semibold">Ramal</th>
+          <th class="text-left px-4 py-3 font-semibold">Nome</th>
+          <th class="text-left px-4 py-3 font-semibold">Status</th>
+          <th class="text-left px-4 py-3 font-semibold">Modelo</th>
+          <th class="text-left px-4 py-3 font-semibold">MAC</th>
+          <th class="text-left px-4 py-3 font-semibold">Última aplicação</th>
+          <th class="text-left px-4 py-3 font-semibold">Erro</th>
+        </tr>
+      </thead>
+      <tbody id="ec-rd-tbody" class="divide-y divide-gray-800"></tbody>
+    </table>
+    <p id="ec-rd-empty" class="hidden p-4 text-xs text-gray-500">Sem linhas registradas para este ambiente.</p>
+  </div>
+</div>
+
+<script>window.EC_RUN_ID = {{ run_id | tojson }};</script>
+<script type="module" src="/static/js/pages/extension_configurator_run_detail.js"></script>
+{% endblock %}

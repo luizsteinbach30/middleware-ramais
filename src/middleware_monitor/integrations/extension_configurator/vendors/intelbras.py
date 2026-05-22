@@ -49,6 +49,15 @@ import httpx
 
 from .base import DiscoveryResult, VendorAdapter, VendorCredentials
 
+# Aspas em campos de senha podem corromper o valor armazenado no aparelho
+# (mesmo padrao visto no HTEK). Escapamos por seguranca.
+_PASSWORD_ENTITIES = {'"': "&quot;", "'": "&apos;"}
+
+
+def _xml_escape_password(s: str) -> str:
+    return xml_escape(s, _PASSWORD_ENTITIES)
+
+
 _TEMPLATE_PATH = Path(__file__).parent / "intelbras_template.xml"
 
 
@@ -230,7 +239,7 @@ class IntelbrasAdapter(VendorAdapter):
         ctx = {
             "register_addr": xml_escape(register_addr),
             "register_user": xml_escape(register_user),
-            "register_pwd": xml_escape(register_pwd),
+            "register_pwd": _xml_escape_password(register_pwd),
             "phone_number": xml_escape(phone_number),
             "display_name": xml_escape(display_name),
             "sip_name": xml_escape(register_user),
@@ -260,7 +269,7 @@ class IntelbrasAdapter(VendorAdapter):
             f'    <web>\n'
             f'        <account index="1">\n'
             f'            <Name>{xml_escape(nova_user)}</Name>\n'
-            f'            <Password>{xml_escape(nova_pwd)}</Password>\n'
+            f'            <Password>{_xml_escape_password(nova_pwd)}</Password>\n'
             f'            <Level>10</Level>\n'
             f'        </account>\n'
             f'    </web>'
