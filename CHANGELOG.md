@@ -2,6 +2,84 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.3.0] — 2026-05-23
+
+### Added
+- **Vinculação Device ↔ ExtensionLine** — cada ramal cadastrado no
+  Configurador de Ramais pode ser associado a um `Device` descoberto via
+  USCall. A vinculação é automática quando IP da linha bate com IP do
+  device, e pode ser feita/desfeita manualmente.
+  - `extension_lines.device_id` (FK nullable, `SET NULL` em delete).
+  - Migration `0003_device_line_link` com backfill por IP.
+  - Auto-link nos 3 momentos: (1) toda vez que `upsert_from_uscall` cria
+    ou atualiza um Device; (2) toda vez que a planilha de um ambiente é
+    salva; (3) sob demanda via botão "Vincular por IP agora" em `/config`.
+- **Watcher de auto-reaplicação** — quando um device vinculado faz a
+  transição `offline → online` no ping (ICMP), o sistema reaplica a
+  config no telefone automaticamente. Regras:
+  - **PBX-aware**: só age se `device.logical_status='unavailable'` no
+    USCall (PBX não vê o ramal). Se PBX vê o ramal como `available`, o
+    telefone está provisionado corretamente e nada é feito.
+  - **Debounce por linha**: configurável (default 60 min), evita storm
+    em redes instáveis.
+  - **Toggle global**: `auto_reapply_on_recovery` (default `false`).
+  - Tudo registrado em nova tabela `line_reapply_events` com motivo
+    (`recovery` | `manual_device_page`), status e referência ao
+    `ExtensionApplyRun` gerado.
+- **Apply ad-hoc na tela do device** — botão "Importar config" em
+  `/devices/{id}` dispara `apply_single_line` imediatamente (ignora
+  toggle global e debounce). Operador registrado como o usuário logado.
+- **Propagação automática de IP** — quando o USCall traz o mesmo ramal
+  com IP diferente (DHCP refresh, troca de rede), o `device.ip` E o
+  `extension_lines.ip` das linhas vinculadas são atualizados.
+- **Tela `/devices/{id}` ganha bloco "Configurador de ramais"** — mostra
+  ambiente vinculado, ramal, status da última config, hash, histórico de
+  reapply events e botões "Importar config", "Vincular linha",
+  "Desvincular".
+- **Modal de vinculação manual em 2 passos**:
+  - Passo 1: lista ambientes com linhas órfãs, ordenando os com IP
+    casado para o topo (badge verde **IP bate**).
+  - Passo 2: o sistema sugere automaticamente a linha por (a) IP igual,
+    (b) ramal igual ao nome do device, (c) única linha órfã do ambiente.
+    Fallback: lista as linhas órfãs para escolha manual.
+- **Planilha do ambiente ganha coluna `Device`** — exibe nome do device
+  com pill de status de rede (🟢/🔴/⚪). Click abre popover com
+  "Ver telefone →" (link para `/devices/{id}` em nova aba) e
+  "Desvincular".
+- **Lista `/devices` ganha coluna `Vínculo`** — link para o ambiente +
+  ramal e nome visível. Endpoint `GET /api/devices` retorna info do
+  vínculo via batch query (evita N+1).
+- **Cards `/extension-configurator/environments` mostram contador** —
+  pill "X/Y devices vinculados" (verde 100%, azul ≥50%, amarelo >0,
+  cinza nenhum).
+- **Configurações `/config`** ganha bloco "Auto-reaplicação de configs"
+  com toggle + input de debounce + botão **"Vincular por IP agora"**
+  (roda `auto_link_lines_by_ip` sob demanda).
+- **Endpoints novos**:
+  - `GET /api/devices/{id}/extension-line` — linha vinculada (ou null).
+  - `GET /api/devices/{id}/link-environments` — ambientes candidatos.
+  - `GET /api/devices/{id}/link-suggestion?environment_id=X` — sugestão.
+  - `GET /api/devices/{id}/available-lines?environment_id=X` — linhas órfãs.
+  - `POST /api/devices/{id}/link` `{line_id}` — vincula manualmente.
+  - `DELETE /api/devices/{id}/link` — desvincula.
+  - `POST /api/devices/{id}/apply-config` — apply ad-hoc.
+  - `GET /api/devices/{id}/reapply-events` — histórico.
+  - `POST /api/devices/auto-link` — auto-link em massa por IP.
+
+### Changed
+- `Device` ganhou coluna `network_status_prev` (para detectar transição
+  `offline → online` com segurança após o `record_ping`).
+- `ExtensionLine` ganhou `device_id` (FK) e relacionamento
+  `reapply_events` (cascade).
+- `record_ping` agora persiste o status anterior antes de atualizar.
+- `save_lines` no Configurador zera `device_id` quando o IP da linha
+  muda e não bate com o device atual, depois roda auto-link para
+  revincular se houver match.
+- `GET /api/devices` e `GET /api/extension-configurator/environments/{id}`
+  passam a expor `device_id`/`device_name`/`device_ip`/
+  `device_network_status` por linha (e `extension_environment_id`/
+  `nome`/`extension_line_*` por device).
+
 ## [2.2.3] — 2026-05-22
 
 ### Added

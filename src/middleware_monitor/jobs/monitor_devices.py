@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
-from middleware_monitor.core.models import Device
+from middleware_monitor.core.models import Device, ExtensionLine
 from middleware_monitor.core.time import as_local_str
 from middleware_monitor.domain.config.repository import load_config
 from middleware_monitor.domain.devices.repository import record_ping
+from middleware_monitor.domain.extension_configurator import apply as ec_apply
+from middleware_monitor.domain.extension_configurator import repository as ec_repo
 from middleware_monitor.domain.webhooks.sender import WebhookSender
 from middleware_monitor.integrations.network import (
     make_arp_probe,
@@ -60,6 +63,7 @@ async def run_monitor_devices() -> None:
     tasks = [probe_one(d.id, d.ip, d.mac) for d in devices if d.ip]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
+    recovered_device_ids: list[int] = []
     with session_factory() as db:
         for r in results:
             if isinstance(r, Exception):
@@ -68,6 +72,7 @@ async def run_monitor_devices() -> None:
             d = db.get(Device, device_id)
             if d is None:
                 continue
+            prev_status = d.network_status
             record_ping(db, d, online=online, latency_ms=latency)
             if new_mac and not d.mac:
                 d.mac = new_mac
@@ -84,6 +89,8 @@ async def run_monitor_devices() -> None:
             )
             if online:
                 on += 1
+                if prev_status == "offline":
+                    recovered_device_ids.append(device_id)
             else:
                 off += 1
         db.commit()
@@ -95,3 +102,75 @@ async def run_monitor_devices() -> None:
     # The online/offline counts stay in the log line above, not in the payload.
     sender = WebhookSender(session_factory)
     await sender.dispatch("devices", snapshot)
+
+    if recovered_device_ids and cfg.auto_reapply_on_recovery:
+        await _trigger_recovery_reapplies(
+            recovered_device_ids,
+            debounce_minutes=cfg.auto_reapply_debounce_minutes,
+        )
+
+
+async def _trigger_recovery_reapplies(
+    device_ids: list[int], *, debounce_minutes: int,
+) -> None:
+    """Para cada device que voltou (offline→online), dispara apply nas linhas
+    vinculadas que não tiveram reapply 'recovery' recente.
+
+    Regra crítica: o USCall (PBX) é a fonte da verdade do estado lógico do
+    ramal. Se o device responde ICMP **e** está `logical_status='available'`
+    no USCall, o telefone está provisionado corretamente — não tomamos ação,
+    a config existente está funcionando. Só reaplicamos quando o device
+    responde ICMP **mas** continua `unavailable` no PBX — sinal de que a
+    config sumiu ou o ramal não está registrando.
+    """
+    now = datetime.now(UTC).replace(tzinfo=None)
+    cutoff = now - timedelta(minutes=max(1, debounce_minutes))
+    lines_to_apply: list[tuple[str, int, str]] = []  # (line_id, device_id, ramal)
+    with session_factory() as db:
+        for dev_id in device_ids:
+            dev = db.get(Device, dev_id)
+            if dev is None:
+                continue
+            if dev.logical_status == "available":
+                log.info(
+                    "recovery_skipped_uscall_available",
+                    device_id=dev_id, device_name=dev.name,
+                )
+                continue
+            lines = list(
+                db.scalars(
+                    select(ExtensionLine).where(ExtensionLine.device_id == dev_id)
+                ).all()
+            )
+            for ln in lines:
+                if not ln.ip:
+                    continue
+                last = ec_repo.last_reapply_event_for_line(db, ln.id)
+                if (
+                    last is not None
+                    and last.reason == "recovery"
+                    and last.started_at >= cutoff
+                ):
+                    log.info(
+                        "recovery_skipped_debounce",
+                        line_id=ln.id, device_id=dev_id,
+                        last_at=last.started_at.isoformat(),
+                    )
+                    continue
+                lines_to_apply.append((ln.id, dev_id, ln.numero_ramal))
+
+    for line_id, dev_id, ramal in lines_to_apply:
+        try:
+            await ec_apply.run_apply_single_line(
+                line_id, operador="auto-watcher", reason="recovery",
+            )
+            log.info(
+                "recovery_reapply_dispatched",
+                line_id=line_id, device_id=dev_id, ramal=ramal,
+            )
+        except Exception as exc:
+            log.warning(
+                "recovery_reapply_failed",
+                line_id=line_id, device_id=dev_id, ramal=ramal,
+                error=f"{type(exc).__name__}: {exc}",
+            )

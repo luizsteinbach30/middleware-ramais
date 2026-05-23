@@ -72,6 +72,7 @@ class Device(Base):
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     logical_status: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
     network_status: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
+    network_status_prev: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_ping_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -80,6 +81,7 @@ class Device(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     pings: Mapped[list[DevicePing]] = relationship(back_populates="device", cascade="all, delete-orphan")
+    extension_lines: Mapped[list[ExtensionLine]] = relationship(back_populates="device")
 
 
 class DevicePing(Base):
@@ -209,10 +211,18 @@ class ExtensionLine(Base):
     ultimo_erro: Mapped[str | None] = mapped_column(Text, nullable=True)
     ultimo_modelo: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ultimo_mac: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     environment: Mapped[ExtensionEnvironment] = relationship(back_populates="lines")
+    device: Mapped[Device | None] = relationship(back_populates="extension_lines")
+    reapply_events: Mapped[list[LineReapplyEvent]] = relationship(
+        back_populates="line", cascade="all, delete-orphan",
+    )
 
 
 class ExtensionApplyRun(Base):
@@ -236,6 +246,38 @@ class ExtensionApplyRun(Base):
     environment: Mapped[ExtensionEnvironment] = relationship(back_populates="runs")
 
 
+class LineReapplyEvent(Base):
+    """Histórico de reapplies automáticos (watcher de recovery) por linha.
+
+    Separado de `extension_apply_runs` porque cada evento aqui é por linha
+    individual, com motivo (`recovery` | `manual_device_page`) e referência
+    opcional ao run gerado.
+    """
+
+    __tablename__ = "line_reapply_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    line_id: Mapped[str] = mapped_column(
+        ForeignKey("extension_lines.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("devices.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # ok | erro | skipped
+    reason: Mapped[str] = mapped_column(String(32), nullable=False)  # recovery | manual_device_page
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("extension_apply_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    line: Mapped[ExtensionLine] = relationship(back_populates="reapply_events")
+
+
 __all__: list[str] = [
     "AppConfig",
     "Collection",
@@ -244,6 +286,7 @@ __all__: list[str] = [
     "ExtensionApplyRun",
     "ExtensionEnvironment",
     "ExtensionLine",
+    "LineReapplyEvent",
     "LoginAttempt",
     "Session",
     "SystemLog",

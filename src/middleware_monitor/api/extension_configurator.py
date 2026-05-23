@@ -86,11 +86,13 @@ def _env_summary(
 ) -> dict[str, Any]:
     runs = sorted(env.runs, key=lambda r: r.started_at, reverse=True)
     last = runs[0] if runs else None
+    devices_vinculados = sum(1 for ln in lines if ln.device_id is not None)
     return {
         "id": env.id,
         "nome": env.nome,
         "modelo_telefone": env.modelo_telefone,
         "telefones": len(lines),
+        "devices_vinculados": devices_vinculados,
         "atualizado_em": iso_utc(env.updated_at),
         "ultima_execucao": _run_dict(last) if last else None,
         "status_resumo": _status_resumo(lines),
@@ -98,7 +100,11 @@ def _env_summary(
     }
 
 
-def _line_dict(line: ExtensionLine, status: dict[str, str]) -> dict[str, Any]:
+def _line_dict(
+    line: ExtensionLine,
+    status: dict[str, str],
+    device_info: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "id": line.id,
         "ip": line.ip,
@@ -116,6 +122,10 @@ def _line_dict(line: ExtensionLine, status: dict[str, str]) -> dict[str, Any]:
         "ultimo_mac": line.ultimo_mac,
         "status": status.get("status", "pending"),
         "hash_atual": status.get("hash_atual", ""),
+        "device_id": (device_info or {}).get("device_id"),
+        "device_name": (device_info or {}).get("device_name"),
+        "device_ip": (device_info or {}).get("device_ip"),
+        "device_network_status": (device_info or {}).get("network_status"),
     }
 
 
@@ -201,6 +211,7 @@ def environment_detail(
         raise HTTPException(404, "ambiente nao encontrado")
     lines = repo.list_lines(db, env_id)
     statuses = {s["id"]: s for s in compute_statuses(env, lines)}
+    devices = repo.get_device_info_for_lines(db, lines)
     return {
         "id": env.id,
         "nome": env.nome,
@@ -208,7 +219,10 @@ def environment_detail(
         "config_padrao": repo.merged_config_padrao(env),
         "criado_em": iso_utc(env.created_at),
         "atualizado_em": iso_utc(env.updated_at),
-        "linhas": [_line_dict(ln, statuses.get(ln.id, {})) for ln in lines],
+        "linhas": [
+            _line_dict(ln, statuses.get(ln.id, {}), devices.get(ln.id))
+            for ln in lines
+        ],
     }
 
 
@@ -330,12 +344,16 @@ def run_detail(
     statuses = (
         {s["id"]: s for s in compute_statuses(env, lines)} if env else {}
     )
+    devices = repo.get_device_info_for_lines(db, lines) if lines else {}
     return {
         "run": _run_dict(db_run),
         "environment": {
             "id": env.id, "nome": env.nome, "modelo_telefone": env.modelo_telefone,
         } if env else None,
-        "linhas": [_line_dict(ln, statuses.get(ln.id, {})) for ln in lines],
+        "linhas": [
+            _line_dict(ln, statuses.get(ln.id, {}), devices.get(ln.id))
+            for ln in lines
+        ],
     }
 
 

@@ -43,6 +43,9 @@ class AppConfigOut(BaseModel):
 
     webhook_timeout_seconds: int = 10
 
+    auto_reapply_on_recovery: bool = False
+    auto_reapply_debounce_minutes: int = 60
+
     webhooks: dict[str, WebhookConfig] = Field(
         default_factory=lambda: {
             "extensions": WebhookConfig(),
@@ -68,6 +71,9 @@ class AppConfigUpdate(BaseModel):
     collection_retention_days: int | None = Field(default=None, ge=1, le=365)
     system_log_retention_days: int | None = Field(default=None, ge=1, le=365)
     webhook_timeout_seconds: int | None = Field(default=None, ge=1, le=120)
+
+    auto_reapply_on_recovery: bool | None = None
+    auto_reapply_debounce_minutes: int | None = Field(default=None, ge=1, le=10080)
 
     webhooks: dict[str, WebhookConfigUpdate] | None = None
 

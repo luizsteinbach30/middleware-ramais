@@ -9,6 +9,7 @@ const FIELDS = [
   'client_code', 'uscall_host', 'uscall_verify_ssl',
   'webhook_interval_minutes',
   'ping_timeout_ms', 'ping_concurrency', 'device_ping_retention_days',
+  'auto_reapply_on_recovery', 'auto_reapply_debounce_minutes',
   'webhook_log_retention_days', 'collection_retention_days', 'system_log_retention_days',
 ];
 
@@ -216,6 +217,25 @@ document.getElementById('cfg-test-uscall').addEventListener('click', async () =>
 
 window.addEventListener('beforeunload', (e) => {
   if (dirty.size > 0 || Object.keys(tokenChanges).length > 0) { e.preventDefault(); return ''; }
+});
+
+document.getElementById('auto-link-btn')?.addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  const out = document.getElementById('auto-link-result');
+  btn.disabled = true;
+  out.classList.remove('hidden');
+  out.className = 'mt-3 rounded-lg px-3 py-2 text-xs bg-gray-700/50 text-gray-300';
+  out.textContent = 'Vinculando…';
+  try {
+    const r = await api('/api/devices/auto-link', { method: 'POST' });
+    out.className = 'mt-3 rounded-lg px-3 py-2 text-xs bg-green-500/10 ring-1 ring-green-500/30 text-green-300';
+    out.textContent = r.linked ? `${r.linked} linha(s) vinculada(s) por IP.` : 'Nenhuma linha órfã com IP igual a algum device.';
+  } catch (err) {
+    out.className = 'mt-3 rounded-lg px-3 py-2 text-xs bg-red-500/10 ring-1 ring-red-500/30 text-red-300';
+    out.textContent = 'Falha ao executar auto-link.';
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 load();

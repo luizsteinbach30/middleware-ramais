@@ -64,14 +64,20 @@ async function load() {
 
     const tbody = document.getElementById('devices-tbody');
     if (!data.items.length) {
-      tbody.innerHTML = `<tr><td colspan="9" class="px-4 py-12 text-center text-sm text-gray-500">Nenhum device com esses filtros.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="10" class="px-4 py-12 text-center text-sm text-gray-500">Nenhum device com esses filtros.</td></tr>`;
     } else {
-      tbody.innerHTML = data.items.map((d) => `
+      tbody.innerHTML = data.items.map((d) => {
+        const linkCell = d.extension_environment_id
+          ? `<a href="/extension-configurator/environments/${d.extension_environment_id}" class="text-blue-400 hover:underline text-xs" onclick="event.stopPropagation()">${d.extension_environment_nome}</a>
+             <div class="text-[11px] text-gray-500">ramal ${d.extension_line_ramal || '—'}${d.extension_line_nome_visivel ? ' · ' + d.extension_line_nome_visivel : ''}</div>`
+          : `<span class="text-xs text-gray-500">— sem vínculo</span>`;
+        return `
         <tr class="hover:bg-gray-700/30 transition cursor-pointer" data-id="${d.id}">
           <td class="px-4 py-2.5 font-bold text-gray-100">${d.name}</td>
           <td class="px-4 py-2.5 font-mono text-xs text-gray-300">${d.ip || '—'}</td>
           <td class="px-4 py-2.5 font-mono text-xs text-gray-500">${d.mac || '—'}</td>
           <td class="px-4 py-2.5 text-gray-400">${d.model || '—'}</td>
+          <td class="px-4 py-2.5">${linkCell}</td>
           <td class="px-4 py-2.5">${logicalBadge(d.logical_status)}</td>
           <td class="px-4 py-2.5">${networkBadge(d.network_status)}</td>
           <td class="px-4 py-2.5 text-right font-mono tabular-nums text-gray-300">${d.latency_ms != null ? d.latency_ms + ' ms' : '—'}</td>
@@ -82,8 +88,8 @@ async function load() {
               <a href="/devices/${d.id}" class="p-1.5 rounded text-gray-400 hover:bg-gray-700 hover:text-gray-100" title="Detalhes"><span data-icon="chevron-r"></span></a>
             </div>
           </td>
-        </tr>
-      `).join('');
+        </tr>`;
+      }).join('');
       tbody.querySelectorAll('tr').forEach((tr) => {
         tr.addEventListener('click', (e) => {
           if (e.target.closest('button,a')) return;

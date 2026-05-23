@@ -42,6 +42,13 @@ function statusPill(meta) {
 }
 
 function envCard(e) {
+  const vincPct = e.telefones > 0
+    ? Math.round((e.devices_vinculados / e.telefones) * 100)
+    : 0;
+  const vincTone = vincPct >= 100 ? "green" : vincPct >= 50 ? "blue" : vincPct > 0 ? "yellow" : "gray";
+  const vincLabel = e.devices_vinculados > 0
+    ? `${e.devices_vinculados}/${e.telefones} devices vinculados`
+    : `nenhum device vinculado`;
   return `
     <div class="group relative bg-gray-800 hover:bg-gray-800/80 ring-1 ring-gray-700 rounded-xl transition-colors">
       <a href="/extension-configurator/environments/${encodeURIComponent(e.id)}"
@@ -53,8 +60,11 @@ function envCard(e) {
         <p class="text-xs text-gray-400 mt-1">${esc(e.modelo_telefone)}</p>
         <div class="mt-2 flex items-center justify-between gap-2">
           ${statusPill(e.status_resumo)}
-          <span class="text-[10px] text-gray-500 truncate">Atualizado: ${esc(e.atualizado_em || '—')}</span>
+          <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ring-1 ring-inset bg-${vincTone}-500/15 text-${vincTone}-400 ring-${vincTone}-500/30">
+            <span class="w-1.5 h-1.5 rounded-full bg-${vincTone}-400"></span>${vincLabel}
+          </span>
         </div>
+        <div class="mt-1.5 text-[10px] text-gray-500 truncate">Atualizado: ${esc(e.atualizado_em || '—')}</div>
       </a>
       <button
         data-action="delete"

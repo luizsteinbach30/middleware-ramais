@@ -23,6 +23,12 @@ class DeviceOut(BaseModel):
     last_ping_at: datetime | None
     notes: str | None
 
+    extension_line_id: str | None = None
+    extension_line_ramal: str | None = None
+    extension_line_nome_visivel: str | None = None
+    extension_environment_id: str | None = None
+    extension_environment_nome: str | None = None
+
     @field_serializer("last_seen_at", "last_ping_at", when_used="json-unless-none")
     def _ser_dt(self, value: datetime | None) -> str | None:
         return iso_utc(value)
