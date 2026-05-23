@@ -24,7 +24,11 @@ import httpx
 
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
-from middleware_monitor.core.models import ExtensionApplyRun, ExtensionLine
+from middleware_monitor.core.models import (
+    ExtensionApplyRun,
+    ExtensionLine,
+    LineReapplyEvent,
+)
 from middleware_monitor.core.tasks import spawn
 from middleware_monitor.integrations.extension_configurator.vendors import (
     VendorAdapter,
@@ -228,3 +232,101 @@ async def run_apply(
         operator=operador,
     )
     return run_id, len(rs.rows)
+
+
+async def run_apply_single_line(
+    line_id: str,
+    *,
+    operador: str,
+    reason: str,
+) -> tuple[str, int, int]:
+    """Aplica config de UMA linha (ad-hoc).
+
+    Cria ExtensionApplyRun(total=1) + LineReapplyEvent (status='running').
+    Dispara worker em background que atualiza ambos ao final.
+
+    `reason`: 'recovery' (watcher) | 'manual_device_page' (tela Devices).
+    Retorna `(run_id, db_run_id, event_id)`.
+    Levanta `ValueError` se a linha não existe ou não tem IP/ambiente.
+    """
+    with session_factory() as db:
+        line = repo.get_line(db, line_id)
+        if line is None:
+            raise ValueError(f"linha '{line_id}' nao existe")
+        if not line.ip:
+            raise ValueError(f"linha '{line_id}' sem IP — nada a aplicar")
+        env = repo.get_environment(db, line.environment_id)
+        if env is None:
+            raise ValueError(f"ambiente '{line.environment_id}' nao existe")
+
+        cfg = repo.merged_config_padrao(env)
+        web_user = str(cfg.get("web_user") or "admin")
+        web_password = str(cfg.get("web_password") or "admin")
+        validar = bool(cfg.get("validar_conectividade", True))
+        adapter = adapter_for(env.modelo_telefone)
+        template = build_template(cfg)
+        payload = adapter.generate_config(template, build_row(line, cfg))
+        hash_esperado = compute_line_hash(env, line)
+
+        db_run = repo.create_run(
+            db, env.id, total=1, forcado=True, operador=operador,
+        )
+        ev = repo.create_reapply_event(
+            db,
+            line_id=line.id,
+            device_id=line.device_id,
+            reason=reason,
+            run_id=db_run.id,
+        )
+        db_run_id = db_run.id
+        event_id = ev.id
+        line_ip = line.ip
+        line_ramal = line.numero_ramal
+        db.commit()
+
+    run_id = uuid.uuid4().hex[:12]
+    rs = RunState(run_id=run_id, env_id=env.id, db_run_id=db_run_id)
+    rs.rows.append(RowState(
+        line_id=line.id, ip=line_ip, numero_ramal=line_ramal,
+        hash_esperado=hash_esperado,
+    ))
+    run_state.register(rs)
+    run_state.prune()
+    creds = VendorCredentials(username=web_user, password=web_password)
+
+    async def _single_worker() -> None:
+        await _apply_row(
+            rs.rows[0],
+            env_id=env.id,
+            adapter=adapter,
+            cfg_bytes=payload,
+            creds=creds,
+            validar_conectividade=validar,
+        )
+        rs.finished_at = time.time()
+        ok = 1 if rs.rows[0].stage == "done" else 0
+        falha = 1 if rs.rows[0].stage == "error" else 0
+        ev_status = "ok" if ok else "erro"
+        ev_error = rs.rows[0].msg if falha else None
+        with session_factory() as db:
+            db_run_obj = db.get(ExtensionApplyRun, db_run_id)
+            if db_run_obj is not None:
+                repo.finish_run(db, db_run_obj, ok=ok, falha=falha)
+            ev_obj = db.get(LineReapplyEvent, event_id)
+            if ev_obj is not None:
+                repo.finish_reapply_event(
+                    db, ev_obj, status=ev_status, error=ev_error,
+                )
+            db.commit()
+        log.info(
+            "apply_single_finished", line_id=line_id, run_id=run_id,
+            db_run_id=db_run_id, event_id=event_id,
+            status=ev_status, reason=reason, operador=operador,
+        )
+
+    spawn(_single_worker())
+    log.info(
+        "apply_single_scheduled", line_id=line_id, run_id=run_id,
+        db_run_id=db_run_id, event_id=event_id, reason=reason, operador=operador,
+    )
+    return run_id, db_run_id, event_id

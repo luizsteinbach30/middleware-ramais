@@ -17,26 +17,36 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.core.models import (
+    Device,
     ExtensionApplyRun,
     ExtensionEnvironment,
     ExtensionLine,
+    LineReapplyEvent,
 )
 
 from .defaults import default_config_padrao
 
 __all__ = [
+    "auto_link_lines_by_ip",
     "create_environment",
+    "create_reapply_event",
     "create_run",
     "delete_environment",
+    "finish_reapply_event",
     "finish_run",
     "generate_slug",
     "get_environment",
+    "get_line",
+    "last_reapply_event_for_line",
+    "link_line_to_device",
     "list_environments",
     "list_lines",
+    "list_reapply_events",
     "list_runs",
     "merged_config_padrao",
     "new_line",
     "save_lines",
+    "unlink_line_from_device",
     "update_environment",
     "update_line_status",
 ]
@@ -165,6 +175,35 @@ def list_lines(db: DBSession, env_id: str) -> list[ExtensionLine]:
     )
 
 
+def get_device_info_for_lines(
+    db: DBSession, lines: list[ExtensionLine],
+) -> dict[str, dict[str, Any]]:
+    """Para cada linha vinculada a um Device, retorna {line_id: {device_id,
+    device_name, device_ip, network_status}}.
+
+    Linhas sem vínculo não aparecem no dict.
+    """
+    ids = [ln.device_id for ln in lines if ln.device_id is not None]
+    if not ids:
+        return {}
+    devs = list(db.scalars(select(Device).where(Device.id.in_(ids))).all())
+    by_dev = {d.id: d for d in devs}
+    out: dict[str, dict[str, Any]] = {}
+    for ln in lines:
+        if ln.device_id is None:
+            continue
+        d = by_dev.get(ln.device_id)
+        if d is None:
+            continue
+        out[ln.id] = {
+            "device_id": d.id,
+            "device_name": d.name,
+            "device_ip": d.ip,
+            "network_status": d.network_status,
+        }
+    return out
+
+
 def save_lines(
     db: DBSession, env: ExtensionEnvironment, rows: list[dict[str, Any]],
 ) -> list[ExtensionLine]:
@@ -173,6 +212,11 @@ def save_lines(
     Estratégia upsert-por-id: linhas vindas com `id` existente são atualizadas
     preservando histórico (ultimo_*); linhas com id novo são criadas; linhas
     ausentes na entrada são removidas (cascade).
+
+    Se o IP de uma linha mudar e o novo IP já não bater com o device atualmente
+    vinculado, o vínculo é zerado (preserva consistência). Após o upsert, roda
+    `auto_link_lines_by_ip` pra revincular linhas órfãs que agora batem com
+    algum Device.
     """
     now = _now()
     incoming_ids = {str(r.get("id") or "") for r in rows if r.get("id")}
@@ -185,8 +229,9 @@ def save_lines(
     out: list[ExtensionLine] = []
     for r in rows:
         rid = str(r.get("id") or "") or uuid.uuid4().hex
+        new_ip = str(r.get("ip", "") or "")
         fields = {
-            "ip": str(r.get("ip", "") or ""),
+            "ip": new_ip,
             "numero_ramal": str(r.get("numero_ramal", "") or ""),
             "user_auth": str(r.get("user_auth", "") or r.get("numero_ramal", "") or ""),
             "senha_sip": str(r.get("senha_sip", "") or ""),
@@ -202,12 +247,20 @@ def save_lines(
             db.add(ln_new)
             out.append(ln_new)
         else:
+            ip_changed = ln_existing.ip != new_ip
             for k, v in fields.items():
                 setattr(ln_existing, k, v)
             ln_existing.updated_at = now
+            # Se IP mudou e linha estava vinculada a device com outro IP, zera
+            # vínculo. O auto_link_lines_by_ip abaixo revincula se aplicável.
+            if ip_changed and ln_existing.device_id is not None:
+                dev = db.get(Device, ln_existing.device_id)
+                if dev is None or dev.ip != new_ip:
+                    ln_existing.device_id = None
             out.append(ln_existing)
     env.updated_at = now
     db.flush()
+    auto_link_lines_by_ip(db)
     return out
 
 
@@ -266,3 +319,132 @@ def list_runs(
     if env_id:
         stmt = stmt.where(ExtensionApplyRun.environment_id == env_id)
     return list(db.scalars(stmt.limit(limit)).all())
+
+
+# ---------------------------------------------------------------------------
+# Vinculação Device <-> ExtensionLine
+# ---------------------------------------------------------------------------
+
+
+def get_line(db: DBSession, line_id: str) -> ExtensionLine | None:
+    return db.get(ExtensionLine, line_id)
+
+
+def link_line_to_device(
+    db: DBSession, line: ExtensionLine, device: Device,
+) -> ExtensionLine:
+    line.device_id = device.id
+    line.updated_at = _now()
+    db.flush()
+    return line
+
+
+def unlink_line_from_device(db: DBSession, line: ExtensionLine) -> ExtensionLine:
+    line.device_id = None
+    line.updated_at = _now()
+    db.flush()
+    return line
+
+
+def auto_link_lines_by_ip(db: DBSession) -> int:
+    """Vincula ExtensionLines sem device_id ao Device cujo IP bate.
+
+    Idempotente. Retorna quantidade de linhas vinculadas nesta passada.
+    """
+    linked = 0
+    rows = list(
+        db.scalars(
+            select(ExtensionLine).where(
+                ExtensionLine.device_id.is_(None),
+                ExtensionLine.ip.is_not(None),
+                ExtensionLine.ip != "",
+            )
+        ).all()
+    )
+    for ln in rows:
+        dev = db.scalar(
+            select(Device).where(Device.ip == ln.ip).limit(1)
+        )
+        if dev is not None:
+            ln.device_id = dev.id
+            ln.updated_at = _now()
+            linked += 1
+    if linked:
+        db.flush()
+    return linked
+
+
+# ---------------------------------------------------------------------------
+# Histórico de reapply automático
+# ---------------------------------------------------------------------------
+
+
+def create_reapply_event(
+    db: DBSession,
+    *,
+    line_id: str,
+    device_id: int | None,
+    reason: str,
+    status: str = "running",
+    error: str | None = None,
+    run_id: int | None = None,
+) -> LineReapplyEvent:
+    ev = LineReapplyEvent(
+        line_id=line_id,
+        device_id=device_id,
+        started_at=_now(),
+        status=status,
+        reason=reason,
+        error=error,
+        run_id=run_id,
+    )
+    db.add(ev)
+    db.flush()
+    return ev
+
+
+def finish_reapply_event(
+    db: DBSession,
+    event: LineReapplyEvent,
+    *,
+    status: str,
+    error: str | None = None,
+    run_id: int | None = None,
+) -> None:
+    event.finished_at = _now()
+    event.status = status
+    if error is not None:
+        event.error = error
+    if run_id is not None:
+        event.run_id = run_id
+    db.flush()
+
+
+def list_reapply_events(
+    db: DBSession,
+    *,
+    line_id: str | None = None,
+    device_id: int | None = None,
+    limit: int = 50,
+) -> list[LineReapplyEvent]:
+    stmt = select(LineReapplyEvent).order_by(
+        LineReapplyEvent.started_at.desc(), LineReapplyEvent.id.desc(),
+    )
+    if line_id is not None:
+        stmt = stmt.where(LineReapplyEvent.line_id == line_id)
+    if device_id is not None:
+        stmt = stmt.where(LineReapplyEvent.device_id == device_id)
+    return list(db.scalars(stmt.limit(limit)).all())
+
+
+def last_reapply_event_for_line(
+    db: DBSession, line_id: str,
+) -> LineReapplyEvent | None:
+    return db.scalar(
+        select(LineReapplyEvent)
+        .where(LineReapplyEvent.line_id == line_id)
+        .order_by(
+            LineReapplyEvent.started_at.desc(), LineReapplyEvent.id.desc(),
+        )
+        .limit(1),
+    )

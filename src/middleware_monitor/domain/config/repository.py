@@ -103,6 +103,13 @@ def load_config(db: DBSession) -> AppConfigOut:
     out.system_log_retention_days = int(_get(rows, "system_log_retention_days", "14"))
     out.webhook_timeout_seconds = int(_get(rows, "webhook_timeout_seconds", "10"))
 
+    out.auto_reapply_on_recovery = _get(rows, "auto_reapply_on_recovery", "0") in (
+        "1", "true", "True", True,
+    )
+    out.auto_reapply_debounce_minutes = max(
+        1, int(_get(rows, "auto_reapply_debounce_minutes", "60") or 60),
+    )
+
     webhooks: dict[str, WebhookConfig] = {}
     for t in WEBHOOK_TYPES:
         webhooks[t] = WebhookConfig(
@@ -156,6 +163,8 @@ def update_config(db: DBSession, payload: AppConfigUpdate, *, user_id: int | Non
         "collection_retention_days",
         "system_log_retention_days",
         "webhook_timeout_seconds",
+        "auto_reapply_on_recovery",
+        "auto_reapply_debounce_minutes",
     ):
         v = getattr(payload, k)
         if v is not None:

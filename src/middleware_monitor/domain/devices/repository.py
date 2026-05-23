@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DBSession
 
-from middleware_monitor.core.models import Device, DevicePing
+from middleware_monitor.core.models import Device, DevicePing, ExtensionLine
 
 
 def _now() -> datetime:
@@ -48,10 +48,18 @@ def get_device(db: DBSession, device_id: int) -> Device | None:
 def upsert_from_uscall(db: DBSession, payload: list[dict[str, Any]]) -> int:
     """Apply the upsert rules defined in REQUISITOS RF-12.
 
-    Returns the number of rows touched (created or updated).
+    Returns the number of rows touched (created or updated). Após o upsert:
+
+    * ``link_extension_lines_to_device`` vincula ExtensionLines órfãs com IP
+      igual ao do device (idempotente).
+    * Devices cujo IP mudou propagam o novo IP para as linhas vinculadas
+      (mantém a planilha em sincronia automaticamente — o USCall é fonte da
+      verdade do endpoint atual do telefone).
     """
     touched = 0
     now = _now()
+    touched_devices: list[Device] = []
+    ip_changed_devices: list[Device] = []
     for ext in payload:
         name = str(ext.get("ramal") or "").strip()
         if not name:
@@ -63,28 +71,91 @@ def upsert_from_uscall(db: DBSession, payload: list[dict[str, Any]]) -> int:
         existing = db.scalar(select(Device).where(Device.name == name))
         if existing is None:
             if logical == "available" and ip:
-                db.add(
-                    Device(
-                        name=name,
-                        ip=ip,
-                        logical_status=logical,
-                        network_status="unknown",
-                        last_seen_at=now,
-                        created_at=now,
-                        updated_at=now,
-                    )
+                new_dev = Device(
+                    name=name,
+                    ip=ip,
+                    logical_status=logical,
+                    network_status="unknown",
+                    last_seen_at=now,
+                    created_at=now,
+                    updated_at=now,
                 )
+                db.add(new_dev)
+                touched_devices.append(new_dev)
                 touched += 1
             continue
 
         if ip and ip != existing.ip:
             existing.ip = ip
+            ip_changed_devices.append(existing)
         existing.logical_status = logical
         if logical == "available":
             existing.last_seen_at = now
         existing.updated_at = now
+        touched_devices.append(existing)
         touched += 1
+
+    if touched_devices:
+        db.flush()  # garante .id para os devices novos
+        for dev in ip_changed_devices:
+            sync_linked_lines_ip(db, dev)
+        for dev in touched_devices:
+            link_extension_lines_to_device(db, dev)
     return touched
+
+
+def sync_linked_lines_ip(db: DBSession, device: Device) -> int:
+    """Para cada ExtensionLine vinculada a este device, atualiza ``line.ip``
+    para ``device.ip``.
+
+    Use quando o IP do device muda (DHCP refresh, troca de rede). Sem isso
+    a planilha do ambiente continuaria com o IP antigo e a próxima aplicação
+    enviaria a config para o lugar errado.
+
+    Idempotente: linhas já com o IP atual ficam intactas. Retorna a contagem
+    de linhas efetivamente alteradas.
+    """
+    if not device.ip:
+        return 0
+    rows = list(
+        db.scalars(
+            select(ExtensionLine).where(
+                ExtensionLine.device_id == device.id,
+                ExtensionLine.ip != device.ip,
+            )
+        ).all()
+    )
+    now = _now()
+    for ln in rows:
+        ln.ip = device.ip
+        ln.updated_at = now
+    if rows:
+        db.flush()
+    return len(rows)
+
+
+def link_extension_lines_to_device(db: DBSession, device: Device) -> int:
+    """Vincula ExtensionLines órfãs (device_id IS NULL) com IP igual ao do device.
+
+    Retorna a quantidade vinculada nesta chamada. Idempotente.
+    """
+    if not device.ip:
+        return 0
+    rows = list(
+        db.scalars(
+            select(ExtensionLine).where(
+                ExtensionLine.device_id.is_(None),
+                ExtensionLine.ip == device.ip,
+            )
+        ).all()
+    )
+    now = _now()
+    for ln in rows:
+        ln.device_id = device.id
+        ln.updated_at = now
+    if rows:
+        db.flush()
+    return len(rows)
 
 
 def record_ping(
@@ -95,6 +166,7 @@ def record_ping(
     latency_ms: int | None,
 ) -> None:
     now = _now()
+    device.network_status_prev = device.network_status
     device.network_status = "online" if online else "offline"
     device.latency_ms = latency_ms if online else None
     device.last_ping_at = now

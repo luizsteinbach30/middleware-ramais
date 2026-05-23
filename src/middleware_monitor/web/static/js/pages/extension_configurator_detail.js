@@ -44,6 +44,7 @@ const COLUMNS = [
   { type: "text",     name: "senha_sip",         title: "Senha SIP",     width: 130 },
   { type: "text",     name: "servidor_sip",      title: "Servidor SIP",  width: 180 },
   { type: "text",     name: "numero_abreviado",  title: "Nº abreviado",  width: 110 },
+  { type: "text",     name: "_device",           title: "Device",        width: 160, readOnly: true },
   { type: "text",     name: "_status",           title: "Status",        width: 130, readOnly: true },
   { type: "text",     name: "_modelo",           title: "Modelo",        width: 100, readOnly: true },
   { type: "text",     name: "_mac",              title: "MAC",           width: 150, readOnly: true },
@@ -53,10 +54,28 @@ const COLUMNS = [
 const COL_INDEX = Object.fromEntries(COLUMNS.map((c, i) => [c.name, i]));
 const EDITABLE_FIELDS = ["ip","nome_visivel","numero_ramal","user_auth","senha_sip","servidor_sip","numero_abreviado"];
 
+// Mapas auxiliares: line_id -> { device_id, device_name } e row_idx -> line_id
+const lineDeviceMap = new Map();
+
+function deviceCellLabel(l) {
+  if (l.device_id && l.device_name) {
+    const status = l.device_network_status === 'online' ? '🟢'
+      : l.device_network_status === 'offline' ? '🔴' : '⚪';
+    return `${status} ${l.device_name}`;
+  }
+  return '—';
+}
+
 function rowToArray(l) {
+  if (l.id) {
+    lineDeviceMap.set(l.id, l.device_id ? {
+      device_id: l.device_id, device_name: l.device_name,
+    } : null);
+  }
   return COLUMNS.map(c => {
     switch (c.name) {
       case "_sel":     return false;
+      case "_device":  return deviceCellLabel(l);
       case "_status":  return statusLabel(l.status || "pending");
       case "_modelo":  return l.ultimo_modelo || "";
       case "_mac":     return l.ultimo_mac || "";
@@ -407,6 +426,91 @@ function buildSheet(linhas) {
     },
   });
   attachFillPreview(container);
+  attachDevicePopover(container);
+}
+
+// ----- Popover de ações no device vinculado (ver / desvincular) ---------------
+
+let _devicePopover = null;
+
+function hideDevicePopover() {
+  if (_devicePopover && _devicePopover.parentNode) {
+    _devicePopover.parentNode.removeChild(_devicePopover);
+  }
+  _devicePopover = null;
+}
+
+function showDevicePopover(td, info) {
+  hideDevicePopover();
+  const r = td.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.className = 'ec-device-popover';
+  pop.style.cssText = `
+    position: fixed; left: ${r.left}px; top: ${r.bottom + 4}px;
+    background: #111827; color: #e5e7eb; border: 1px solid #374151;
+    border-radius: 8px; padding: 6px; z-index: 100;
+    box-shadow: 0 8px 24px -8px rgba(0,0,0,0.6);
+    display: flex; flex-direction: column; gap: 2px; min-width: 200px;
+    font-size: 12px;
+  `;
+  pop.innerHTML = `
+    <div style="padding: 4px 8px; font-size: 11px; color: #9ca3af;">
+      Device: <span style="color: #e5e7eb;">${info.device_name || ''}</span>
+    </div>
+    <button data-act="ver" style="text-align: left; padding: 6px 10px; border-radius: 6px; background: transparent; color: #93c5fd; border: none; cursor: pointer;">
+      Ver telefone →
+    </button>
+    <button data-act="desvincular" style="text-align: left; padding: 6px 10px; border-radius: 6px; background: transparent; color: #fca5a5; border: none; cursor: pointer;">
+      Desvincular
+    </button>`;
+  document.body.appendChild(pop);
+  _devicePopover = pop;
+  pop.querySelector('[data-act="ver"]').addEventListener('mouseenter', (e) => e.currentTarget.style.background = '#1f2937');
+  pop.querySelector('[data-act="ver"]').addEventListener('mouseleave', (e) => e.currentTarget.style.background = 'transparent');
+  pop.querySelector('[data-act="desvincular"]').addEventListener('mouseenter', (e) => e.currentTarget.style.background = '#1f2937');
+  pop.querySelector('[data-act="desvincular"]').addEventListener('mouseleave', (e) => e.currentTarget.style.background = 'transparent');
+  pop.querySelector('[data-act="ver"]').addEventListener('click', () => {
+    window.open(`/devices/${info.device_id}`, '_blank');
+    hideDevicePopover();
+  });
+  pop.querySelector('[data-act="desvincular"]').addEventListener('click', async () => {
+    if (!confirm(`Desvincular o device ${info.device_name}? O ramal continua na planilha, mas não será mais reaplicado automaticamente.`)) return;
+    try {
+      await api(`/api/devices/${info.device_id}/link`, { method: 'DELETE' });
+      toast.success('Desvinculado');
+      hideDevicePopover();
+      await reload();
+    } catch (e) {
+      toast.error('Falha ao desvincular');
+    }
+  });
+}
+
+function attachDevicePopover(container) {
+  container.addEventListener('click', (e) => {
+    const td = e.target.closest && e.target.closest('td');
+    if (!td || td.dataset.x == null) return;
+    if (parseInt(td.dataset.x) !== COL_INDEX._device) return;
+    const yi = parseInt(td.dataset.y);
+    if (!Number.isFinite(yi)) return;
+    const allData = sheet.getData();
+    const row = allData[yi];
+    const lineId = row && row[COL_INDEX.id];
+    if (!lineId) return;
+    const info = lineDeviceMap.get(String(lineId));
+    if (!info) {
+      hideDevicePopover();
+      return;
+    }
+    e.stopPropagation();
+    showDevicePopover(td, info);
+  });
+  document.addEventListener('click', (e) => {
+    if (!_devicePopover) return;
+    if (_devicePopover.contains(e.target)) return;
+    hideDevicePopover();
+  }, true);
+  window.addEventListener('scroll', hideDevicePopover, true);
 }
 
 function isTruthyCell(v) {
@@ -533,11 +637,15 @@ async function save({ silent = false } = {}) {
       method: 'PUT', body: { linhas },
     });
     if (!silent) toast.success(`${env.linhas.length} linha(s) salvas`);
-    // refresca IDs + status sem perder posicao da planilha (mutacoes silenciosas
-    // pra nao re-disparar autosave nem smartAutofill)
+    // refresca IDs + status + device sem perder posicao da planilha (mutacoes
+    // silenciosas pra nao re-disparar autosave nem smartAutofill)
     env.linhas.forEach((l, i) => {
       setCellSilent(i, "id", l.id);
       setCellSilent(i, "_status", statusLabel(l.status || "pending"));
+      setCellSilent(i, "_device", deviceCellLabel(l));
+      lineDeviceMap.set(l.id, l.device_id ? {
+        device_id: l.device_id, device_name: l.device_name,
+      } : null);
     });
     renderStatusPills(env.linhas);
     return env;
