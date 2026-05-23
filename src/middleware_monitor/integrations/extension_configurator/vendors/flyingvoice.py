@@ -400,10 +400,12 @@ class FlyingVoiceAdapter(VendorAdapter):
         seen: set[str] = set()
         for name, val in pairs:
             if name in overrides:
-                val = overrides[name]
+                out_val = overrides[name]
             elif name == "CheckString":
-                val = cs
-            merged.append((name, val))
+                out_val = cs
+            else:
+                out_val = val
+            merged.append((name, out_val))
             seen.add(name)
         for k, v in overrides.items():
             if k not in seen:
