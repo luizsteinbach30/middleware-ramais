@@ -88,8 +88,9 @@ def test_link_post_rejeita_linha_ja_vinculada_a_outro(client, db) -> None:
         headers={"X-CSRF-Token": csrf},
     )
     # cria outro device
-    from middleware_monitor.core.models import Device
     from sqlalchemy import select
+
+    from middleware_monitor.core.models import Device
 
     upsert_from_uscall(db, [
         {"ramal": "3002", "status": "disponivel", "ip": "10.0.0.51"},
@@ -216,9 +217,11 @@ def test_link_environments_marca_has_match_quando_ip_bate(client, db) -> None:
     ])
     db.commit()
     # MAS save_lines fez auto-link da 1ª — vamos desvincular pra forçar órfã
-    ln = db.scalar(select(__import__("middleware_monitor.core.models", fromlist=["ExtensionLine"]).ExtensionLine).where(
-        __import__("middleware_monitor.core.models", fromlist=["ExtensionLine"]).ExtensionLine.numero_ramal == "3002",
-    ))
+    from middleware_monitor.core.models import ExtensionLine
+
+    ln = db.scalar(
+        select(ExtensionLine).where(ExtensionLine.numero_ramal == "3002"),
+    )
     assert ln is not None
     ec_repo.unlink_line_from_device(db, ln)
     db.commit()

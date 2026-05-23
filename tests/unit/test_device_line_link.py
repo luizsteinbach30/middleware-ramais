@@ -64,8 +64,10 @@ def test_auto_link_lines_by_ip_vincula_quando_ip_bate(db: DBSession) -> None:
     line_b = lines_b[0].id
 
     # Cria os devices via inserção direta (sem passar pelo upsert que faz auto-link)
-    from middleware_monitor.core.models import Device
     from datetime import UTC, datetime
+
+    from middleware_monitor.core.models import Device
+
     now = datetime.now(UTC).replace(tzinfo=None)
     db.add(Device(name="9001", ip="192.168.0.41", logical_status="available",
                   network_status="unknown", last_seen_at=now,
