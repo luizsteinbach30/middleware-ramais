@@ -16,6 +16,7 @@ from typing import Any
 
 from middleware_monitor.core.models import ExtensionEnvironment, ExtensionLine
 from middleware_monitor.integrations.extension_configurator.vendors import (
+    FlyingVoiceAdapter,
     HTEKAdapter,
     IntelbrasAdapter,
     VendorAdapter,
@@ -30,8 +31,11 @@ def adapter_for(modelo_telefone: str) -> VendorAdapter:
     Modelo cadastrado pelo usuario eh fonte da verdade — nao fazemos
     discover automatico para nao bater no aparelho (feedback-nao-bater).
     """
-    if modelo_telefone.lower().startswith("intelbras"):
+    modelo = modelo_telefone.lower()
+    if modelo.startswith("intelbras"):
         return IntelbrasAdapter()
+    if "flying" in modelo or "flyong" in modelo:  # cobre o typo "flyongvoice"
+        return FlyingVoiceAdapter()
     return HTEKAdapter()
 
 

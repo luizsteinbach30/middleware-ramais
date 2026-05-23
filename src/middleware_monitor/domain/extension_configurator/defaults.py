@@ -20,6 +20,7 @@ PHONE_MODELS: list[str] = [
     "Intelbras V3101",
     "Intelbras V3501",
     "Intelbras V5501",
+    "FlyingVoice P10",
 ]
 
 

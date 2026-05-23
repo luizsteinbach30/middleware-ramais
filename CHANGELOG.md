@@ -2,6 +2,28 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.4.0] — 2026-05-23
+
+### Added
+- **Modelo FlyingVoice P10 homologado** no Configurador de Ramais
+  (`FlyingVoice P10` em `PHONE_MODELS`). Novo vendor `flyingvoice` registrado
+  e roteado por modelo. Validado ao vivo (firmware V0.11.6):
+  - **Registro SIP** (conta 1) via `/goform/setSip_account` — ramal fica
+    `Registered`, sem reboot, com a rede do aparelho intacta.
+  - **Softkeys** (todas) via `/goform/saveMultiFunc` — gerência completa das
+    funções (Menu, DND, Discagem Rápida, Histórico, Diretório, etc.),
+    preservando as teclas não alteradas.
+  - Particularidades do firmware tratadas: POST exige **HTTP/1.0** (HTTP/1.1 é
+    descartado), **replay do formulário inteiro**, e senha SIP em texto puro.
+  - Regra **nunca-tocar-em-rede** garantida por whitelist + testes (a página da
+    conta ainda traz `DBID_DNSSRV_DOMAIN`/portas, que nunca sobrescrevemos).
+
+### Pendente
+- Troca de credencial web do FlyingVoice (`nova_web_*` → `/goform/setSysAdm`)
+  está implementada porém **não validada em hardware** (o `setSysAdm` não
+  respondeu em teste e a credencial não mudou). Só é acionada se o ambiente
+  definir `nova_web_password`; o provisionamento SIP normal não a usa.
+
 ## [2.3.1] — 2026-05-23
 
 ### Fixed
