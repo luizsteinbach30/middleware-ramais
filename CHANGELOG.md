@@ -2,6 +2,18 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.3.1] — 2026-05-23
+
+### Fixed
+- **`.exe` quebrava ao salvar a planilha / calcular status (HTTP 500)** — os
+  templates de configuração dos vendors (`intelbras_template.xml`,
+  `htek_template.xml`) são lidos em runtime via `Path(__file__).parent`, mas
+  o `MiddlewareMonitor.spec` não os empacotava (PyInstaller só inclui `.py`).
+  No app congelado a leitura disparava `FileNotFoundError` em qualquer render
+  de config — salvar planilha, calcular hash/status, aplicar. Agora o spec
+  empacota os `*.xml` dos vendors junto ao pacote. A vinculação automática
+  por IP já funcionava no banco; o 500 só impedia a tela de exibir o vínculo.
+
 ## [2.3.0] — 2026-05-23
 
 ### Added
