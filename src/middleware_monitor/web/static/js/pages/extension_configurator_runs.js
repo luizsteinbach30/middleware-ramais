@@ -1,5 +1,6 @@
 import { api } from '/static/js/api.js';
 import { toast } from '/static/js/components/toast.js';
+import { fmtTs } from '/static/js/util/datetime.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -11,8 +12,8 @@ function row(r) {
     : '<span class="text-gray-500">não</span>';
   return `<tr class="cursor-pointer hover:bg-gray-700/30" data-href="${esc(href)}">
     <td class="px-4 py-2 font-mono text-xs text-gray-300">${esc(r.environment_id)}</td>
-    <td class="px-4 py-2 text-xs text-gray-400">${esc(r.started_at || '—')}</td>
-    <td class="px-4 py-2 text-xs text-gray-400">${esc(r.finished_at || '—')}</td>
+    <td class="px-4 py-2 text-xs text-gray-400">${r.started_at ? esc(fmtTs(r.started_at)) : '—'}</td>
+    <td class="px-4 py-2 text-xs text-gray-400">${r.finished_at ? esc(fmtTs(r.finished_at)) : '—'}</td>
     <td class="px-4 py-2 text-right text-xs text-gray-200 tabular-nums">${r.total}</td>
     <td class="px-4 py-2 text-right text-xs text-green-400 tabular-nums">${r.ok}</td>
     <td class="px-4 py-2 text-right text-xs ${falhaCls} tabular-nums">${r.falha}</td>

@@ -47,7 +47,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 import httpx
 
-from .base import DiscoveryResult, VendorAdapter, VendorCredentials
+from .base import DiscoveryResult, VendorAdapter, VendorAuthError, VendorCredentials
 
 # Aspas em campos de senha podem corromper o valor armazenado no aparelho
 # (mesmo padrao visto no HTEK). Escapamos por seguranca.
@@ -153,7 +153,7 @@ class IntelbrasAdapter(VendorAdapter):
                 )
                 if "logon_content" in resp.text or "XSTR_HLP_AUTH_ERROR" in resp.text:
                     await cli.aclose()
-                    raise RuntimeError("Intelbras: login recusado (user/senha errados)")
+                    raise VendorAuthError("Intelbras: login recusado (user/senha errados)")
                 return cli
             except httpx.HTTPError as exc:
                 last_err = exc

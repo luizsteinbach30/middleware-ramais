@@ -16,6 +16,7 @@ from middleware_monitor.api.deps import (
     require_admin,
     require_csrf,
 )
+from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import (
     ExtensionEnvironment,
     ExtensionLine,
@@ -24,6 +25,7 @@ from middleware_monitor.core.models import (
 from middleware_monitor.core.tasks import spawn
 from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.devices.repository import (
+    delete_devices,
     get_device,
     history_aggregate,
     list_devices,
@@ -44,6 +46,7 @@ from middleware_monitor.integrations.network import make_ping_probe
 from middleware_monitor.jobs.monitor_devices import run_monitor_devices
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
+log = get_logger("api.devices")
 
 _FORCE_LAST_AT: dict[str, float] = {}
 _FORCE_RATE_S = 60.0
@@ -104,13 +107,28 @@ def list_(
     search: str | None = None,
     network: str | None = None,
     logical: str | None = None,
+    environment: str | None = None,
+    ip_from: str | None = None,
+    ip_to: str | None = None,
+    ramal_from: int | None = Query(default=None, ge=0),
+    ramal_to: int | None = Query(default=None, ge=0),
     page: int = Query(default=1, ge=1),
     size: int = Query(default=50, ge=1, le=200),
     _user: User = Depends(get_current_user),
     db: DBSession = Depends(get_session),
 ) -> DevicesPage:
     rows, total = list_devices(
-        db, search=search, network=network, logical=logical, page=page, size=size
+        db,
+        search=search,
+        network=network,
+        logical=logical,
+        environment=environment,
+        ip_from=ip_from,
+        ip_to=ip_to,
+        ramal_from=ramal_from,
+        ramal_to=ramal_to,
+        page=page,
+        size=size,
     )
     links = _link_map_for_devices(db, [r.id for r in rows])
     return DevicesPage(
@@ -613,3 +631,99 @@ def auto_link_now(
     linked = ec_repo.auto_link_lines_by_ip(db)
     db.commit()
     return {"linked": linked}
+
+
+# ---------------------------------------------------------------------------
+# Ações em massa sobre devices selecionados
+# ---------------------------------------------------------------------------
+
+
+class BulkDeleteIn(BaseModel):
+    device_ids: list[int]
+
+
+class AddToEnvironmentIn(BaseModel):
+    environment_id: str
+    device_ids: list[int]
+
+
+class CreateEnvFromDevicesIn(BaseModel):
+    nome: str
+    modelo_telefone: str = "HTEK UC902G"
+    device_ids: list[int]
+
+
+class BulkAddResult(BaseModel):
+    environment_id: str
+    environment_nome: str
+    added: int
+    skipped: int
+
+
+@router.post(
+    "/bulk/delete",
+    dependencies=[Depends(require_csrf), Depends(require_admin)],
+)
+def bulk_delete(
+    payload: BulkDeleteIn,
+    db: DBSession = Depends(get_session),
+) -> dict[str, int]:
+    """Apaga os devices selecionados. Linhas vinculadas são preservadas (apenas
+    desvinculadas); pings são removidos."""
+    deleted = delete_devices(db, payload.device_ids)
+    db.commit()
+    log.info("devices_bulk_deleted", count=deleted)
+    return {"deleted": deleted}
+
+
+@router.post(
+    "/bulk/add-to-environment",
+    response_model=BulkAddResult,
+    dependencies=[Depends(require_csrf), Depends(require_admin)],
+)
+def bulk_add_to_environment(
+    payload: AddToEnvironmentIn,
+    db: DBSession = Depends(get_session),
+) -> BulkAddResult:
+    """Adiciona os devices selecionados como linhas de um ambiente existente."""
+    env = ec_repo.get_environment(db, payload.environment_id)
+    if env is None:
+        raise HTTPException(status_code=404, detail="environment_not_found")
+    res = ec_repo.add_devices_as_lines(db, env, payload.device_ids)
+    db.commit()
+    log.info(
+        "devices_added_to_environment",
+        env_id=env.id, added=res["added"], skipped=res["skipped"],
+    )
+    return BulkAddResult(
+        environment_id=env.id, environment_nome=env.nome,
+        added=res["added"], skipped=res["skipped"],
+    )
+
+
+@router.post(
+    "/bulk/create-environment",
+    response_model=BulkAddResult,
+    dependencies=[Depends(require_csrf), Depends(require_admin)],
+)
+def bulk_create_environment(
+    payload: CreateEnvFromDevicesIn,
+    db: DBSession = Depends(get_session),
+) -> BulkAddResult:
+    """Cria um ambiente novo (nome + modelo) e já adiciona os devices
+    selecionados como linhas."""
+    nome = payload.nome.strip()
+    if not nome:
+        raise HTTPException(status_code=400, detail="nome_obrigatorio")
+    modelo = payload.modelo_telefone.strip() or "HTEK UC902G"
+    env = ec_repo.create_environment(db, nome=nome, modelo_telefone=modelo)
+    res = ec_repo.add_devices_as_lines(db, env, payload.device_ids)
+    db.commit()
+    log.info(
+        "environment_created_from_devices",
+        env_id=env.id, modelo=modelo, added=res["added"], skipped=res["skipped"],
+    )
+    return BulkAddResult(
+        environment_id=env.id, environment_nome=env.nome,
+        added=res["added"], skipped=res["skipped"],
+    )

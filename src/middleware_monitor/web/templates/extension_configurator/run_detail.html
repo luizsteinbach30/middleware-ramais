@@ -42,21 +42,12 @@
 
   <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
     <div class="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
-      <h3 class="text-sm font-semibold text-gray-100">Linhas do ambiente</h3>
-      <span class="text-[11px] text-gray-500">snapshot atual das linhas — para acompanhar um run em curso, abra o ambiente</span>
+      <h3 id="ec-rd-section-title" class="text-sm font-semibold text-gray-100">Ramais impactados</h3>
+      <span id="ec-rd-section-note" class="text-[11px] text-gray-500"></span>
     </div>
     <table class="w-full text-sm">
       <thead class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider">
-        <tr>
-          <th class="text-left px-4 py-3 font-semibold">IP</th>
-          <th class="text-left px-4 py-3 font-semibold">Ramal</th>
-          <th class="text-left px-4 py-3 font-semibold">Nome</th>
-          <th class="text-left px-4 py-3 font-semibold">Status</th>
-          <th class="text-left px-4 py-3 font-semibold">Modelo</th>
-          <th class="text-left px-4 py-3 font-semibold">MAC</th>
-          <th class="text-left px-4 py-3 font-semibold">Última aplicação</th>
-          <th class="text-left px-4 py-3 font-semibold">Erro</th>
-        </tr>
+        <tr id="ec-rd-thead"></tr>
       </thead>
       <tbody id="ec-rd-tbody" class="divide-y divide-gray-800"></tbody>
     </table>

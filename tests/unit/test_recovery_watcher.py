@@ -47,6 +47,49 @@ def _seed_linked_line(
     return ln.device_id, ln.id
 
 
+def _set_network_status(db: DBSession, device_id: int, status: str) -> None:
+    from sqlalchemy import select
+
+    from middleware_monitor.core.models import Device
+
+    dev = db.scalar(select(Device).where(Device.id == device_id))
+    assert dev is not None
+    dev.network_status = status
+    db.commit()
+
+
+def test_candidates_inclui_online_unavailable_sem_recovery(db: DBSession) -> None:
+    """Telefone que respondeu ICMP o tempo todo (nunca offline) mas está
+    'unavailable' no PBX deve virar candidato mesmo sem nenhum recovered_id —
+    é o cenário onde a config mudou sem o aparelho cair."""
+    device_id, _ = _seed_linked_line(db, pbx_status="indisponivel")
+    _set_network_status(db, device_id, "online")
+
+    ids = md_job._reapply_candidate_ids(db, [])
+    assert device_id in ids
+
+
+def test_candidates_ignora_online_available(db: DBSession) -> None:
+    """Device online + available no PBX (registrado e provisionado) não é
+    candidato — nada a reaplicar."""
+    device_id, _ = _seed_linked_line(db)  # available
+    _set_network_status(db, device_id, "online")
+
+    ids = md_job._reapply_candidate_ids(db, [])
+    assert device_id not in ids
+
+
+def test_candidates_ignora_offline_unavailable(db: DBSession) -> None:
+    """Device offline (não responde ICMP) não é candidato: não há como aplicar
+    config num aparelho inalcançável. Só entra se voltar (via recovered_ids)."""
+    device_id, _ = _seed_linked_line(db, pbx_status="indisponivel")
+    _set_network_status(db, device_id, "offline")
+
+    assert device_id not in md_job._reapply_candidate_ids(db, [])
+    # mas se acabou de voltar (recovered), entra pela união
+    assert device_id in md_job._reapply_candidate_ids(db, [device_id])
+
+
 @pytest.mark.asyncio
 async def test_trigger_recovery_dispara_apply_single_line(
     db: DBSession, monkeypatch: pytest.MonkeyPatch,
@@ -101,6 +144,52 @@ async def test_trigger_recovery_respeita_debounce(
     await md_job._trigger_recovery_reapplies(
         [device_id], debounce_minutes=10,
     )
+    assert called == [line_id]
+
+
+@pytest.mark.asyncio
+async def test_trigger_recovery_desiste_apos_erro_ate_reregistro(
+    db: DBSession, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Após um recovery que falhou (ambas credenciais), o watcher para de
+    tentar — até o telefone reregistrar (last_seen_at avança) ou intervenção
+    manual."""
+    device_id, line_id = _seed_linked_line(db, pbx_status="indisponivel")
+
+    from sqlalchemy import select
+
+    from middleware_monitor.core.models import Device
+
+    dev = db.scalar(select(Device).where(Device.id == device_id))
+    assert dev is not None
+    t0 = datetime.now(UTC).replace(tzinfo=None) - timedelta(minutes=30)
+    dev.last_seen_at = t0  # última vez que registrou
+    db.commit()
+
+    # recovery falhou DEPOIS da última vez online (mesmo episódio de queda)
+    ev = ec_repo.create_reapply_event(
+        db, line_id=line_id, device_id=device_id, reason="recovery",
+    )
+    ev.status = "erro"
+    ev.started_at = t0 + timedelta(minutes=10)
+    db.commit()
+
+    called: list[str] = []
+
+    async def fake_run(line_id_arg: str, *, operador: str, reason: str):  # type: ignore[no-untyped-def]
+        called.append(line_id_arg)
+        return ("rid", 1, 1)
+
+    monkeypatch.setattr(md_job.ec_apply, "run_apply_single_line", fake_run)
+
+    # debounce curto (1 min) — quem deve segurar é a regra de desistência
+    await md_job._trigger_recovery_reapplies([device_id], debounce_minutes=1)
+    assert called == []  # desistiu
+
+    # telefone reregistrou (last_seen_at agora é POSTERIOR à falha) → novo episódio
+    dev.last_seen_at = t0 + timedelta(minutes=20)
+    db.commit()
+    await md_job._trigger_recovery_reapplies([device_id], debounce_minutes=1)
     assert called == [line_id]
 
 

@@ -1,5 +1,6 @@
 import { api } from '/static/js/api.js';
 import { toast } from '/static/js/components/toast.js';
+import { fmtTs } from '/static/js/util/datetime.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -11,6 +12,9 @@ const STATUS_META = {
   outdated: { color: "yellow", label: "desatualizado" },
   pending:  { color: "gray",   label: "pendente" },
   error:    { color: "red",    label: "erro" },
+  ok:       { color: "green",  label: "OK" },
+  erro:     { color: "red",    label: "erro" },
+  running:  { color: "blue",   label: "em curso" },
 };
 
 function statusBadge(status) {
@@ -31,17 +35,46 @@ function durationText(started, finished) {
   return `${m}m ${s}s`;
 }
 
-function row(ln) {
-  return `<tr>
-    <td class="px-4 py-2 font-mono text-xs text-gray-300">${esc(ln.ip || '—')}</td>
-    <td class="px-4 py-2 text-xs text-gray-200">${esc(ln.numero_ramal || '—')}</td>
-    <td class="px-4 py-2 text-xs text-gray-300">${esc(ln.nome_visivel || '—')}</td>
-    <td class="px-4 py-2 text-xs">${statusBadge(ln.status || 'pending')}</td>
-    <td class="px-4 py-2 text-xs text-gray-400">${esc(ln.ultimo_modelo || '—')}</td>
-    <td class="px-4 py-2 font-mono text-[11px] text-gray-400">${esc(ln.ultimo_mac || '—')}</td>
-    <td class="px-4 py-2 text-xs text-gray-400">${esc(ln.ultima_aplicacao || '—')}</td>
-    <td class="px-4 py-2 text-xs ${ln.ultimo_erro ? 'text-red-400' : 'text-gray-500'}">${esc(ln.ultimo_erro || '—')}</td>
-  </tr>`;
+function th(label, extra = '') {
+  return `<th class="text-left px-4 py-3 font-semibold ${extra}">${label}</th>`;
+}
+
+// Linhas impactadas (snapshot do run): antes -> depois.
+function renderSnapshot(impactadas) {
+  $('#ec-rd-section-title').textContent = `Ramais impactados (${impactadas.length})`;
+  $('#ec-rd-section-note').textContent = 'snapshot desta execução — status no momento da aplicação';
+  $('#ec-rd-thead').innerHTML =
+    th('Ramal') + th('IP') + th('Nome') + th('Antes') + th('Depois') + th('Erro');
+  $('#ec-rd-tbody').innerHTML = impactadas.map((l) => `
+    <tr>
+      <td class="px-4 py-2 text-xs text-gray-200">${esc(l.numero_ramal || '—')}</td>
+      <td class="px-4 py-2 font-mono text-xs text-gray-300">${esc(l.ip || '—')}</td>
+      <td class="px-4 py-2 text-xs text-gray-300">${esc(l.nome_visivel || '—')}</td>
+      <td class="px-4 py-2 text-xs">${statusBadge(l.status_antes || 'pending')}</td>
+      <td class="px-4 py-2 text-xs">${statusBadge(l.status_depois || 'running')}</td>
+      <td class="px-4 py-2 text-xs ${l.erro ? 'text-red-400' : 'text-gray-500'}">${esc(l.erro || '—')}</td>
+    </tr>`).join('');
+}
+
+// Fallback (runs antigos sem snapshot): estado atual das linhas do ambiente.
+function renderLegacy(linhas) {
+  $('#ec-rd-section-title').textContent = 'Linhas do ambiente';
+  $('#ec-rd-section-note').textContent =
+    'execução antiga (sem snapshot) — mostrando o estado ATUAL das linhas';
+  $('#ec-rd-thead').innerHTML =
+    th('IP') + th('Ramal') + th('Nome') + th('Status') + th('Modelo') + th('MAC') +
+    th('Última aplicação') + th('Erro');
+  $('#ec-rd-tbody').innerHTML = linhas.map((ln) => `
+    <tr>
+      <td class="px-4 py-2 font-mono text-xs text-gray-300">${esc(ln.ip || '—')}</td>
+      <td class="px-4 py-2 text-xs text-gray-200">${esc(ln.numero_ramal || '—')}</td>
+      <td class="px-4 py-2 text-xs text-gray-300">${esc(ln.nome_visivel || '—')}</td>
+      <td class="px-4 py-2 text-xs">${statusBadge(ln.status || 'pending')}</td>
+      <td class="px-4 py-2 text-xs text-gray-400">${esc(ln.ultimo_modelo || '—')}</td>
+      <td class="px-4 py-2 font-mono text-[11px] text-gray-400">${esc(ln.ultimo_mac || '—')}</td>
+      <td class="px-4 py-2 text-xs text-gray-400">${ln.ultima_aplicacao ? esc(fmtTs(ln.ultima_aplicacao)) : '—'}</td>
+      <td class="px-4 py-2 text-xs ${ln.ultimo_erro ? 'text-red-400' : 'text-gray-500'}">${esc(ln.ultimo_erro || '—')}</td>
+    </tr>`).join('');
 }
 
 async function load() {
@@ -53,10 +86,11 @@ async function load() {
     if (env) {
       $('#ec-rd-title').textContent = `Relatório #${runId} — ${env.nome}`;
       $('#ec-rd-subtitle').textContent =
-        `${env.modelo_telefone} · iniciado em ${r.started_at || '—'}`;
+        `${env.modelo_telefone} · iniciado em ${r.started_at ? fmtTs(r.started_at) : '—'}`;
       $('#ec-rd-env-link').href = `/extension-configurator/environments/${encodeURIComponent(env.id)}`;
     } else {
-      $('#ec-rd-subtitle').textContent = `Iniciado em ${r.started_at || '—'} (ambiente removido)`;
+      $('#ec-rd-subtitle').textContent =
+        `Iniciado em ${r.started_at ? fmtTs(r.started_at) : '—'} (ambiente removido)`;
       $('#ec-rd-env-link').classList.add('hidden');
     }
 
@@ -66,9 +100,15 @@ async function load() {
     $('#ec-rd-duracao').textContent = durationText(r.started_at, r.finished_at);
     $('#ec-rd-operador').textContent = r.operador || '—';
 
-    const linhas = data.linhas || [];
-    $('#ec-rd-empty').classList.toggle('hidden', linhas.length > 0);
-    $('#ec-rd-tbody').innerHTML = linhas.map(row).join('');
+    if (data.tem_snapshot) {
+      const impactadas = data.impactadas || [];
+      $('#ec-rd-empty').classList.toggle('hidden', impactadas.length > 0);
+      renderSnapshot(impactadas);
+    } else {
+      const linhas = data.linhas || [];
+      $('#ec-rd-empty').classList.toggle('hidden', linhas.length > 0);
+      renderLegacy(linhas);
+    }
   } catch (e) {
     toast.error('Falha ao carregar: ' + e.message);
   }

@@ -7,6 +7,7 @@ import time
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
@@ -103,18 +104,50 @@ async def run_monitor_devices() -> None:
     sender = WebhookSender(session_factory)
     await sender.dispatch("devices", snapshot)
 
-    if recovered_device_ids and cfg.auto_reapply_on_recovery:
-        await _trigger_recovery_reapplies(
-            recovered_device_ids,
-            debounce_minutes=cfg.auto_reapply_debounce_minutes,
+    if cfg.auto_reapply_on_recovery:
+        with session_factory() as db:
+            candidate_ids = _reapply_candidate_ids(db, recovered_device_ids)
+        if candidate_ids:
+            await _trigger_recovery_reapplies(
+                candidate_ids,
+                debounce_minutes=cfg.auto_reapply_debounce_minutes,
+            )
+
+
+def _reapply_candidate_ids(
+    db: DBSession, recovered_device_ids: list[int],
+) -> list[int]:
+    """Devices candidatos ao reapply automático de config.
+
+    Combina duas fontes:
+
+    * **(a)** devices que voltaram offline→online no ICMP (``recovered_device_ids``);
+    * **(b)** — independentemente de ter havido queda de rede — todos os que
+      respondem ICMP (``network_status='online'``) mas o PBX continua
+      reportando ``logical_status='unavailable'``.
+
+    O caso (b) é o que faltava: um telefone que teve a config alterada/perdida
+    sem nunca ficar offline (manteve o IP, sempre respondeu ping) cai o registro
+    SIP — o USCall passa a reportá-lo ``indisponivel`` — mas o ICMP nunca falha,
+    então (a) sozinho jamais dispararia a reaplicação. ``_trigger_recovery_reapplies``
+    reavalia o estado de cada candidato e o debounce evita reaplicar a cada ciclo.
+    """
+    ids = set(recovered_device_ids)
+    stale = db.scalars(
+        select(Device.id).where(
+            Device.network_status == "online",
+            Device.logical_status == "unavailable",
         )
+    ).all()
+    ids.update(int(x) for x in stale)
+    return sorted(ids)
 
 
 async def _trigger_recovery_reapplies(
     device_ids: list[int], *, debounce_minutes: int,
 ) -> None:
-    """Para cada device que voltou (offline→online), dispara apply nas linhas
-    vinculadas que não tiveram reapply 'recovery' recente.
+    """Para cada device candidato (ver ``_reapply_candidate_ids``), dispara apply
+    nas linhas vinculadas que não tiveram reapply 'recovery' recente.
 
     Regra crítica: o USCall (PBX) é a fonte da verdade do estado lógico do
     ramal. Se o device responde ICMP **e** está `logical_status='available'`
@@ -122,6 +155,17 @@ async def _trigger_recovery_reapplies(
     a config existente está funcionando. Só reaplicamos quando o device
     responde ICMP **mas** continua `unavailable` no PBX — sinal de que a
     config sumiu ou o ramal não está registrando.
+
+    Desistência (não insistir em loop): se o último reapply 'recovery' da linha
+    falhou (já tentou a credencial atual **e** a nova — ver
+    ``_send_config_with_fallback``) e o telefone **não** voltou a registrar
+    desde então, paramos de tentar. O erro fica visível na tela do ambiente
+    (``ultimo_status='erro'``) até que:
+      * o telefone volte a registrar — ``device.last_seen_at`` (atualizado pelo
+        USCall quando o ramal fica `available`) passa a ser posterior à falha,
+        caracterizando um novo episódio; ou
+      * o usuário reaplique manualmente — o último evento passa a ser
+        ``manual_device_page`` (ou um novo recovery após re-registro).
     """
     now = datetime.now(UTC).replace(tzinfo=None)
     cutoff = now - timedelta(minutes=max(1, debounce_minutes))
@@ -146,6 +190,25 @@ async def _trigger_recovery_reapplies(
                 if not ln.ip:
                     continue
                 last = ec_repo.last_reapply_event_for_line(db, ln.id)
+                # Desistência: último recovery falhou e o ramal não reregistrou.
+                if (
+                    last is not None
+                    and last.reason == "recovery"
+                    and last.status == "erro"
+                ):
+                    reregistrou = (
+                        dev.last_seen_at is not None
+                        and dev.last_seen_at > last.started_at
+                    )
+                    if not reregistrou:
+                        log.info(
+                            "recovery_skipped_gave_up",
+                            line_id=ln.id, device_id=dev_id,
+                            last_at=last.started_at.isoformat(),
+                        )
+                        continue
+                # Debounce: evita re-disparo em rajada (ex.: apply ainda em curso
+                # ou recovery recém-concluído com sucesso).
                 if (
                     last is not None
                     and last.reason == "recovery"

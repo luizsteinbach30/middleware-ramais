@@ -1,5 +1,6 @@
 import { api } from '/static/js/api.js';
 import { toast } from '/static/js/components/toast.js';
+import { fmtTs } from '/static/js/util/datetime.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -16,6 +17,8 @@ const FILTER_KEY = "ec.list.filters.v1";
 // Cache em memoria dos envs vindos do backend (filtrados client-side).
 let _allEnvs = [];
 let _filters = { q: "", modelo: "", status: "" };
+// Ambientes marcados para exportação (persistem entre re-renders do grid).
+const selectedEnvs = new Set();
 
 function loadFilters() {
   try {
@@ -51,8 +54,11 @@ function envCard(e) {
     : `nenhum device vinculado`;
   return `
     <div class="group relative bg-gray-800 hover:bg-gray-800/80 ring-1 ring-gray-700 rounded-xl transition-colors">
+      <input type="checkbox" data-select-env="${esc(e.id)}" title="Selecionar para exportar"
+             ${selectedEnvs.has(e.id) ? 'checked' : ''}
+             class="absolute top-3 left-3 z-10 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500/50 cursor-pointer"/>
       <a href="/extension-configurator/environments/${encodeURIComponent(e.id)}"
-         class="block p-4 pr-10">
+         class="block p-4 pr-10 pl-9">
         <div class="flex items-baseline justify-between">
           <h3 class="text-sm font-semibold text-gray-100 truncate">${esc(e.nome)}</h3>
           <span class="text-xs text-gray-500 ml-2 flex-shrink-0">${e.telefones} Ramais</span>
@@ -64,7 +70,7 @@ function envCard(e) {
             <span class="w-1.5 h-1.5 rounded-full bg-${vincTone}-400"></span>${vincLabel}
           </span>
         </div>
-        <div class="mt-1.5 text-[10px] text-gray-500 truncate">Atualizado: ${esc(e.atualizado_em || '—')}</div>
+        <div class="mt-1.5 text-[10px] text-gray-500 truncate">Atualizado: ${e.atualizado_em ? esc(fmtTs(e.atualizado_em)) : '—'}</div>
       </a>
       <button
         data-action="delete"
@@ -106,6 +112,30 @@ function renderGrid() {
         ? `${visible.length} de ${total} ambiente${total === 1 ? '' : 's'}`
         : `${total} ambiente${total === 1 ? '' : 's'}`);
   $('#ec-count').textContent = counter;
+  updateSelInfo();
+}
+
+function updateSelInfo() {
+  const n = selectedEnvs.size;
+  const el = $('#ec-sel-info');
+  if (el) el.textContent = n ? `${n} selecionado${n === 1 ? '' : 's'}` : 'exporta os visíveis';
+}
+
+function exportTargets() {
+  if (selectedEnvs.size) return [...selectedEnvs];
+  return _allEnvs.filter(matchesFilters).map((e) => e.id);
+}
+
+function doExport(fmt) {
+  const ids = exportTargets();
+  if (!ids.length) { toast.error('Nenhum ambiente para exportar'); return; }
+  const url = `/api/extension-configurator/export?format=${fmt}&ids=${encodeURIComponent(ids.join(','))}`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 function syncFilterInputsFromState() {
@@ -229,6 +259,18 @@ $('#ec-grid').addEventListener('click', (e) => {
     telefones: btn.dataset.telefones,
   });
 });
+
+// Selecao de ambientes para exportacao (checkbox em cada card)
+$('#ec-grid').addEventListener('change', (e) => {
+  const cb = e.target.closest('input[data-select-env]');
+  if (!cb) return;
+  const id = cb.dataset.selectEnv;
+  if (cb.checked) selectedEnvs.add(id); else selectedEnvs.delete(id);
+  updateSelInfo();
+});
+
+$('#ec-export-xlsx').addEventListener('click', () => doExport('xlsx'));
+$('#ec-export-pdf').addEventListener('click', () => doExport('pdf'));
 
 // --- filtros ---
 let _filterDebounce = null;

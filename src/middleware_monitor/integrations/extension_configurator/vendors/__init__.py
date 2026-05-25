@@ -1,4 +1,4 @@
-from .base import DiscoveryResult, VendorAdapter, VendorCredentials
+from .base import DiscoveryResult, VendorAdapter, VendorAuthError, VendorCredentials
 from .flyingvoice import FlyingVoiceAdapter
 from .htek import HTEKAdapter
 from .intelbras import IntelbrasAdapter
@@ -22,6 +22,7 @@ __all__ = [
     "HTEKAdapter",
     "IntelbrasAdapter",
     "VendorAdapter",
+    "VendorAuthError",
     "VendorCredentials",
     "discover_vendor",
     "get_adapter",

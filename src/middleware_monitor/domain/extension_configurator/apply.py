@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from typing import Any
 
 import httpx
 
@@ -26,12 +27,14 @@ from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import (
     ExtensionApplyRun,
+    ExtensionApplyRunLine,
     ExtensionLine,
     LineReapplyEvent,
 )
 from middleware_monitor.core.tasks import spawn
 from middleware_monitor.integrations.extension_configurator.vendors import (
     VendorAdapter,
+    VendorAuthError,
     VendorCredentials,
 )
 from middleware_monitor.integrations.network import make_ping_probe
@@ -44,6 +47,7 @@ from .service import (
     build_row,
     build_template,
     compute_line_hash,
+    line_status,
     pick_lines_to_apply,
 )
 
@@ -58,14 +62,75 @@ async def _ping_host(ip: str, timeout_ms: int = 1500) -> bool:
     return latency is not None
 
 
+def build_creds_chain(cfg: dict[str, Any]) -> list[VendorCredentials]:
+    """Credenciais a tentar no aparelho, em ordem de preferência.
+
+    * ``[0]`` credencial atual do ambiente (``web_user``/``web_password`` —
+      default ``admin``/``admin``).
+    * ``[1]`` credencial "nova" (``nova_web_user``/``nova_web_password``),
+      incluída só quando configurada e diferente da atual.
+
+    A ordem importa: na primeira aplicação o telefone ainda usa a senha atual;
+    a config é que grava a nova. Numa reaplicação o aparelho já pode estar com
+    a senha nova — daí o fallback. Tentamos a atual primeiro (cobre o caso
+    comum), e a nova como segunda chance quando a atual é recusada.
+    """
+    web_user = str(cfg.get("web_user") or "admin")
+    web_password = str(cfg.get("web_password") or "admin")
+    chain = [VendorCredentials(username=web_user, password=web_password)]
+    nova_user = str(cfg.get("nova_web_user") or "").strip()
+    nova_pwd = str(cfg.get("nova_web_password") or "")
+    if nova_user or nova_pwd:
+        fallback = VendorCredentials(
+            username=nova_user or web_user,
+            password=nova_pwd or web_password,
+        )
+        if (fallback.username, fallback.password) != (web_user, web_password):
+            chain.append(fallback)
+    return chain
+
+
+async def _send_config_with_fallback(
+    adapter: VendorAdapter,
+    ip: str,
+    creds_chain: list[VendorCredentials],
+    cfg_bytes: bytes,
+) -> None:
+    """Envia a config tentando cada credencial da chain em ordem.
+
+    Se o aparelho recusar a autenticação (``VendorAuthError`` — 401/403 no HTEK,
+    página de login recusada no Intelbras/FlyingVoice) — caso clássico do
+    telefone cuja senha já foi trocada para a "nova" numa aplicação anterior —
+    tenta a próxima credencial. Qualquer outro erro (rede, 5xx) aborta de
+    imediato.
+    """
+    last_auth_exc: VendorAuthError | None = None
+    for idx, creds in enumerate(creds_chain):
+        is_last = idx == len(creds_chain) - 1
+        try:
+            await adapter.send_config(ip, creds, cfg_bytes, fmt="xml")
+            if idx > 0:
+                log.info("apply_auth_fallback_ok", ip=ip, cred_index=idx)
+            return
+        except VendorAuthError as exc:
+            if not is_last:
+                log.info("apply_auth_fallback_try", ip=ip, next_index=idx + 1)
+                last_auth_exc = exc
+                continue
+            raise
+    if last_auth_exc is not None:  # defensivo: chain vazia nunca ocorre
+        raise last_auth_exc
+
+
 async def _apply_row(
     row: RowState,
     *,
     env_id: str,
     adapter: VendorAdapter,
     cfg_bytes: bytes,
-    creds: VendorCredentials,
+    creds_chain: list[VendorCredentials],
     validar_conectividade: bool,
+    run_line_id: int | None = None,
 ) -> None:
     row.started_at = time.time()
     err: str | None = None
@@ -81,7 +146,7 @@ async def _apply_row(
                 )
         row.stage = "send"
         try:
-            await adapter.send_config(row.ip, creds, cfg_bytes, fmt="xml")
+            await _send_config_with_fallback(adapter, row.ip, creds_chain, cfg_bytes)
         except httpx.HTTPError as exc:
             raise RuntimeError(
                 f"send falhou — {type(exc).__name__}: {exc}",
@@ -106,20 +171,30 @@ async def _apply_row(
     # falso causado por qualquer divergencia tipo cache/serializacao).
     with session_factory() as db:
         line = db.get(ExtensionLine, row.line_id)
-        if line is None:
-            return
-        final_hash: str | None = None
-        if status_final == "ok":
-            env = repo.get_environment(db, env_id)
-            final_hash = (
-                compute_line_hash(env, line) if env is not None else row.hash_esperado
+        if line is not None:
+            final_hash: str | None = None
+            if status_final == "ok":
+                env = repo.get_environment(db, env_id)
+                final_hash = (
+                    compute_line_hash(env, line) if env is not None else row.hash_esperado
+                )
+            repo.update_line_status(
+                db, line,
+                status=status_final,
+                erro=err,
+                hash_aplicado=final_hash,
             )
-        repo.update_line_status(
-            db, line,
-            status=status_final,
-            erro=err,
-            hash_aplicado=final_hash,
-        )
+        # Fecha o snapshot do relatório (status_depois + erro), mesmo se a linha
+        # foi removida nesse meio-tempo.
+        if run_line_id is not None:
+            rl = db.get(ExtensionApplyRunLine, run_line_id)
+            if rl is not None:
+                repo.finish_run_line(
+                    db, rl,
+                    status_depois=status_final,
+                    erro=err,
+                    modelo=line.ultimo_modelo if line is not None else None,
+                )
         db.commit()
 
 
@@ -145,8 +220,7 @@ async def run_apply(
         targets = pick_lines_to_apply(
             env, lines, force=force, selected_ids=selected_ids,
         )
-        web_user = str(cfg.get("web_user") or "admin")
-        web_password = str(cfg.get("web_password") or "admin")
+        creds_chain = build_creds_chain(cfg)
         validar = bool(cfg.get("validar_conectividade", True))
         adapter = adapter_for(env.modelo_telefone)
         template = build_template(cfg)
@@ -161,6 +235,19 @@ async def run_apply(
             db, env_id, total=len(prepared), forcado=force, operador=operador,
         )
         db_run_id = db_run.id
+        # Snapshot por linha impactada (status ANTES de aplicar).
+        run_line_ids: dict[str, int] = {}
+        for line, hash_esperado in targets:
+            rl = repo.create_run_line(
+                db,
+                run_id=db_run_id,
+                line_id=line.id,
+                numero_ramal=line.numero_ramal,
+                ip=line.ip,
+                nome_visivel=line.nome_visivel,
+                status_antes=line_status(line, hash_esperado),
+            )
+            run_line_ids[line.id] = rl.id
         db.commit()
 
     run_id = uuid.uuid4().hex[:12]
@@ -184,8 +271,6 @@ async def run_apply(
     run_state.register(rs)
     run_state.prune()
 
-    creds = VendorCredentials(username=web_user, password=web_password)
-
     async def _worker() -> None:
         delay_s = max(0, rolling_delay_ms) / 1000.0
         tasks: list[asyncio.Task[None]] = []
@@ -206,8 +291,9 @@ async def run_apply(
                 env_id=env_id,
                 adapter=adapter,
                 cfg_bytes=payload,
-                creds=creds,
+                creds_chain=creds_chain,
                 validar_conectividade=validar,
+                run_line_id=run_line_ids.get(rs.rows[idx].line_id),
             )))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
@@ -260,8 +346,7 @@ async def run_apply_single_line(
             raise ValueError(f"ambiente '{line.environment_id}' nao existe")
 
         cfg = repo.merged_config_padrao(env)
-        web_user = str(cfg.get("web_user") or "admin")
-        web_password = str(cfg.get("web_password") or "admin")
+        creds_chain = build_creds_chain(cfg)
         validar = bool(cfg.get("validar_conectividade", True))
         adapter = adapter_for(env.modelo_telefone)
         template = build_template(cfg)
@@ -278,8 +363,18 @@ async def run_apply_single_line(
             reason=reason,
             run_id=db_run.id,
         )
+        rl = repo.create_run_line(
+            db,
+            run_id=db_run.id,
+            line_id=line.id,
+            numero_ramal=line.numero_ramal,
+            ip=line.ip,
+            nome_visivel=line.nome_visivel,
+            status_antes=line_status(line, hash_esperado),
+        )
         db_run_id = db_run.id
         event_id = ev.id
+        run_line_id = rl.id
         line_ip = line.ip
         line_ramal = line.numero_ramal
         db.commit()
@@ -292,7 +387,6 @@ async def run_apply_single_line(
     ))
     run_state.register(rs)
     run_state.prune()
-    creds = VendorCredentials(username=web_user, password=web_password)
 
     async def _single_worker() -> None:
         await _apply_row(
@@ -300,8 +394,9 @@ async def run_apply_single_line(
             env_id=env.id,
             adapter=adapter,
             cfg_bytes=payload,
-            creds=creds,
+            creds_chain=creds_chain,
             validar_conectividade=validar,
+            run_line_id=run_line_id,
         )
         rs.finished_at = time.time()
         ok = 1 if rs.rows[0].stage == "done" else 0

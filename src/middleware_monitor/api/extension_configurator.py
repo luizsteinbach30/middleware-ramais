@@ -8,9 +8,10 @@ Padroes do projeto:
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session as DBSession
 
@@ -32,6 +33,9 @@ from middleware_monitor.domain.extension_configurator import (
     apply as apply_mod,
 )
 from middleware_monitor.domain.extension_configurator import (
+    export as export_mod,
+)
+from middleware_monitor.domain.extension_configurator import (
     repository as repo,
 )
 from middleware_monitor.domain.extension_configurator import (
@@ -45,11 +49,22 @@ log = get_logger("api.extension_configurator")
 
 
 def _status_resumo(lines: list[ExtensionLine]) -> dict[str, Any]:
-    """Agrega o status das linhas do ambiente em 1 categoria + contadores."""
+    """Agrega o status das linhas do ambiente em 1 categoria + contadores.
+
+    Classifica pelo ``ultimo_status`` gravado pela aplicação (``update_line_status``):
+      * ``"ok"``   → applied
+      * ``"erro"`` → error
+      * ``None``   → pending (nunca aplicado)
+
+    Resumo rápido para os cards da lista (não recomputa hash — importante com
+    muitos ambientes). O status fino por linha, incluindo ``outdated`` quando a
+    config muda após aplicar, é calculado na tela de detalhe via
+    ``compute_statuses``.
+    """
     if not lines:
         return {"applied": 0, "pending": 0, "error": 0, "agregado": "vazio"}
-    applied = sum(1 for ln in lines if ln.ultimo_status == "applied")
-    error = sum(1 for ln in lines if ln.ultimo_status == "error")
+    applied = sum(1 for ln in lines if ln.ultimo_status == "ok")
+    error = sum(1 for ln in lines if ln.ultimo_status == "erro")
     pending = len(lines) - applied - error
     if error > 0:
         agregado = "erros"
@@ -180,6 +195,44 @@ def list_environments(
     envs = repo.list_environments(db)
     out = [_env_summary(e, repo.list_lines(db, e.id)) for e in envs]
     return {"environments": out}
+
+
+@router.get("/export")
+def export_environments(
+    format: str = Query("xlsx"),
+    ids: str = Query("", description="ids separados por vírgula; vazio = todos"),
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> Response:
+    """Exporta um ou mais ambientes (modelo, configurações e ramais) em XLSX/PDF.
+
+    GET com auth por sessão (sem CSRF) para permitir download direto via link.
+    """
+    env_ids = [x.strip() for x in ids.split(",") if x.strip()]
+    if not env_ids:
+        env_ids = [e.id for e in repo.list_environments(db)]
+    reports = export_mod.build_reports(db, env_ids)
+    if not reports:
+        raise HTTPException(404, "nenhum ambiente para exportar")
+    fmt = format.lower()
+    if fmt == "xlsx":
+        data = export_mod.to_xlsx(reports)
+        media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ext = "xlsx"
+    elif fmt == "pdf":
+        data = export_mod.to_pdf(reports)
+        media = "application/pdf"
+        ext = "pdf"
+    else:
+        raise HTTPException(400, "formato deve ser 'xlsx' ou 'pdf'")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    fname = f"{reports[0].id}.{ext}" if len(reports) == 1 else f"ambientes_{stamp}.{ext}"
+    log.info("environments_exported", count=len(reports), format=fmt)
+    return Response(
+        content=data,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @router.post(
@@ -329,17 +382,43 @@ def run_detail(
     _user: User = Depends(get_current_user),
     db: DBSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Detalhe de um run gravado no DB.
+    """Detalhe de um run: somente as linhas que ESTE run impactou, com o status
+    de antes e depois (snapshot imutável gravado na execução).
 
-    Estrategia (mesma do autocfg-ramais): o storage so guarda totais por run,
-    nao snapshot por linha. Apresentamos o estado ATUAL das linhas do ambiente
-    como aproximacao — eh o que ficou apos a ultima execucao. Para acompanhar
-    um run em curso, use `/live`.
+    Runs antigos (anteriores ao snapshot por linha) caem no fallback: estado
+    ATUAL das linhas do ambiente, marcado com ``tem_snapshot=False``.
     """
     db_run = db.get(ExtensionApplyRun, run_id)
     if db_run is None:
         raise HTTPException(404, "run nao encontrado")
     env = repo.get_environment(db, db_run.environment_id)
+    env_dict = (
+        {"id": env.id, "nome": env.nome, "modelo_telefone": env.modelo_telefone}
+        if env else None
+    )
+
+    run_lines = repo.list_run_lines(db, run_id)
+    if run_lines:
+        return {
+            "run": _run_dict(db_run),
+            "environment": env_dict,
+            "tem_snapshot": True,
+            "impactadas": [
+                {
+                    "line_id": rl.line_id,
+                    "numero_ramal": rl.numero_ramal,
+                    "ip": rl.ip,
+                    "nome_visivel": rl.nome_visivel,
+                    "status_antes": rl.status_antes,
+                    "status_depois": rl.status_depois,
+                    "erro": rl.erro,
+                    "modelo": rl.modelo,
+                }
+                for rl in run_lines
+            ],
+        }
+
+    # Fallback (runs antigos sem snapshot): estado atual do ambiente.
     lines = repo.list_lines(db, db_run.environment_id) if env else []
     statuses = (
         {s["id"]: s for s in compute_statuses(env, lines)} if env else {}
@@ -347,9 +426,8 @@ def run_detail(
     devices = repo.get_device_info_for_lines(db, lines) if lines else {}
     return {
         "run": _run_dict(db_run),
-        "environment": {
-            "id": env.id, "nome": env.nome, "modelo_telefone": env.modelo_telefone,
-        } if env else None,
+        "environment": env_dict,
+        "tem_snapshot": False,
         "linhas": [
             _line_dict(ln, statuses.get(ln.id, {}), devices.get(ln.id))
             for ln in lines

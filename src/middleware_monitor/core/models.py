@@ -244,6 +244,40 @@ class ExtensionApplyRun(Base):
     operador: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     environment: Mapped[ExtensionEnvironment] = relationship(back_populates="runs")
+    run_lines: Mapped[list[ExtensionApplyRunLine]] = relationship(
+        back_populates="run", cascade="all, delete-orphan",
+    )
+
+
+class ExtensionApplyRunLine(Base):
+    """Snapshot por linha impactada numa execução (Relatório).
+
+    Diferente das linhas vivas do ambiente, este é o registro **imutável** do
+    que aconteceu naquele run: status antes de aplicar, resultado depois, e os
+    dados da linha no momento (sobrevivem a edição/remoção da linha). Só as
+    linhas que entraram no run (`pick_lines_to_apply`) viram registro aqui.
+    """
+
+    __tablename__ = "extension_apply_run_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("extension_apply_runs.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    line_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    numero_ramal: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    ip: Mapped[str] = mapped_column(String(45), nullable=False, default="")
+    nome_visivel: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    # status_antes: pending | applied | outdated | error (derivado no disparo)
+    status_antes: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    # status_depois: running | ok | erro
+    status_depois: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
+    erro: Mapped[str | None] = mapped_column(Text, nullable=True)
+    modelo: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    run: Mapped[ExtensionApplyRun] = relationship(back_populates="run_lines")
 
 
 class LineReapplyEvent(Base):
@@ -284,6 +318,7 @@ __all__: list[str] = [
     "Device",
     "DevicePing",
     "ExtensionApplyRun",
+    "ExtensionApplyRunLine",
     "ExtensionEnvironment",
     "ExtensionLine",
     "LineReapplyEvent",

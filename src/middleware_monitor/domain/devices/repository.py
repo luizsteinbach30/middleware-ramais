@@ -5,14 +5,75 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session as DBSession
 
-from middleware_monitor.core.models import Device, DevicePing, ExtensionLine
+from middleware_monitor.core.models import (
+    Device,
+    DevicePing,
+    ExtensionLine,
+    LineReapplyEvent,
+)
 
 
 def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _ip_to_int(ip: str | None) -> int | None:
+    """IPv4 dotted-string → inteiro, ou None se não for um IPv4 válido."""
+    if not ip:
+        return None
+    parts = ip.strip().split(".")
+    if len(parts) != 4:
+        return None
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        return None
+    if any(n < 0 or n > 255 for n in nums):
+        return None
+    return (nums[0] << 24) | (nums[1] << 16) | (nums[2] << 8) | nums[3]
+
+
+def _apply_range_filters(
+    rows: list[Device],
+    ip_from: str | None,
+    ip_to: str | None,
+    ramal_from: int | None,
+    ramal_to: int | None,
+) -> list[Device]:
+    """Filtra por faixa de IP e/ou faixa de ramal, em Python.
+
+    IP é comparado como inteiro (lexicográfico não serve para ranges); o ramal
+    é ``Device.name`` quando for puramente numérico. Devices sem IP válido caem
+    fora quando há filtro de IP; com nome não-numérico, fora quando há filtro de
+    ramal.
+    """
+    lo_ip = _ip_to_int(ip_from) if ip_from else None
+    hi_ip = _ip_to_int(ip_to) if ip_to else None
+    if lo_ip is not None or hi_ip is not None:
+        lo = lo_ip if lo_ip is not None else 0
+        hi = hi_ip if hi_ip is not None else 0xFFFFFFFF
+        kept = []
+        for r in rows:
+            iv = _ip_to_int(r.ip)
+            if iv is not None and lo <= iv <= hi:
+                kept.append(r)
+        rows = kept
+    if ramal_from is not None or ramal_to is not None:
+        kept = []
+        for r in rows:
+            if not r.name.isdigit():
+                continue
+            n = int(r.name)
+            if ramal_from is not None and n < ramal_from:
+                continue
+            if ramal_to is not None and n > ramal_to:
+                continue
+            kept.append(r)
+        rows = kept
+    return rows
 
 
 def list_devices(
@@ -21,9 +82,22 @@ def list_devices(
     search: str | None = None,
     network: str | None = None,
     logical: str | None = None,
+    environment: str | None = None,
+    ip_from: str | None = None,
+    ip_to: str | None = None,
+    ramal_from: int | None = None,
+    ramal_to: int | None = None,
     page: int = 1,
     size: int = 50,
 ) -> tuple[list[Device], int]:
+    """Lista devices paginados aplicando os filtros disponíveis.
+
+    ``environment``: id de um ambiente (devices com linha vinculada a ele) ou
+    ``"none"``/``"unlinked"`` para devices sem nenhum vínculo. Os filtros de
+    faixa (``ip_from``/``ip_to``/``ramal_from``/``ramal_to``) são aplicados em
+    Python; quando ativos, a paginação também passa a ser feita em memória
+    (custo aceitável na escala alvo — RNF-01, até ~1000 devices).
+    """
     stmt = select(Device)
     if search:
         like = f"%{search}%"
@@ -32,13 +106,60 @@ def list_devices(
         stmt = stmt.where(Device.network_status == network)
     if logical and logical != "all":
         stmt = stmt.where(Device.logical_status == logical)
+    if environment and environment != "all":
+        if environment in ("none", "unlinked"):
+            linked = select(ExtensionLine.device_id).where(
+                ExtensionLine.device_id.is_not(None)
+            )
+            stmt = stmt.where(Device.id.not_in(linked))
+        else:
+            in_env = select(ExtensionLine.device_id).where(
+                ExtensionLine.environment_id == environment,
+                ExtensionLine.device_id.is_not(None),
+            )
+            stmt = stmt.where(Device.id.in_(in_env))
 
-    total = int(db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
-    rows = (
-        db.scalars(stmt.order_by(Device.name).offset((page - 1) * size).limit(size))
-        .all()
+    range_active = any(
+        v not in (None, "") for v in (ip_from, ip_to, ramal_from, ramal_to)
     )
-    return list(rows), total
+    if not range_active:
+        total = int(db.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+        rows = db.scalars(
+            stmt.order_by(Device.name).offset((page - 1) * size).limit(size)
+        ).all()
+        return list(rows), total
+
+    all_rows = list(db.scalars(stmt.order_by(Device.name)).all())
+    filtered = _apply_range_filters(all_rows, ip_from, ip_to, ramal_from, ramal_to)
+    total = len(filtered)
+    start = (page - 1) * size
+    return filtered[start : start + size], total
+
+
+def delete_devices(db: DBSession, ids: list[int]) -> int:
+    """Apaga devices em massa. Desvincula as ExtensionLines (device_id→NULL),
+    zera o device_id de reapply events e remove os pings. Preserva linhas e
+    ambientes. Retorna a quantidade de devices removidos."""
+    if not ids:
+        return 0
+    now = _now()
+    db.execute(
+        update(ExtensionLine)
+        .where(ExtensionLine.device_id.in_(ids))
+        .values(device_id=None, updated_at=now)
+    )
+    db.execute(
+        update(LineReapplyEvent)
+        .where(LineReapplyEvent.device_id.in_(ids))
+        .values(device_id=None)
+    )
+    db.execute(delete(DevicePing).where(DevicePing.device_id.in_(ids)))
+    deleted = int(
+        db.scalar(select(func.count()).select_from(Device).where(Device.id.in_(ids)))
+        or 0
+    )
+    db.execute(delete(Device).where(Device.id.in_(ids)))
+    return deleted
 
 
 def get_device(db: DBSession, device_id: int) -> Device | None:
