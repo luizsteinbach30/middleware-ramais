@@ -17,6 +17,9 @@ from middleware_monitor.api import (
     auth as api_auth,
 )
 from middleware_monitor.api import (
+    branding as api_branding,
+)
+from middleware_monitor.api import (
     collections as api_collections,
 )
 from middleware_monitor.api import (
@@ -67,6 +70,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("X-Frame-Options", "DENY")
         if request.url.path.startswith("/api"):
             response.headers.setdefault("Cache-Control", "no-store")
+        elif request.url.path.startswith("/static"):
+            # Assets revalidam a cada load (ETag/Last-Modified → 304 quando não
+            # mudou, refetch quando muda). Evita servir JS/CSS/módulos antigos
+            # do cache do navegador após um deploy/reinício.
+            response.headers.setdefault("Cache-Control", "no-cache")
         return response
 
 
@@ -114,6 +122,7 @@ def create_app() -> FastAPI:
         api_dashboard.router,
         api_system.router,
         api_extension_configurator.router,
+        api_branding.router,
     ):
         app.include_router(r)
 

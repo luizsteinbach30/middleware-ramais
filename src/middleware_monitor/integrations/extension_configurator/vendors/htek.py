@@ -40,7 +40,7 @@ from xml.sax.saxutils import escape as xml_escape
 
 import httpx
 
-from .base import DiscoveryResult, VendorAdapter, VendorCredentials
+from .base import DiscoveryResult, VendorAdapter, VendorAuthError, VendorCredentials
 
 
 # REGRA HTEK: o firmware faz URL-decode (%XX) no conteudo de texto dos XML
@@ -439,4 +439,8 @@ class HTEKAdapter(VendorAdapter):
                 auth=auth,
                 files={field: (filename, cfg, "application/octet-stream")},
             )
+            if resp.status_code in (401, 403):
+                raise VendorAuthError(
+                    f"HTEK: login recusado (HTTP {resp.status_code})"
+                )
             resp.raise_for_status()

@@ -4,10 +4,15 @@
 <div class="min-h-screen grid place-items-center bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 px-4">
   <div class="w-full max-w-sm">
     <div class="flex flex-col items-center text-center mb-8">
-      <div class="w-12 h-12 rounded-xl bg-blue-500/15 ring-1 ring-blue-500/40 grid place-items-center text-blue-400 mb-3">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <img src="/api/branding/logo" alt="Logo" class="hidden max-h-20 w-auto max-w-[240px] object-contain mb-3"
+           onload="this.classList.remove('hidden'); document.getElementById('login-brand-default')?.classList.add('hidden');"
+           onerror="this.remove();"/>
+      <div id="login-brand-default" class="flex flex-col items-center">
+        <div class="w-12 h-12 rounded-xl bg-blue-500/15 ring-1 ring-blue-500/40 grid place-items-center text-blue-400 mb-3">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <h1 class="text-xl font-semibold text-gray-100">Middleware Monitor</h1>
       </div>
-      <h1 class="text-xl font-semibold text-gray-100">Middleware Monitor</h1>
       <p class="text-xs text-gray-500 mt-1">Entre para acessar o painel local</p>
     </div>
     <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-6">

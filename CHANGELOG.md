@@ -2,6 +2,49 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.5.0] — 2026-05-25
+
+### Added
+- **Ações em massa na tela Devices.** Seleção múltipla (checkbox por linha +
+  "selecionar página") com barra de ações: **apagar** devices (preserva as
+  linhas de ambiente, apenas desvincula; remove os pings), **adicionar a um
+  ambiente existente** e **criar um novo ambiente** a partir dos devices
+  selecionados. Ao virar linha, só os campos conhecidos são preenchidos (IP e
+  ramal); devices já vinculados ou com IP duplicado no ambiente são pulados.
+- **Novos filtros em Devices:** por **ambiente** (campo com busca/typeahead,
+  feito para clientes com muitos ambientes), **faixa de IP** (de/até) e **faixa
+  de ramal** (de/até).
+- **Exportação de ambientes em XLSX e PDF** (individual ou vários selecionados),
+  com modelo do telefone, configurações do ambiente e a tabela de ramais.
+  Senhas saem mascaradas. A logo da empresa entra no cabeçalho do PDF.
+- **Relatório de execução com snapshot real** (nova tabela
+  `extension_apply_run_lines`, migration `0004`): cada execução grava, por
+  ramal impactado, o **status antes → depois**, quem aplicou e o erro. Runs
+  antigos caem num fallback que mostra o estado atual.
+- **Fallback de credencial no provisionamento.** Se o telefone recusa a
+  credencial atual (senha já trocada), o sistema tenta automaticamente a
+  credencial "nova" do ambiente (`nova_web_*`). Exceção semântica
+  `VendorAuthError` unificada entre HTEK/Intelbras/FlyingVoice.
+- **Identidade visual configurável** (`/config` → "Identidade visual"): upload
+  de **logo** e **favicon**, exibidos na sidebar, na tela de login, na aba do
+  navegador e no cabeçalho dos relatórios PDF.
+
+### Changed
+- **Watcher de auto-reaplicação** agora também dispara quando o ramal está
+  `unavailable` no PBX **mesmo sem queda de ICMP** (config alterada sem o
+  telefone cair) e **desiste** após falhar com as duas credenciais — só volta a
+  tentar quando o telefone reregistra ou após aplicação manual. Evita o loop de
+  reaplicação a cada ciclo.
+- **Horários** na lista de ambientes e nos relatórios passam a ser exibidos no
+  **fuso local** do navegador (antes mostravam UTC cru).
+- **Assets estáticos** servidos com `Cache-Control: no-cache` (revalidação),
+  evitando que o navegador use JS/CSS antigos após uma atualização.
+
+### Fixed
+- **Status dos ramais nos cards de ambientes.** O resumo comparava
+  `ultimo_status` com `"applied"/"error"`, mas o valor gravado é `"ok"/"erro"`,
+  então ramais aplicados apareciam eternamente como "pendentes".
+
 ## [2.4.0] — 2026-05-23
 
 ### Added

@@ -219,6 +219,88 @@ window.addEventListener('beforeunload', (e) => {
   if (dirty.size > 0 || Object.keys(tokenChanges).length > 0) { e.preventDefault(); return ''; }
 });
 
+// --- Identidade visual (logo + favicon) ---
+function csrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
+function renderBrand(kind, present) {
+  const img = document.querySelector(`[data-brand-preview="${kind}"]`);
+  const empty = document.querySelector(`[data-brand-empty="${kind}"]`);
+  const removeBtn = document.querySelector(`[data-brand-remove="${kind}"]`);
+  if (!img) return;
+  if (present) {
+    img.src = `/api/branding/${kind}?t=${Date.now()}`; // cache-bust
+    img.classList.remove('hidden');
+    empty?.classList.add('hidden');
+    removeBtn?.classList.remove('hidden');
+  } else {
+    img.removeAttribute('src');
+    img.classList.add('hidden');
+    empty?.classList.remove('hidden');
+    removeBtn?.classList.add('hidden');
+  }
+}
+
+async function loadBranding() {
+  try {
+    const st = await api('/api/branding/status');
+    renderBrand('logo', !!st.logo);
+    renderBrand('favicon', !!st.favicon);
+  } catch (_e) { /* ignore */ }
+}
+
+async function uploadBrand(kind, file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`/api/branding/${kind}`, {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': csrfToken() },
+    body: fd,
+    credentials: 'same-origin',
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { detail = (await res.json()).detail || detail; } catch (_e) { /* ignore */ }
+    throw new Error(detail);
+  }
+}
+
+document.querySelectorAll('[data-brand-input]').forEach((inp) => {
+  inp_wire(inp);
+});
+function inp_wire(inp) {
+  const kind = inp.dataset.brandInput;
+  inp.addEventListener('change', async () => {
+    const file = inp.files && inp.files[0];
+    if (!file) return;
+    try {
+      await uploadBrand(kind, file);
+      renderBrand(kind, true);
+      toast.success(`${kind === 'logo' ? 'Logo' : 'Favicon'} atualizado`);
+    } catch (err) {
+      toast.error('Erro: ' + err.message);
+    } finally {
+      inp.value = '';
+    }
+  });
+}
+
+document.querySelectorAll('[data-brand-remove]').forEach((btn) => {
+  const kind = btn.dataset.brandRemove;
+  btn.addEventListener('click', async () => {
+    try {
+      await api(`/api/branding/${kind}`, { method: 'DELETE' });
+      renderBrand(kind, false);
+      toast.success('Removido');
+    } catch (err) {
+      toast.error('Erro ao remover: ' + err.message);
+    }
+  });
+});
+
+loadBranding();
+
 document.getElementById('auto-link-btn')?.addEventListener('click', async (e) => {
   const btn = e.currentTarget;
   const out = document.getElementById('auto-link-result');

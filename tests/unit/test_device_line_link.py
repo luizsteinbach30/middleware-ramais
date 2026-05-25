@@ -330,6 +330,73 @@ def test_uscall_nao_mexe_em_linha_de_outro_device(db: DBSession) -> None:
     assert repo.get_line(db, l2_id).ip == "10.0.0.11"  # type: ignore[union-attr]
 
 
+def test_add_devices_as_lines_preenche_campos_conhecidos(db: DBSession) -> None:
+    """Cada device vira 1 linha com ip + numero_ramal (=name), vinculada ao
+    device. Campos desconhecidos ficam vazios."""
+    upsert_from_uscall(db, [
+        {"ramal": "3001", "status": "disponivel", "ip": "10.0.0.10"},
+        {"ramal": "3002", "status": "disponivel", "ip": "10.0.0.11"},
+    ])
+    db.commit()
+    from sqlalchemy import select
+
+    from middleware_monitor.core.models import Device
+
+    devs = list(db.scalars(select(Device).order_by(Device.name)).all())
+    env = repo.create_environment(db, nome="Novo", modelo_telefone="HTEK UC902G")
+    res = repo.add_devices_as_lines(db, env, [d.id for d in devs])
+    db.commit()
+
+    assert res["added"] == 2
+    assert res["skipped"] == 0
+    lines = {ln.numero_ramal: ln for ln in repo.list_lines(db, env.id)}
+    assert set(lines) == {"3001", "3002"}
+    ln = lines["3001"]
+    assert ln.ip == "10.0.0.10"
+    assert ln.device_id == devs[0].id
+    assert ln.senha_sip == ""  # campo desconhecido fica vazio
+    assert ln.nome_visivel == ""
+
+
+def test_add_devices_as_lines_pula_ja_vinculado_e_ip_duplicado(db: DBSession) -> None:
+    upsert_from_uscall(db, [
+        {"ramal": "3001", "status": "disponivel", "ip": "10.0.0.10"},
+        {"ramal": "3002", "status": "disponivel", "ip": "10.0.0.11"},
+        {"ramal": "3003", "status": "disponivel", "ip": "10.0.0.12"},
+    ])
+    db.commit()
+    from sqlalchemy import select
+
+    from middleware_monitor.core.models import Device
+
+    dev1 = db.scalar(select(Device).where(Device.name == "3001"))
+    dev2 = db.scalar(select(Device).where(Device.name == "3002"))
+    dev3 = db.scalar(select(Device).where(Device.name == "3003"))
+    assert dev1 is not None and dev2 is not None and dev3 is not None
+
+    env = repo.create_environment(db, nome="Novo", modelo_telefone="HTEK UC902G")
+    # 3001: linha com IP do dev1 → save_lines auto-vincula ao dev1 (already_linked)
+    # 3002: linha com o IP do dev2, mas que reapontamos manualmente p/ o dev3 —
+    #       o IP do dev2 fica ocupado no ambiente embora o dev2 esteja livre.
+    lines = repo.save_lines(db, env, [
+        repo.new_line(ip="10.0.0.10", numero_ramal="3001"),
+        repo.new_line(ip="10.0.0.11", numero_ramal="velho"),
+    ])
+    db.commit()
+    ln_velho = next(ln for ln in lines if ln.numero_ramal == "velho")
+    repo.unlink_line_from_device(db, ln_velho)
+    repo.link_line_to_device(db, ln_velho, dev3)
+    db.commit()
+
+    res = repo.add_devices_as_lines(db, env, [dev1.id, dev2.id])
+    db.commit()
+    assert res["added"] == 0
+    assert res["skipped"] == 2
+    reasons = {d["device_id"]: d["reason"] for d in res["skipped_detail"]}
+    assert reasons[dev1.id] == "already_linked"
+    assert reasons[dev2.id] == "ip_duplicate"
+
+
 def test_app_config_persists_auto_reapply_flags(db: DBSession) -> None:
     from middleware_monitor.domain.config.repository import (
         load_config,

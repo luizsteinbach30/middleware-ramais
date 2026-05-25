@@ -56,7 +56,7 @@ from typing import Any
 
 import httpx
 
-from .base import DiscoveryResult, VendorAdapter, VendorCredentials
+from .base import DiscoveryResult, VendorAdapter, VendorAuthError, VendorCredentials
 
 # Chaves que ESTE adapter pode sobrescrever no form da conta SIP. Qualquer
 # coisa fora desta lista volta com o valor atual do aparelho (replay). NENHUMA
@@ -156,7 +156,7 @@ class FlyingVoiceAdapter(VendorAdapter):
             cookie = cli.cookies.get("ASPSSIONID")
             if not cookie:
                 await cli.aclose()
-                raise RuntimeError("FlyingVoice: login recusado (sem ASPSSIONID)")
+                raise VendorAuthError("FlyingVoice: login recusado (sem ASPSSIONID)")
             return cli, cookie
         except httpx.HTTPError as exc:
             await cli.aclose()

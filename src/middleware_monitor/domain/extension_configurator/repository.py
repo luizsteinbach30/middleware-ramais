@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session as DBSession
 from middleware_monitor.core.models import (
     Device,
     ExtensionApplyRun,
+    ExtensionApplyRunLine,
     ExtensionEnvironment,
     ExtensionLine,
     LineReapplyEvent,
@@ -27,13 +28,16 @@ from middleware_monitor.core.models import (
 from .defaults import default_config_padrao
 
 __all__ = [
+    "add_devices_as_lines",
     "auto_link_lines_by_ip",
     "create_environment",
     "create_reapply_event",
     "create_run",
+    "create_run_line",
     "delete_environment",
     "finish_reapply_event",
     "finish_run",
+    "finish_run_line",
     "generate_slug",
     "get_environment",
     "get_line",
@@ -42,6 +46,7 @@ __all__ = [
     "list_environments",
     "list_lines",
     "list_reapply_events",
+    "list_run_lines",
     "list_runs",
     "merged_config_padrao",
     "new_line",
@@ -312,6 +317,58 @@ def finish_run(db: DBSession, run: ExtensionApplyRun, *, ok: int, falha: int) ->
     db.flush()
 
 
+def create_run_line(
+    db: DBSession,
+    *,
+    run_id: int,
+    line_id: str | None,
+    numero_ramal: str,
+    ip: str,
+    nome_visivel: str,
+    status_antes: str,
+) -> ExtensionApplyRunLine:
+    """Snapshot de uma linha impactada por um run (status_depois='running')."""
+    rl = ExtensionApplyRunLine(
+        run_id=run_id,
+        line_id=line_id,
+        numero_ramal=numero_ramal,
+        ip=ip,
+        nome_visivel=nome_visivel,
+        status_antes=status_antes,
+        status_depois="running",
+        created_at=_now(),
+    )
+    db.add(rl)
+    db.flush()
+    return rl
+
+
+def finish_run_line(
+    db: DBSession,
+    run_line: ExtensionApplyRunLine,
+    *,
+    status_depois: str,
+    erro: str | None = None,
+    modelo: str | None = None,
+) -> None:
+    run_line.status_depois = status_depois
+    if erro is not None:
+        run_line.erro = erro
+    if modelo is not None:
+        run_line.modelo = modelo
+    db.flush()
+
+
+def list_run_lines(db: DBSession, run_id: int) -> list[ExtensionApplyRunLine]:
+    return list(
+        db.scalars(
+            select(ExtensionApplyRunLine)
+            .where(ExtensionApplyRunLine.run_id == run_id)
+            .order_by(ExtensionApplyRunLine.numero_ramal, ExtensionApplyRunLine.id)
+        ).all()
+    )
+
+
 def list_runs(
     db: DBSession, *, env_id: str | None = None, limit: int = 100,
 ) -> list[ExtensionApplyRun]:
@@ -344,6 +401,67 @@ def unlink_line_from_device(db: DBSession, line: ExtensionLine) -> ExtensionLine
     line.updated_at = _now()
     db.flush()
     return line
+
+
+def add_devices_as_lines(
+    db: DBSession, env: ExtensionEnvironment, device_ids: list[int],
+) -> dict[str, Any]:
+    """Cria uma ExtensionLine por device no ambiente, vinculada ao device.
+
+    Preenche apenas os campos conhecidos do device: ``ip`` e ``numero_ramal``
+    (= ``device.name``, que é o ramal no USCall); ``user_auth`` herda o ramal
+    (convenção de ``new_line``). Os demais (senha SIP, servidor, etc.) ficam
+    vazios e herdam os defaults do ambiente na geração da config.
+
+    Diferente de ``save_lines``, **não** apaga as linhas existentes — só faz
+    append. Pula (sem erro) devices já vinculados a alguma linha e devices cujo
+    IP já existe como linha neste ambiente. Retorna
+    ``{"added", "skipped", "skipped_detail"}``.
+    """
+    if not device_ids:
+        return {"added": 0, "skipped": 0, "skipped_detail": []}
+    devices = list(db.scalars(select(Device).where(Device.id.in_(device_ids))).all())
+    by_id = {d.id: d for d in devices}
+    existing_ips = {ln.ip for ln in list_lines(db, env.id) if ln.ip}
+    already_linked = set(
+        db.scalars(
+            select(ExtensionLine.device_id).where(
+                ExtensionLine.device_id.in_(device_ids),
+                ExtensionLine.device_id.is_not(None),
+            )
+        ).all()
+    )
+    now = _now()
+    added = 0
+    skipped: list[dict[str, Any]] = []
+    for dev_id in device_ids:
+        dev = by_id.get(dev_id)
+        if dev is None:
+            skipped.append({"device_id": dev_id, "reason": "not_found"})
+            continue
+        if dev_id in already_linked:
+            skipped.append({"device_id": dev_id, "reason": "already_linked"})
+            continue
+        if dev.ip and dev.ip in existing_ips:
+            skipped.append({"device_id": dev_id, "reason": "ip_duplicate"})
+            continue
+        db.add(ExtensionLine(
+            id=uuid.uuid4().hex,
+            environment_id=env.id,
+            ip=dev.ip or "",
+            numero_ramal=dev.name,
+            user_auth=dev.name,
+            device_id=dev.id,
+            created_at=now,
+            updated_at=now,
+        ))
+        added += 1
+        already_linked.add(dev_id)
+        if dev.ip:
+            existing_ips.add(dev.ip)
+    env.updated_at = now
+    db.flush()
+    return {"added": added, "skipped": len(skipped), "skipped_detail": skipped}
 
 
 def auto_link_lines_by_ip(db: DBSession) -> int:

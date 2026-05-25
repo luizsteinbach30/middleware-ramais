@@ -5,6 +5,16 @@ from dataclasses import dataclass
 from typing import Any
 
 
+class VendorAuthError(RuntimeError):
+    """Levantada por um adapter quando o aparelho recusa as credenciais.
+
+    Sinal semântico (independente do protocolo: HTTP 401/403 no HTEK, página de
+    login recusada no Intelbras/FlyingVoice) para o pipeline saber que vale
+    tentar a credencial seguinte da chain. Herda ``RuntimeError`` para que, se
+    não for tratada, ainda seja persistida como erro normal da linha.
+    """
+
+
 @dataclass(frozen=True)
 class VendorCredentials:
     """Credenciais para acessar a interface administrativa do telefone."""

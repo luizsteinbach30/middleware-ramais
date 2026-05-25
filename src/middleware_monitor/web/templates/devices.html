@@ -15,11 +15,17 @@
 </div>
 <div class="px-6 py-6 space-y-4">
   <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-3" id="filters">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3" id="filters">
       <label class="flex flex-col gap-1.5">
         <span class="text-xs font-semibold text-gray-300">Buscar <span class="font-normal text-gray-500">ramal ou IP</span></span>
         <input id="f-search" placeholder="Ex: 3660 ou 10.20.30" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
       </label>
+      <div class="flex flex-col gap-1.5 relative" id="f-env-wrap">
+        <span class="text-xs font-semibold text-gray-300">Ambiente</span>
+        <input id="f-environment-input" type="text" autocomplete="off" placeholder="Todos"
+          class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+        <ul id="f-environment-list" class="hidden absolute z-30 top-full left-0 right-0 mt-1 max-h-60 overflow-auto bg-gray-900 ring-1 ring-gray-700 rounded-lg shadow-xl py-1"></ul>
+      </div>
       <label class="flex flex-col gap-1.5">
         <span class="text-xs font-semibold text-gray-300">Status de rede</span>
         <select id="f-network" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100">
@@ -37,17 +43,43 @@
           <option value="unavailable">Indisponível</option>
         </select>
       </label>
+      <label class="flex flex-col gap-1.5">
+        <span class="text-xs font-semibold text-gray-300">IP de</span>
+        <input id="f-ip-from" placeholder="10.20.30.1" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+      </label>
+      <label class="flex flex-col gap-1.5">
+        <span class="text-xs font-semibold text-gray-300">IP até</span>
+        <input id="f-ip-to" placeholder="10.20.30.254" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+      </label>
+      <label class="flex flex-col gap-1.5">
+        <span class="text-xs font-semibold text-gray-300">Ramal de</span>
+        <input id="f-ramal-from" type="number" inputmode="numeric" placeholder="3000" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+      </label>
+      <label class="flex flex-col gap-1.5">
+        <span class="text-xs font-semibold text-gray-300">Ramal até</span>
+        <input id="f-ramal-to" type="number" inputmode="numeric" placeholder="3999" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+      </label>
       <div class="flex items-end gap-2">
-        <button id="f-clear" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-3.5 py-2 text-sm">Limpar</button>
+        <button id="f-clear" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-3.5 py-2 text-sm">Limpar filtros</button>
       </div>
     </div>
     <div id="summary-badges" class="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-700/50"></div>
+  </div>
+
+  <div id="bulk-bar" class="hidden items-center gap-3 bg-blue-500/10 ring-1 ring-blue-500/30 rounded-xl px-4 py-2.5">
+    <span id="bulk-count" class="text-sm font-medium text-blue-200">0 selecionados</span>
+    <div class="flex-1"></div>
+    <button id="bulk-add" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-600 px-3 py-1.5 text-xs"><span data-icon="package"></span>Adicionar a ambiente</button>
+    <button id="bulk-create" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-600 px-3 py-1.5 text-xs"><span data-icon="edit"></span>Criar ambiente</button>
+    <button id="bulk-delete" class="inline-flex items-center gap-2 rounded-lg font-medium bg-red-500/15 hover:bg-red-500/25 text-red-300 ring-1 ring-inset ring-red-500/30 px-3 py-1.5 text-xs"><span data-icon="x"></span>Apagar</button>
+    <button id="bulk-clear" class="text-xs text-gray-400 hover:text-gray-200 px-2 py-1.5">Cancelar</button>
   </div>
   <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider">
           <tr>
+            <th class="px-4 py-3 w-10"><input id="select-all" type="checkbox" class="rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500/50 cursor-pointer" title="Selecionar página"/></th>
             <th class="text-left px-4 py-3 font-semibold">Ramal</th>
             <th class="text-left px-4 py-3 font-semibold">IP</th>
             <th class="text-left px-4 py-3 font-semibold">MAC</th>
@@ -72,5 +104,56 @@
     </div>
   </div>
 </div>
+
+<!-- Modal: adicionar a ambiente existente -->
+<div id="modal-add" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl w-full max-w-md p-5 space-y-4">
+    <h2 class="text-base font-semibold text-gray-100">Adicionar a ambiente</h2>
+    <p id="modal-add-info" class="text-xs text-gray-400">—</p>
+    <label class="flex flex-col gap-1.5">
+      <span class="text-xs font-semibold text-gray-300">Ambiente de destino</span>
+      <select id="modal-add-env" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"></select>
+    </label>
+    <p class="text-[11px] text-gray-500">Cada device vira uma linha com IP e ramal preenchidos. Devices já vinculados ou com IP repetido no ambiente são pulados.</p>
+    <div class="flex justify-end gap-2 pt-1">
+      <button id="modal-add-cancel" class="rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-3.5 py-2 text-sm">Cancelar</button>
+      <button id="modal-add-confirm" class="rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3.5 py-2 text-sm">Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: criar ambiente a partir da seleção -->
+<div id="modal-create" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl w-full max-w-md p-5 space-y-4">
+    <h2 class="text-base font-semibold text-gray-100">Criar ambiente</h2>
+    <p id="modal-create-info" class="text-xs text-gray-400">—</p>
+    <label class="flex flex-col gap-1.5">
+      <span class="text-xs font-semibold text-gray-300">Nome do ambiente</span>
+      <input id="modal-create-nome" placeholder="Ex: Loja Centro" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+    </label>
+    <label class="flex flex-col gap-1.5">
+      <span class="text-xs font-semibold text-gray-300">Modelo do telefone</span>
+      <select id="modal-create-modelo" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"></select>
+    </label>
+    <div class="flex justify-end gap-2 pt-1">
+      <button id="modal-create-cancel" class="rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-3.5 py-2 text-sm">Cancelar</button>
+      <button id="modal-create-confirm" class="rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3.5 py-2 text-sm">Criar e adicionar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: confirmar exclusão -->
+<div id="modal-del" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl w-full max-w-md p-5 space-y-4">
+    <h2 class="text-base font-semibold text-gray-100">Apagar devices</h2>
+    <p id="modal-del-info" class="text-sm text-gray-300">—</p>
+    <p class="text-[11px] text-gray-500">As linhas de ambiente vinculadas a estes devices são preservadas (apenas desvinculadas). O histórico de pings é removido.</p>
+    <div class="flex justify-end gap-2 pt-1">
+      <button id="modal-del-cancel" class="rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-3.5 py-2 text-sm">Cancelar</button>
+      <button id="modal-del-confirm" class="rounded-lg font-medium bg-red-500 hover:bg-red-400 text-white px-3.5 py-2 text-sm">Apagar</button>
+    </div>
+  </div>
+</div>
+
 <script type="module" src="/static/js/pages/devices.js"></script>
 {% endblock %}
