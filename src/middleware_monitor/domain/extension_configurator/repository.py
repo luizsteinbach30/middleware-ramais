@@ -53,6 +53,7 @@ __all__ = [
     "save_lines",
     "unlink_line_from_device",
     "update_environment",
+    "update_line_macs",
     "update_line_status",
 ]
 
@@ -291,6 +292,28 @@ def update_line_status(
         line.ultimo_mac = mac
     line.updated_at = now
     db.flush()
+
+
+def update_line_macs(db: DBSession, env_id: str, mac_by_ip: dict[str, str]) -> int:
+    """Persiste o MAC coletado (via ARP) nas linhas do ambiente, casado por IP.
+
+    Chamado pelo monitor de ping ao vivo — precisa ser idempotente e barato:
+    só grava quando o MAC é novo ou mudou (nada a fazer nas rodadas seguintes).
+    Retorna quantas linhas foram efetivamente atualizadas.
+    """
+    if not mac_by_ip:
+        return 0
+    now = _now()
+    changed = 0
+    for line in list_lines(db, env_id):
+        mac = mac_by_ip.get(line.ip or "")
+        if mac and line.ultimo_mac != mac:
+            line.ultimo_mac = mac
+            line.updated_at = now
+            changed += 1
+    if changed:
+        db.flush()
+    return changed
 
 
 def create_run(

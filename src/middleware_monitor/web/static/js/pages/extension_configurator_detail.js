@@ -11,6 +11,17 @@ let currentRun = null;
 let modeloTelefone = '';
 let isHtek = false;
 
+// ----- Monitor de ping ao vivo -------------------------------------------------
+// Liga/desliga via toggle. Enquanto ligado, pinga os IPs preenchidos na planilha
+// a cada N segundos e pinta uma bolinha antes do IP: verde = responde, vermelho =
+// sem resposta. Para sozinho ao salvar, aplicar, recarregar ou sair da tela.
+let monitorOn = false;
+let monitorTimer = null;
+let monitorBusy = false;
+let monitorAbort = null;           // aborta o fetch em voo ao desligar/sair da tela
+let pingRounds = 0;                // nº de rodadas concluídas (sensação de tempo real)
+const pingStatusByIp = new Map();  // ip -> true (up) | false (down) | undefined (aguardando)
+
 // Charset "seguro" para senhas SIP no firmware HTEK. O aparelho aceita o XML
 // mas falha o registro silenciosamente se a senha tem chars fora desse conjunto
 // ou se passa de ~25 caracteres.
@@ -412,6 +423,12 @@ function buildSheet(linhas) {
       smartAutofill(records);
       scheduleAutosave();
     },
+    updateTable: (_instance, cell, col, _row, val) => {
+      // Decora a célula de IP com a classe de status do monitor. Roda a cada
+      // render do Jspreadsheet, então as bolinhas sobrevivem a edições/refresh.
+      if (col !== COL_INDEX.ip) return;
+      applyPingClass(cell, String(val ?? '').trim());
+    },
     oneditionstart: (_instance, cell, x, _y) => {
       if (x !== COL_INDEX.ip) return;
       // O <input> e injetado pelo Jspreadsheet apos um tick — pegar via rAF.
@@ -619,6 +636,7 @@ function renderStatusPills(linhas) {
 }
 
 async function reload() {
+  stopMonitor();  // dados/planilha recriados — recomeça limpo se o usuário religar
   const env = await api(`/api/extension-configurator/environments/${encodeURIComponent(envId)}`);
   modeloTelefone = env.modelo_telefone || '';
   isHtek = String(modeloTelefone).toLowerCase().startsWith("htek");
@@ -662,6 +680,7 @@ function setApplyButtonsDisabled(v) {
 }
 
 async function apply({ selectedIds = null } = {}) {
+  stopMonitor();  // os aparelhos reiniciam ao aplicar — ping ficaria vermelho à toa
   try { await save(); } catch (_e) { return; }
   const force = $('#ec-force').checked;
 
@@ -761,7 +780,170 @@ async function pollRun() {
   } catch (_e) { /* swallow */ }
 }
 
+// ----- Monitor de ping: implementação ----------------------------------------
+
+// Aplica a classe de status (up/down/aguardando) numa <td> da coluna IP.
+function applyPingClass(cell, ip) {
+  cell.classList.remove('ec-ping-cell', 'ec-ping-up', 'ec-ping-down');
+  if (!monitorOn || !ip) return;
+  cell.classList.add('ec-ping-cell');
+  const st = pingStatusByIp.get(ip);
+  if (st === true) cell.classList.add('ec-ping-up');
+  else if (st === false) cell.classList.add('ec-ping-down');
+  // undefined => só a bolinha cinza "aguardando" (ec-ping-cell sozinha)
+}
+
+// ----- Chip "ao vivo": feedback de que os pings estão de fato rolando ---------
+
+function showPingStatus() {
+  const el = $('#ec-ping-panel');
+  if (!el) return;
+  el.classList.remove('hidden');
+  el.classList.add('flex');
+}
+
+function hidePingStatus() {
+  const el = $('#ec-ping-panel');
+  if (!el) return;
+  el.classList.add('hidden');
+  el.classList.remove('flex');
+  const bar = $('#ec-ping-progress-bar');
+  if (bar) { bar.style.transition = 'none'; bar.style.width = '0%'; }
+  const rounds = $('#ec-ping-rounds'); if (rounds) rounds.textContent = '#0';
+  const tally = $('#ec-ping-tally'); if (tally) tally.textContent = '—';
+}
+
+// Barra que preenche de 0→100% ao longo do intervalo, dando a sensação de
+// contagem regressiva até o próximo ping. Reinicia a cada agendamento.
+function animateProgressBar(durationMs) {
+  const bar = $('#ec-ping-progress-bar');
+  if (!bar) return;
+  bar.style.transition = 'none';
+  bar.style.width = '0%';
+  void bar.offsetWidth;  // força reflow pra animação reiniciar
+  bar.style.transition = `width ${durationMs}ms linear`;
+  bar.style.width = '100%';
+}
+
+// Pisca o painel quando uma rodada acaba de chegar (confirmação visual).
+function flashPingChip() {
+  const el = $('#ec-ping-panel');
+  if (!el) return;
+  el.classList.remove('ec-ping-flash');
+  void el.offsetWidth;
+  el.classList.add('ec-ping-flash');
+}
+
+function updatePingChip(res) {
+  let up = 0, down = 0;
+  Object.values(res || {}).forEach((r) => { if (r.online) up++; else down++; });
+  pingRounds += 1;
+  const rounds = $('#ec-ping-rounds'); if (rounds) rounds.textContent = `#${pingRounds}`;
+  const tally = $('#ec-ping-tally');
+  if (tally) tally.textContent = `🟢 ${up}  🔴 ${down}`;
+  flashPingChip();
+}
+
+function monitorIntervalMs() {
+  let s = parseInt($('#ec-ping-interval')?.value, 10);
+  if (!Number.isFinite(s)) s = 5;
+  s = Math.min(3600, Math.max(2, s));  // piso de 2s p/ não martelar a rede
+  return s * 1000;
+}
+
+// IPs únicos e não-vazios da planilha (a validação fina de IPv4 é no backend).
+function collectMonitorIps() {
+  if (!sheet) return [];
+  const ipx = COL_INDEX.ip;
+  const set = new Set();
+  for (const row of sheet.getData()) {
+    const ip = String(row[ipx] ?? '').trim();
+    if (ip) set.add(ip);
+  }
+  return [...set];
+}
+
+// Repinta todas as células de IP visíveis a partir do mapa de status atual.
+function decorateIpCells() {
+  if (!sheet) return;
+  const ipx = COL_INDEX.ip;
+  document.querySelectorAll(`#ec-spreadsheet td[data-x="${ipx}"]`).forEach((td) => {
+    const y = parseInt(td.dataset.y);
+    if (!Number.isFinite(y)) return;
+    applyPingClass(td, String(sheet.getValueFromCoords(ipx, y) ?? '').trim());
+  });
+}
+
+// Preenche a célula MAC da linha (casada por IP) quando o ARP resolve um valor
+// novo. Silencioso pra não disparar autosave/autofill; o backend já persistiu.
+function applyMacToCell(ip, mac) {
+  const idx = findRowIdxByIp(ip);
+  if (idx < 0) return;
+  const cur = String(sheet.getValueFromCoords(COL_INDEX._mac, idx) ?? '');
+  if (cur !== mac) setCellSilent(idx, '_mac', mac);
+}
+
+async function pingRound() {
+  if (!monitorOn || monitorBusy) return;
+  const ips = collectMonitorIps();
+  if (!ips.length) { decorateIpCells(); return; }
+  monitorBusy = true;
+  monitorAbort = new AbortController();
+  try {
+    const res = await api('/api/extension-configurator/ping', {
+      method: 'POST', body: { ips, environment_id: envId }, signal: monitorAbort.signal,
+    });
+    if (!monitorOn) return;  // desligou durante o request
+    Object.entries(res || {}).forEach(([ip, r]) => {
+      pingStatusByIp.set(ip, !!r.online);
+      if (r.mac) applyMacToCell(ip, r.mac);  // MAC coletado via ARP → preenche a coluna
+    });
+    decorateIpCells();
+    updatePingChip(res);
+  } catch (_e) {
+    // abortado (desligou/saiu) ou rede instável: não quebra, tenta no próximo ciclo
+  } finally {
+    monitorBusy = false;
+    monitorAbort = null;
+  }
+}
+
+// setTimeout encadeado (não setInterval): a próxima rodada só agenda depois da
+// anterior terminar, evitando empilhar requests se o ping demorar.
+function scheduleNextPing() {
+  if (monitorTimer) { clearTimeout(monitorTimer); monitorTimer = null; }
+  if (!monitorOn) return;
+  const ms = monitorIntervalMs();
+  animateProgressBar(ms);  // barra preenche enquanto aguarda a próxima rodada
+  monitorTimer = setTimeout(async () => {
+    await pingRound();
+    scheduleNextPing();
+  }, ms);
+}
+
+function startMonitor() {
+  if (monitorOn) return;
+  monitorOn = true;
+  pingRounds = 0;
+  const t = $('#ec-ping-toggle'); if (t) t.checked = true;
+  pingStatusByIp.clear();
+  showPingStatus();
+  decorateIpCells();                       // pinta tudo como "aguardando"
+  pingRound().then(scheduleNextPing);      // 1ª rodada imediata, depois agenda
+}
+
+function stopMonitor() {
+  monitorOn = false;
+  if (monitorTimer) { clearTimeout(monitorTimer); monitorTimer = null; }
+  if (monitorAbort) { monitorAbort.abort(); monitorAbort = null; }  // mata o fetch em voo
+  const t = $('#ec-ping-toggle'); if (t) t.checked = false;
+  pingStatusByIp.clear();
+  hidePingStatus();
+  decorateIpCells();                       // limpa as bolinhas
+}
+
 // --- handlers ---
+// Salvar é ação na própria tela → mantém o monitor ativo (só sair da tela desliga).
 $('#ec-save').addEventListener('click', save);
 $('#ec-apply').addEventListener('click', () => apply());
 $('#ec-apply-selected').addEventListener('click', () => {
@@ -790,6 +972,16 @@ $('#ec-run-cancel').addEventListener('click', async () => {
     toast.info('Cancelamento solicitado');
   } catch (e) { toast.error(e.message); }
 });
+
+$('#ec-ping-toggle').addEventListener('change', (e) => {
+  if (e.target.checked) startMonitor(); else stopMonitor();
+});
+$('#ec-ping-interval').addEventListener('change', () => {
+  if (monitorOn) scheduleNextPing();  // aplica o novo intervalo na hora
+});
+
+// Sair da tela (navegar/fechar aba) encerra o monitor e zera o timer.
+window.addEventListener('pagehide', stopMonitor);
 
 pollTimer = setInterval(() => { if (currentRun) pollRun(); }, 1500);
 

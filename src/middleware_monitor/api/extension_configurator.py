@@ -8,6 +8,7 @@ Padroes do projeto:
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -43,6 +44,8 @@ from middleware_monitor.domain.extension_configurator import (
 )
 from middleware_monitor.domain.extension_configurator.defaults import PHONE_MODELS
 from middleware_monitor.domain.extension_configurator.service import compute_statuses
+from middleware_monitor.integrations.network import make_arp_probe, make_ping_probe
+from middleware_monitor.integrations.network.base import is_valid_ip
 
 router = APIRouter(prefix="/api/extension-configurator", tags=["extension-configurator"])
 log = get_logger("api.extension_configurator")
@@ -179,12 +182,87 @@ class ApplyIn(BaseModel):
     selected_ids: list[str] | None = None
 
 
+class PingBatchIn(BaseModel):
+    ips: list[str]
+    # Quando informado, o MAC coletado via ARP é persistido nas linhas do ambiente
+    # (casado por IP). Sem ele, o ping só reporta — não grava nada.
+    environment_id: str | None = None
+
+
+class PingResult(BaseModel):
+    online: bool
+    latency_ms: int | None = None
+    mac: str | None = None
+
+
+# Monitor ao vivo: 1 pacote ICMP por IP, timeout curto e concorrencia limitada
+# para manter o impacto de rede baixo. Stateless — o front controla o intervalo
+# entre rodadas e para o monitor quando a tela muda.
+_PING_TIMEOUT_MS = 1000
+_PING_CONCURRENCY = 16
+_PING_MAX_IPS = 512
+
+
 # --------------------------------------------------------------------- Routes
 
 
 @router.get("/phone-models")
 def phone_models(_user: User = Depends(get_current_user)) -> dict[str, list[str]]:
     return {"models": PHONE_MODELS}
+
+
+@router.post("/ping")
+async def ping_batch(
+    payload: PingBatchIn = Body(...),
+    _user: User = Depends(get_current_user),
+    _csrf: None = Depends(require_csrf),
+    db: DBSession = Depends(get_session),
+) -> dict[str, PingResult]:
+    """Pinga um lote de IPs para o monitor ao vivo do ambiente.
+
+    Dedup + valida IPv4, limita a quantidade e dispara os pings em paralelo
+    com um semaforo. Cada IP recebe 1 echo ICMP (via ``make_ping_probe``, que
+    no Windows roda ``ping`` sem abrir janela de console no ``.exe``).
+
+    Para cada host que responde, tenta resolver o **MAC** via ARP
+    (``arp -a <ip>``): isso lê o cache ARP local do SO — que o proprio ping
+    acabou de popular — **sem gerar pacotes extras na rede**. Hosts em outra
+    sub-rede/L2 nao aparecem no cache e voltam sem MAC ("nao foi possivel
+    coletar"). Se ``environment_id`` vier, persiste os MACs novos nas linhas.
+
+    Reporta ``{ip: {online, latency_ms, mac}}``.
+    """
+    seen: list[str] = []
+    for raw in payload.ips:
+        ip = (raw or "").strip()
+        if ip and is_valid_ip(ip) and ip not in seen:
+            seen.append(ip)
+        if len(seen) >= _PING_MAX_IPS:
+            break
+
+    probe = make_ping_probe()
+    arp = make_arp_probe()
+    sem = asyncio.Semaphore(_PING_CONCURRENCY)
+
+    async def _one(ip: str) -> tuple[str, int | None, str | None]:
+        async with sem:
+            latency = await probe.ping(ip, _PING_TIMEOUT_MS)
+            mac = await arp.lookup(ip) if latency is not None else None
+        return ip, latency, mac
+
+    triples = await asyncio.gather(*(_one(ip) for ip in seen))
+
+    result = {
+        ip: PingResult(online=latency is not None, latency_ms=latency, mac=mac)
+        for ip, latency, mac in triples
+    }
+
+    if payload.environment_id:
+        mac_by_ip = {ip: mac for ip, _lat, mac in triples if mac}
+        if repo.update_line_macs(db, payload.environment_id, mac_by_ip):
+            db.commit()
+
+    return result
 
 
 @router.get("/environments")
