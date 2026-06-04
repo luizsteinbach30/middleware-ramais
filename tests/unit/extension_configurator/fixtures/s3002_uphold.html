@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>S3002</title>
+<meta name="description" content="S3002">
+<meta name="Keywords" content="S3002">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=0.5, minimum-scale=0.5, maximum-scale=2.0, user-scalable=yes">
+<link href="css/style.css" rel="stylesheet" type="text/css" />
+<script language="JavaScript" src="/js/doctor.js" type="text/JavaScript"></script>
+<script language="JavaScript" src="js/cookies.js"></script>	
+<script language="JavaScript">
+function checkObjOnStr(input, str)
+{
+	var alive_num=0;	
+	for (var i = 0; i < input.length; ++i)
+	{
+		if (str.indexOf(input.charAt(i)) != -1)
+			alive_num = alive_num+1;
+	}
+	if(alive_num>0)
+		return true;
+	else
+		return false;
+}
+
+function checkillegalNumeric(input)
+{
+	var str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789`~!@#$%^&*()-_+=[]{}\\|;:\"'<>.,?/";
+	for (var i = 0; i < input.length; ++i)
+	{
+		if (str.indexOf(input.charAt(i)) == -1)
+			return false;
+	}
+	return true;
+}
+
+function checkRelatedToStr(input, str)
+{
+	if(str.length > 0)
+	{
+		if (input.toLowerCase().indexOf(str.toLowerCase()) != -1)
+		{
+			alert(myArray["Passworderror8chars"]);
+			return false;
+		}
+	}
+	return true;
+}
+
+function checkWebPassword(input)
+{
+	var SpecialChar = "`~!@#$%^&*()-_+=[]{}\\|;:\"'<>.,?/";
+	var alphabet_a = 'abcdefghijklmnopqrstuvwxyz';var alphabet_A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';	
+	var a1=0;var a2=0;var a3=0;var a4=0;
+	
+	if(checkObjOnStr(input, SpecialChar)==true)
+		a1=1;	
+	if(checkObjOnStr(input, alphabet_a)==true)
+		a2=1;	
+	if(checkObjOnStr(input, alphabet_A)==true)
+		a3=1;
+	if(checkillegalNumeric(input)==true)
+		a4=1;
+	if(a1 == 1 && a2 == 1 && a3 == 1 && a4 == 1 && input.length>=16)
+	{
+		if(checkRelatedToStr(input,document.forms[0].sipname1.value) == false)
+			return false;
+		if(checkRelatedToStr(input,document.forms[0].sipnumber1.value) == false)
+			return false;
+		if(checkRelatedToStr(input,document.forms[0].sipname2.value) == false)
+			return false;
+		if(checkRelatedToStr(input,document.forms[0].sipnumber2.value) == false)
+			return false;
+		if(checkRelatedToStr(input,document.forms[0].phonemac.value) == false)
+			return false;
+	}
+	else
+	{		
+		alert(myArray["Passworderror15chars"]);
+		return false;
+	}
+	return true;
+}
+
+function checkWebPassword8Above(input)
+{
+	var SpecialChar = "`~!@#$%^&*()-_+=[]{}\\|;:\"'<>.,?/";
+	var alphabet_a = 'abcdefghijklmnopqrstuvwxyz';var alphabet_A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+	var a1=0;var a2=0;var a3=0;
+	
+	if(checkObjOnStr(input, SpecialChar)==true)
+		a1=1;	
+	if(checkObjOnStr(input, alphabet_a)==true)
+		a2=1;	
+	if(checkObjOnStr(input, alphabet_A)==true)
+		a3=1;
+	if(a1 == 1 && a2 == 1 && a3 == 1 && input.length>=8)
+	{
+		return true;
+	}
+	else
+	{		
+		alert(myArray["alertPassworderror8chars"]);
+		return false;
+	}
+	return true;
+}
+
+function charCompareA(szname,en_limit,cn_limit){
+	var c;var ch = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789`~!@#$%^&*()-_+=[]{}\\|;:\"'<>.,?/";
+	if(szname.length > en_limit) 
+		return false;
+	for (var i = 0; i < szname.length; i++){
+		c = szname.charAt(i);
+		if (ch.indexOf(c) == -1){
+			if(szname.length > cn_limit)
+			return false;
+		}
+	}
+	return true;
+}
+
+function doSubmit(){
+     if(document.forms[0].UserName.value==""){
+	 	alert(myArray["PPPUsr"]);
+		var element = document.forms[0].PwdOld;
+		if(element){
+			element.focus();
+			element.select();
+		}
+		return false;
+	 }
+	 if(document.forms[0].PwdOld.value==""){
+	 	alert(myArray["oldpassword"]);
+		var element = document.forms[0].PwdOld;
+		if(element){
+			element.focus();
+			element.select();
+		}
+		return false;
+	 }
+	  if(document.forms[0].PwdNew.value==""){
+	 	alert(myArray["newpassword"]);
+		var element = document.forms[0].PwdOld;
+		if(element){
+			element.focus();
+			element.select();
+		}
+		return false;
+	 }
+	  if(document.forms[0].PwdConfirm.value==""){
+	 	alert(myArray["Confirmpassword"]);
+		var element = document.forms[0].PwdOld;
+		if(element){
+			element.focus();
+			element.select();
+		}
+		return false;
+	 }
+	 
+	if(document.title == "GNT-1200E")
+	{
+	 	if(checkWebPassword(document.forms[0].PwdNew.value)==false)
+			return false;
+	}
+	else if(document.title == "S3002")
+	{
+	 	if(checkWebPassword8Above(document.forms[0].PwdNew.value)==false)
+			return false;
+	}
+	else
+	{
+		if(!charCompareA(document.forms[0].PwdNew.value,14,0)){
+			alert(myArray["Passworderror"]);
+			var element = document.forms[0].PwdNew;
+			if(element){
+				element.focus();
+				element.select();
+			}
+			return false;
+		}
+	 }
+		 
+	if(document.forms[0].PwdNew.value != document.forms[0].PwdConfirm.value){
+		alert(myArray["Confirmpassword"]);
+		var element = document.forms[0].PwdConfirm;
+		if(element){
+			element.focus();
+			element.select();
+		}
+		return false;
+	}
+	
+	if(document.getElementById("admin").checked)
+	{	
+		if(document.forms[0].PwdNew.value == document.forms[0].cmima.value)
+		{			
+			return confirm(myArray["newpasswordissame"]);
+		}
+	}
+	
+	if(document.getElementById("user").checked)
+	{
+		if(document.forms[0].PwdNew.value == document.forms[0].pmima.value)
+		{
+			return confirm(myArray["newpasswordissame"]);
+		}
+	}
+	
+	return true;	
+}
+function roleradio()
+{
+	if(document.getElementById("admin").checked)
+	{
+		
+		document.getElementById("UserName").value=document.getElementById("adminUsr").value;
+	}
+	if(document.getElementById("user").checked)
+	{
+		
+		document.getElementById("UserName").value=document.getElementById("Usrname").value;
+	}
+
+}
+</script>
+</head>
+<body class="page_body">
+<div  id="tab1"> 
+<div class="page_top">
+    <div class="page_logo"><img src="images/page_logo.gif"></div>
+    
+    <div class="page_menu">
+    	<ul>
+        	<li  class="q1"><a id="one1" onClick="setTab('one',1)" href="home.asp" ><span id="Phone Status"></span></a></li>
+            <li  class="q2"><a id="one2" onClick="setTab('one',2)" href="NetWork.asp" ><span id="Network"></span></a></li>
+            <li  class="q3"><a id="one3" onClick="setTab('one',3)" href="name.asp" ><span id="SIP Account"></span></a></li>
+            <li  class="q4"><a id="one4" onClick="setTab('one',4)" href="linekey.asp" ><span id="Programmable Button"></span></a></li>
+            <li  class="q5"><a id="one5" onClick="setTab('one',5)" href="SysConfig.asp" ><span id="Intelbras Phone Setting"></span></a></li>
+            <li  class="q6"><a id="one6" onClick="setTab('one',6)" href="PhoneBookTab.asp" ><span id="PhoneBook"></span></a></li>
+            <li  class="q7"><a id="one7" onClick="setTab('one',7)" href="http.asp"><span id="Phone Maintenance"></span></a></li>
+            <li  class="q8"><a id="one8" onClick="setTab('one',8)" href="UpholdPassword.asp"  class="hover"><span id="Security"></span></a></li>
+            <li  class="q9"><a id="one9" onClick="setTab('one',9)" href="login.asp" ><span id="Logout String"></span></a></li>
+        </ul>
+    </div>
+    <div class="clear"></div>
+</div>
+<div class="page_left">
+	<ul id="con_one_1" >
+        <li class="hover"><a href="UpholdPassword.asp"><span id="SetPassword"></span></a></li>
+		<li ><a href="TrustedCerts.asp"><span id="Trusted Certs"></span></a></li>
+		<li ><a href="WhitelistTab.asp"><span id="IP Strategy"></span></a></li>
+		<li><a href="ServerCertificates.asp"><span id="Server Certificates"></span></a></li>
+    </ul>
+</div>
+
+<div class="page_right_r">
+	<div class="title"><span id="Note"></span></div>
+	<div class="conter">
+	 <strong><span id="SetPassword String"></span>:</strong>
+	 <br>
+	 <span id="SetPassword Note String"></span>
+	</div>
+	<div class="title" style="display: none"><span id="News"></span></div>
+	<div class="conter" style="display: none">
+		<span class="tex"><a href="#"><span id="No Update"></span></a></span>
+		<a href="#"><img src="images/544.gif"></a>
+		<span class="dt"><a href="#"><span id="More"></span></a></span>
+	</div>
+</div>
+
+<script src="lang/common.js"></script>
+<script src='lang/br.js'></script>
+
+<div class="page_right">
+    <div class="page_right_l" id="body">
+	
+<script language="JavaScript">
+	 document.getElementById("body").style.display="none";
+</script>	
+	
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" class="table" style="table-layout:fixed;">
+    <form method="post" onSubmit="return doSubmit();" action = "/goform/SaveMaintenUsrCfg">
+	
+   
+   <tr>
+		<th width="47%"></th>
+		<td style="width:20px"><input type="radio" name="role" id="admin" onClick="roleradio()"  value="admin" checked></td>
+		<td style="width:108px"><span id="Administrator"></span></td>
+		<td style="width:20px"><input type="radio" name="role" id="user"   value="user" onClick="roleradio()" ></td>
+		<td><span id="Usr"></span></td>
+   </tr>
+   
+   
+   <!--
+   <tr>
+		<th width="47%"></th>
+		<td style="width:20px; display: none"><input type="radio" name="role" id="admin" onClick="roleradio()"  value="admin" ></td>
+		<td style="width:108px; display: none"><span id="Administrator"></span></td>
+		<td style="width:20px"><input type="radio" name="role" id="user"   value="user" onClick="roleradio()" checked></td>
+		<td><span id="Usr"></span></td>
+   </tr>
+   -->
+
+   <tr>
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="AdminUsername"></span></div></th>
+		<td colspan="4"><input name="UserName" type="text" style= "ime-mode:Disabled" class="text" id="UserName" title="" value="admin" size="16" maxlength="30" ></td>
+   </tr>
+
+   
+   <tr>
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Old Password"></span></div></th>
+		<td colspan="4"><input name="PwdOld" type="Password" style= "ime-mode:Disabled" class="text" id="PwdOld" size="16" maxlength="15" title=""></td>
+   </tr>
+   
+    <tr>
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="New Password"></span></div></th>
+		<td colspan="4"><input name="PwdNew" type="Password" style= "ime-mode:Disabled" class="text" id="PwdNew" size="16" maxlength="15" title=""></td>
+   </tr>
+   
+      
+    <tr>
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Confirm Password"></span></div></th>
+		<td colspan="4"><input name="PwdConfirm" type="Password" style= "ime-mode:Disabled" class="text" id="PwdConfirm" size="16" maxlength="15" title=""></td>
+   </tr>
+   
+   
+	  <tr>
+		<th colspan="5">
+		  <div class="line"></div>
+		  <br>
+		  <div align="center">
+		   <input name="Save" type="submit" style="padding:0px 10px;" class="button" id="save" value="">			  &nbsp;			<input type="hidden" name="adminUsr" id="adminUsr" value="admin">	
+			  <input type="hidden" name="Usrname" id="Usrname" value="user">
+			  <input type="hidden" name="sipname1" id="sipname1" value="">
+			  <input type="hidden" name="sipnumber1" id="sipnumber1" value="">
+			  <input type="hidden" name="sipname2" id="sipname2" value="">
+			  <input type="hidden" name="sipnumber2" id="sipnumber2" value="">
+			  <input type="hidden" name="phonemac" id="phonemac" value="">
+			  <input type="hidden" name="cmima" id="cmima" value="admin">
+			  <input type="hidden" name="pmima" id="pmima" value="user">
+		  </div>
+        </th>
+	</tr>
+    </form>
+    </table>
+
+    </div>
+
+    <div class="clear"></div>
+</div>
+</div>
+<script type="text/javascript"> 
+function setTab(name,cursel){ 
+if(cursel==3)
+  SetURLCookie("SIP","SIP_child");
+else if(cursel==5)
+  SetURLCookie("SysConfig","Basic_child");
+else if(cursel==9)
+{
+   clearLogFlag();
+}
+cursel_0=cursel; 
+for(var i=1; i<=links_len; i++){ 
+var menu = document.getElementById(name+i); 
+var menudiv = document.getElementById("con_"+name+"_"+i); 
+if(i==cursel){ 
+menu.className="hover"; 
+menudiv.style.display="block"; 
+} 
+else{ 
+menu.className=""; 
+menudiv.style.display="none"; 
+} 
+} 
+} 
+function Next(){ 
+cursel_0++; 
+if (cursel_0>links_len)cursel_0=1 
+setTab(name_0,cursel_0); 
+} 
+var name_0='one'; 
+var cursel_0=1; 
+var links_len,iIntervalId; 
+onload=function(){ 
+var links = document.getElementById("tab1").getElementsByTagName('li') 
+links_len=links.length; 
+for(var i=0; i<links_len; i++){ 
+links[i].onmouseover=function(){ 
+clearInterval(iIntervalId); 
+} 
+} 
+document.getElementById("con_"+name_0+"_"+links_len).parentNode.onmouseover=function(){ 
+clearInterval(iIntervalId); 
+} 
+setTab(name_0,cursel_0); 
+} 
+</script>
+
+</body>
+
+<script src="lang/common.js"></script>
+<script src='lang/br.js'></script>
+<script language="JavaScript">
+document.getElementById("body").style.display="block";
+alert(myArray["OriginalPasswordTips"]); 
+var element =document.getElementById('');
+if(element){
+	  element.focus();
+	  element.select();
+}
+</script>
+<script>
+var i=0;
+if(loglevelcfg.LogServer[0].checked) i = 1;
+else if(loglevelcfg.LogServer[1].checked) i = 2;
+WebInit(i);
+
+function handle(id)
+{ 
+	if(id==0)
+	  {
+	   document.getElementById("Operate").value="Capture Start";
+	   document.forms[0].action="/goform/SaveLogLevelCfg";
+	   }
+	else if(id==1)
+	   {
+	   document.getElementById("Operate").value="Capture End";
+	   document.forms[0].action="/goform/SaveLogLevelCfg";
+	   }
+    else if(id==2)
+	   {
+	   document.getElementById("Operate").value="Capture Download";
+	   document.forms[0].action="/goform/SaveDownConfig";
+	   }
+	else if(id==3)
+	   {
+	   document.getElementById("Operate").value="";
+	   document.forms[0].action="/goform/SaveLogLevelCfg";
+	   }
+}
+</script>
+<head>
+	<meta http-equiv="pragma" content="no-cache">
+</head>
+</html>
+

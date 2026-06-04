@@ -115,6 +115,25 @@ _FUNCTIONKEY_TYPE_IDS: dict[str, int] = {
     "blf": 3,
 }
 
+# P-codes por conta SIP. HTEK NÃO usa offset uniforme — cada conta tem seus
+# P-codes próprios (lista de parâmetros oficial HanLong; confirmado pela pesquisa
+# em docs públicas Htek/Axtel/Tiptel). Account2 de credencial é família P7xx,
+# mas Active=P401, Label=P20001 e Profile=P578 fogem do padrão.
+# Conta 2 omite "extension" (P-code não confirmado em fonte pública; campo é
+# opcional p/ registro). Server SIP é herdado do Profile (P47), compartilhado.
+_ACCOUNT_PCODES: dict[int, dict[str, str]] = {
+    1: {
+        "active": "P271", "profile": "P24082", "label": "P20000",
+        "extension": "P25110", "user_id": "P35", "auth_id": "P36",
+        "password": "P34", "display_name": "P3",
+    },
+    2: {
+        "active": "P401", "profile": "P578", "label": "P20001",
+        "user_id": "P735", "auth_id": "P736",
+        "password": "P734", "display_name": "P703",
+    },
+}
+
 
 class HTEKAdapter(VendorAdapter):
     vendor_id = "htek"
@@ -361,7 +380,44 @@ class HTEKAdapter(VendorAdapter):
             ),
             "web_admin_xml": self._render_web_admin(template),
         }
+        # Conta SIP alvo (1 ou 2). P-codes diferem por conta → bloco gerado aqui.
+        sip_account = 2 if str(template.get("sip_account", 1)) == "2" else 1
+        ctx["account_block"] = self._render_account_block(sip_account, ctx)
         return _TEMPLATE_PATH.read_text(encoding="utf-8").format_map(ctx).encode("utf-8")
+
+    @staticmethod
+    def _render_account_block(account: int, vals: dict[str, str]) -> str:
+        """Bloco de P-codes da conta SIP (1 ou 2). Valores já URL-encodados em `vals`.
+
+        Conta 2 usa P-codes próprios (P401/P578/P20001/P735/P736/P734/P703) e
+        omite Extension (P-code não confirmado; opcional p/ registro).
+        """
+        pc = _ACCOUNT_PCODES[account]
+
+        def tag(field: str, value: str) -> str:
+            para = {
+                "active": "Active", "profile": "Profile", "label": "Label",
+                "extension": "Extension", "user_id": "SipUserId",
+                "auth_id": "AuthenticateID", "password": "AuthenticatePassword",
+                "display_name": "DispalyName",
+            }[field]
+            return f'        <{pc[field]} para="Account{account}_{para}">{value}</{pc[field]}>'
+
+        lines = [
+            f'        <!--Account{account}/Basic-->',
+            tag("active", vals["account_active"]),
+            tag("profile", "0"),
+            tag("label", vals["label"]),
+        ]
+        if "extension" in pc:
+            lines.append(tag("extension", vals["extension"]))
+        lines += [
+            tag("user_id", vals["user_id"]),
+            tag("auth_id", vals["auth_id"]),
+            tag("password", vals["password"]),
+            tag("display_name", vals["display_name"]),
+        ]
+        return "\n".join(lines)
 
     @staticmethod
     def _render_web_admin(template: dict[str, Any]) -> str:

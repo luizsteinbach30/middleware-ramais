@@ -19,10 +19,13 @@ from middleware_monitor.integrations.extension_configurator.vendors import (
     FlyingVoiceAdapter,
     HTEKAdapter,
     IntelbrasAdapter,
+    IntelbrasS3002Adapter,
     VendorAdapter,
+    YealinkAdapter,
 )
 
 from .repository import merged_config_padrao
+from .softkeys import is_intelbras_s_series
 
 
 def adapter_for(modelo_telefone: str) -> VendorAdapter:
@@ -33,7 +36,13 @@ def adapter_for(modelo_telefone: str) -> VendorAdapter:
     """
     modelo = modelo_telefone.lower()
     if modelo.startswith("intelbras"):
+        # Linha S (S3002...) e firmware GoAhead, protocolo diferente do V-series
+        # (RapidLogic). V-series continua no IntelbrasAdapter (default intelbras).
+        if is_intelbras_s_series(modelo):
+            return IntelbrasS3002Adapter()
         return IntelbrasAdapter()
+    if modelo.startswith("yealink"):
+        return YealinkAdapter()
     if "flying" in modelo or "flyong" in modelo:  # cobre o typo "flyongvoice"
         return FlyingVoiceAdapter()
     return HTEKAdapter()
@@ -44,6 +53,7 @@ def build_template(cfg: dict[str, Any]) -> dict[str, Any]:
     return {
         "sip_server": cfg.get("sip_server", ""),
         "sip_transport": cfg.get("sip_transport", "udp"),
+        "sip_account": cfg.get("sip_account", 1),
         "register_expiration": cfg.get("register_expiration", 30),
         "ntp_server": cfg.get("ntp_server", "a.ntp.br"),
         "timezone": cfg.get("timezone", "America/Sao_Paulo"),
@@ -86,10 +96,25 @@ def compute_line_hash(env: ExtensionEnvironment, line: ExtensionLine) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _device_registered(line: ExtensionLine) -> bool:
+    """True se o telefone vinculado já está registrado no PBX (via USCall).
+
+    `Device.logical_status == 'available'` é setado pelo coletor a partir do
+    USCall (status `disponivel`) — ou seja, o ramal está no sistema E registrado.
+    """
+    dev = line.device
+    return dev is not None and dev.logical_status == "available"
+
+
 def line_status(line: ExtensionLine, hash_atual: str) -> str:
-    """Estado: pending | applied | outdated | error."""
+    """Estado: pending | registered | applied | outdated | error.
+
+    `registered`: nunca aplicado por nós, MAS o telefone já está registrado no
+    PBX (device vinculado `available`) → mostra como OK, não pendente. Pendente
+    fica só para quem não está no sistema nem registrado.
+    """
     if line.ultimo_status is None:
-        return "pending"
+        return "registered" if _device_registered(line) else "pending"
     if line.ultimo_status == "erro":
         return "error"
     if line.ultimo_hash_aplicado == hash_atual:
@@ -137,7 +162,9 @@ def pick_lines_to_apply(
             continue
         payload = adapter.generate_config(template, build_row(ln, cfg))
         h = hashlib.sha256(payload).hexdigest()
-        if selected_ids is None and not force and line_status(ln, h) == "applied":
+        # Pula quem já está OK por padrão: aplicado por nós OU já registrado no PBX.
+        # (force=True ou seleção manual ignoram isto e aplicam mesmo assim.)
+        if selected_ids is None and not force and line_status(ln, h) in ("applied", "registered"):
             continue
         out.append((ln, h))
     return out

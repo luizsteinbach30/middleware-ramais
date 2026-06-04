@@ -33,6 +33,7 @@ from collections import deque
 from pathlib import Path
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
+from typing import Any, cast
 
 # Cross-thread shutdown signal. Set this from any thread (e.g. the uvicorn
 # worker running the FastAPI app) to ask the Tk main loop to close the
@@ -67,7 +68,7 @@ def _detect_lan_ip() -> str | None:
         finally:
             s.close()
         if ip and not ip.startswith("127."):
-            return ip
+            return str(ip)
     except OSError:
         pass
     try:
@@ -191,7 +192,7 @@ class ServerThread:
         self.host = host
         self.port = port
         self.thread: threading.Thread | None = None
-        self._server = None
+        self._server: Any = None
         self.error: Exception | None = None
 
     def start(self) -> None:
@@ -575,7 +576,7 @@ class DesktopApp:
                 font=("Segoe UI", 10, "underline"),
             )
             lan_lbl.pack(side="left")
-            lan_lbl.bind("<Button-1>", lambda _: webbrowser.open(self.lan_url))
+            lan_lbl.bind("<Button-1>", lambda _: webbrowser.open(cast(str, self.lan_url)))
 
         # Bind=0.0.0.0 means anyone on the LAN can hit the panel. We serve in
         # plain HTTP, so the session cookie travels in clear and is sniffable

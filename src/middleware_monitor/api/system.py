@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sys
 import threading
+from datetime import datetime
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -107,7 +109,7 @@ def version_info(_user: User = Depends(get_current_user)) -> VersionOut:
         current=__version__,
         channel=settings.update_channel,
         auto_update=bool(state.get("auto_update", True)),
-        last_check_at=iso_utc(state.get("last_check_at")),
+        last_check_at=iso_utc(cast("datetime | None", state.get("last_check_at"))),
         last_check_ok=bool(state.get("last_check_ok")),
         available_version=str(getattr(available, "version", "")) or None,
         available_published_at=getattr(available, "published_at", None),

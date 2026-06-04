@@ -10,7 +10,6 @@ Naming conventions:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -20,7 +19,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -275,6 +273,8 @@ class ExtensionApplyRunLine(Base):
     status_depois: Mapped[str] = mapped_column(String(16), nullable=False, default="running")
     erro: Mapped[str | None] = mapped_column(Text, nullable=True)
     modelo: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # registro SIP pós-aplicação (verificado via USCall): registered|unregistered|skipped
+    registro_sip: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     run: Mapped[ExtensionApplyRun] = relationship(back_populates="run_lines")
@@ -329,7 +329,3 @@ __all__: list[str] = [
     "User",
     "WebhookEvent",
 ]
-
-
-def _placate_unused() -> Any:
-    return UniqueConstraint

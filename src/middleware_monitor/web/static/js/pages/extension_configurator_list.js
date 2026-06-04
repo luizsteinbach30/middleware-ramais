@@ -12,6 +12,12 @@ const STATUS_PILL = {
   vazio:     { color: "gray",   label: "sem ramais" },
 };
 
+// Ícones da barra de ações do card (canto superior direito, no hover).
+const ICON_CHECK = '<svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.71-9.96a.75.75 0 00-1.06-1.06l-3.4 3.39-1.24-1.24a.75.75 0 10-1.06 1.06l1.77 1.77c.3.3.77.3 1.06 0l3.93-3.92z" clip-rule="evenodd"/></svg>';
+const ICON_CIRCLE = '<svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 1.5a6.5 6.5 0 110 13 6.5 6.5 0 010-13z" clip-rule="evenodd"/></svg>';
+const ICON_DUPLICATE = '<svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z"/><path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z"/></svg>';
+const ICON_TRASH = '<svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd"/></svg>';
+
 const FILTER_KEY = "ec.list.filters.v1";
 
 // Cache em memoria dos envs vindos do backend (filtrados client-side).
@@ -52,19 +58,23 @@ function envCard(e) {
   const vincLabel = e.devices_vinculados > 0
     ? `${e.devices_vinculados}/${e.telefones} devices vinculados`
     : `nenhum device vinculado`;
+  const ramaisLabel = `${e.telefones} ${e.telefones === 1 ? 'ramal' : 'ramais'}`;
+  const isSel = selectedEnvs.has(e.id);
+  // Realce do card selecionado: borda azul + fundo levemente azul + leve elevação.
+  const shell = isSel
+    ? 'ring-2 ring-blue-500/70 bg-blue-500/10 shadow-lg shadow-blue-500/20 -translate-y-0.5'
+    : 'ring-1 ring-gray-700 bg-gray-800 hover:bg-gray-800/80';
+  // Botão "selecionar": fica visível quando selecionado; senão aparece no hover.
+  const selBtn = isSel
+    ? 'opacity-100 text-blue-300 bg-blue-500/20 ring-blue-500/40'
+    : 'opacity-0 group-hover:opacity-100 text-gray-500 hover:text-blue-300 hover:bg-blue-500/15 ring-transparent hover:ring-blue-500/30';
   return `
-    <div class="group relative bg-gray-800 hover:bg-gray-800/80 ring-1 ring-gray-700 rounded-xl transition-colors">
-      <input type="checkbox" data-select-env="${esc(e.id)}" title="Selecionar para exportar"
-             ${selectedEnvs.has(e.id) ? 'checked' : ''}
-             class="absolute top-3 left-3 z-10 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500/50 cursor-pointer"/>
+    <div data-card="${esc(e.id)}" class="group relative rounded-xl transition-all duration-150 ${shell}">
       <a href="/extension-configurator/environments/${encodeURIComponent(e.id)}"
-         class="block p-4 pr-10 pl-9">
-        <div class="flex items-baseline justify-between">
-          <h3 class="text-sm font-semibold text-gray-100 truncate">${esc(e.nome)}</h3>
-          <span class="text-xs text-gray-500 ml-2 flex-shrink-0">${e.telefones} Ramais</span>
-        </div>
-        <p class="text-xs text-gray-400 mt-1">${esc(e.modelo_telefone)}</p>
-        <div class="mt-2 flex items-center justify-between gap-2">
+         class="block p-4">
+        <h3 class="text-sm font-semibold text-gray-100 truncate pr-24">${esc(e.nome)}</h3>
+        <p class="text-xs text-gray-400 mt-1 truncate pr-2">${esc(e.modelo_telefone)} · ${ramaisLabel}</p>
+        <div class="mt-2 flex items-center gap-2 flex-wrap">
           ${statusPill(e.status_resumo)}
           <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ring-1 ring-inset bg-${vincTone}-500/15 text-${vincTone}-400 ring-${vincTone}-500/30">
             <span class="w-1.5 h-1.5 rounded-full bg-${vincTone}-400"></span>${vincLabel}
@@ -72,17 +82,17 @@ function envCard(e) {
         </div>
         <div class="mt-1.5 text-[10px] text-gray-500 truncate">Atualizado: ${e.atualizado_em ? esc(fmtTs(e.atualizado_em)) : '—'}</div>
       </a>
-      <button
-        data-action="delete"
-        data-id="${esc(e.id)}"
-        data-nome="${esc(e.nome)}"
-        data-telefones="${e.telefones}"
-        title="Apagar ambiente"
-        class="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-1.5 rounded-md text-gray-500 hover:text-red-300 hover:bg-red-500/15 ring-1 ring-transparent hover:ring-red-500/30">
-        <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-          <path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clip-rule="evenodd"/>
-        </svg>
-      </button>
+      <div class="absolute top-2.5 right-2.5 flex items-center gap-1">
+        <button data-action="select" data-id="${esc(e.id)}"
+          title="${isSel ? 'Selecionado — clique para desmarcar' : 'Selecionar (exportar)'}"
+          class="transition-all p-1.5 rounded-md ring-1 ${selBtn}">${isSel ? ICON_CHECK : ICON_CIRCLE}</button>
+        <button data-action="duplicate" data-id="${esc(e.id)}" data-nome="${esc(e.nome)}"
+          title="Duplicar ambiente"
+          class="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-1.5 rounded-md text-gray-500 hover:text-blue-300 hover:bg-blue-500/15 ring-1 ring-transparent hover:ring-blue-500/30">${ICON_DUPLICATE}</button>
+        <button data-action="delete" data-id="${esc(e.id)}" data-nome="${esc(e.nome)}" data-telefones="${e.telefones}"
+          title="Apagar ambiente"
+          class="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity p-1.5 rounded-md text-gray-500 hover:text-red-300 hover:bg-red-500/15 ring-1 ring-transparent hover:ring-red-500/30">${ICON_TRASH}</button>
+      </div>
     </div>`;
 }
 
@@ -247,8 +257,61 @@ delConfirmBtn.addEventListener('click', async () => {
   }
 });
 
-// Delegacao do clique no botao "apagar" de cada card
+// --- modal: duplicar ---
+let pendingDup = null;  // { id, nome }
+const dupModal = $('#ec-dup-modal');
+const dupConfirmBtn = $('#ec-dup-confirm');
+
+function openDupModal(meta) {
+  pendingDup = meta;
+  $('#ec-dup-src').textContent = meta.nome;
+  $('#ec-dup-nome').value = `Cópia de ${meta.nome}`;
+  dupConfirmBtn.disabled = false;
+  dupModal.classList.remove('hidden');
+  setTimeout(() => { $('#ec-dup-nome').focus(); $('#ec-dup-nome').select(); }, 50);
+}
+function closeDupModal() { dupModal.classList.add('hidden'); pendingDup = null; }
+
+$('#ec-dup-cancel').addEventListener('click', closeDupModal);
+dupModal.addEventListener('click', (e) => { if (e.target === dupModal) closeDupModal(); });
+
+dupConfirmBtn.addEventListener('click', async () => {
+  if (!pendingDup) return;
+  const nome = $('#ec-dup-nome').value.trim();
+  dupConfirmBtn.disabled = true;
+  try {
+    const env = await api(
+      `/api/extension-configurator/environments/${encodeURIComponent(pendingDup.id)}/duplicate`,
+      { method: 'POST', body: { nome: nome || undefined } },
+    );
+    closeDupModal();
+    // Recém-duplicado: vai direto pra planilha do novo ambiente p/ cadastrar os ramais.
+    location.href = `/extension-configurator/environments/${encodeURIComponent(env.id)}`;
+  } catch (err) {
+    toast.error('Falha ao duplicar: ' + err.message);
+    dupConfirmBtn.disabled = false;
+  }
+});
+
+// Delegacao do clique na barra de acoes de cada card (selecionar / duplicar /
+// apagar). Clicar no corpo do card continua abrindo o ambiente (link <a>).
 $('#ec-grid').addEventListener('click', (e) => {
+  const sel = e.target.closest('button[data-action="select"]');
+  if (sel) {
+    e.preventDefault();
+    e.stopPropagation();
+    const id = sel.dataset.id;
+    if (selectedEnvs.has(id)) selectedEnvs.delete(id); else selectedEnvs.add(id);
+    renderGrid();  // re-renderiza p/ aplicar o realce do card selecionado
+    return;
+  }
+  const dup = e.target.closest('button[data-action="duplicate"]');
+  if (dup) {
+    e.preventDefault();
+    e.stopPropagation();
+    openDupModal({ id: dup.dataset.id, nome: dup.dataset.nome });
+    return;
+  }
   const btn = e.target.closest('button[data-action="delete"]');
   if (!btn) return;
   e.preventDefault();
@@ -260,17 +323,45 @@ $('#ec-grid').addEventListener('click', (e) => {
   });
 });
 
-// Selecao de ambientes para exportacao (checkbox em cada card)
-$('#ec-grid').addEventListener('change', (e) => {
-  const cb = e.target.closest('input[data-select-env]');
-  if (!cb) return;
-  const id = cb.dataset.selectEnv;
-  if (cb.checked) selectedEnvs.add(id); else selectedEnvs.delete(id);
-  updateSelInfo();
-});
-
 $('#ec-export-xlsx').addEventListener('click', () => doExport('xlsx'));
 $('#ec-export-pdf').addEventListener('click', () => doExport('pdf'));
+
+// --- Importar ambiente (.mwrenv cifrado) ---
+const importModal = $('#ec-import-modal');
+function openImportModal() {
+  $('#ec-import-file').value = '';
+  $('#ec-import-pass').value = '';
+  $('#ec-import-nome').value = '';
+  importModal.classList.remove('hidden');
+}
+function closeImportModal() { importModal.classList.add('hidden'); }
+
+$('#ec-import').addEventListener('click', openImportModal);
+$('#ec-import-cancel').addEventListener('click', closeImportModal);
+importModal.addEventListener('click', (e) => { if (e.target === importModal) closeImportModal(); });
+
+$('#ec-import-confirm').addEventListener('click', async () => {
+  const file = $('#ec-import-file').files[0];
+  const passphrase = $('#ec-import-pass').value;
+  const nome = $('#ec-import-nome').value.trim();
+  if (!file) { toast.error('Selecione um arquivo .mwrenv'); return; }
+  if (!passphrase) { toast.error('Informe a passphrase'); return; }
+  const btn = $('#ec-import-confirm');
+  btn.disabled = true;
+  try {
+    const blob = await file.text();
+    const r = await api('/api/extension-configurator/environments/import', {
+      method: 'POST', body: { passphrase, blob, nome: nome || undefined },
+    });
+    closeImportModal();
+    toast.success(`Ambiente "${r.nome}" importado (${r.linhas} linha(s))`);
+    await load();
+  } catch (err) {
+    toast.error('Falha ao importar: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // --- filtros ---
 let _filterDebounce = null;

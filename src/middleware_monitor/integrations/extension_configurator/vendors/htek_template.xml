@@ -38,15 +38,7 @@
         <P60 para="Profile1_Choice4">{codec_4}</P60>
         <P61 para="Profile1_Choice5">{codec_5}</P61>
         <P62 para="Profile1_Choice6">{codec_6}</P62>
-        <!--Account1/Basic-->
-        <P271 para="Account1_Active">{account_active}</P271>
-        <P24082 para="Account1_Profile">0</P24082>
-        <P20000 para="Account1_Label">{label}</P20000>
-        <P25110 para="Account1_Extension">{extension}</P25110>
-        <P35 para="Account1_SipUserId">{user_id}</P35>
-        <P36 para="Account1_AuthenticateID">{auth_id}</P36>
-        <P34 para="Account1_AuthenticatePassword">{password}</P34>
-        <P3 para="Account1_DispalyName">{display_name}</P3>
+{account_block}
         <!--Preferences-->
         <P64 para="Preference_TimeZone">{timezone}</P64>
         <P2525 para="Preference_WebLanguage">{web_language}</P2525>

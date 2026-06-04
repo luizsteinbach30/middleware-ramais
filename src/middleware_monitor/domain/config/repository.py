@@ -191,8 +191,8 @@ def update_config(db: DBSession, payload: AppConfigUpdate, *, user_id: int | Non
         try:
             from middleware_monitor.core.scheduler import reschedule
 
-            cfg = load_config(db)
-            seconds = max(60, cfg.webhook_interval_minutes * 60)
+            current = load_config(db)
+            seconds = max(60, current.webhook_interval_minutes * 60)
             reschedule("collect_extensions", seconds)
             reschedule("monitor_devices", seconds)
         except Exception:

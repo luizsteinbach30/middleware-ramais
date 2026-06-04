@@ -7,6 +7,7 @@
       <h1 class="text-lg font-semibold text-gray-100">Ambientes</h1>
       <p id="ec-count" class="text-xs text-gray-400 mt-0.5">—</p>
     </div>
+    <button id="ec-import" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-sm" title="Importar um ambiente de um arquivo .mwrenv cifrado">⤓ Importar</button>
     <button id="ec-new" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-sm">+ Novo ambiente</button>
   </div>
 </div>
@@ -74,6 +75,23 @@
   </div>
 </div>
 
+<!-- Modal Duplicar -->
+<div id="ec-dup-modal" class="hidden fixed inset-0 bg-black/60 z-30 flex items-center justify-center p-4">
+  <div class="bg-gray-900 ring-1 ring-gray-700 rounded-xl p-5 w-full max-w-md space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Duplicar ambiente</h3>
+    <p class="text-xs text-gray-400">Cria um <strong>novo</strong> ambiente copiando o modelo do telefone e <strong>todas as configurações</strong> de <strong id="ec-dup-src" class="text-gray-200">—</strong> (servidor SIP, credenciais, teclas, idioma, etc.). Os <strong>ramais não</strong> são copiados — o novo ambiente nasce vazio.</p>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Nome do novo ambiente</span>
+      <input id="ec-dup-nome" placeholder="Ex: Cópia de Unidade 03"
+             class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/>
+    </label>
+    <div class="flex justify-end gap-2 pt-2">
+      <button id="ec-dup-cancel" class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">Cancelar</button>
+      <button id="ec-dup-confirm" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed">Duplicar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal Apagar (confirmação) -->
 <div id="ec-del-modal" class="hidden fixed inset-0 bg-black/60 z-30 flex items-center justify-center p-4">
   <div class="bg-gray-900 ring-1 ring-red-500/30 rounded-xl p-5 w-full max-w-md space-y-3">
@@ -103,6 +121,33 @@
               class="inline-flex items-center gap-2 rounded-lg font-medium bg-red-500 hover:bg-red-400 text-white px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed">
         Apagar
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Importar ambiente (.mwrenv cifrado) -->
+<div id="ec-import-modal" class="hidden fixed inset-0 bg-black/60 z-30 flex items-center justify-center p-4">
+  <div class="bg-gray-900 ring-1 ring-gray-700 rounded-xl p-5 w-full max-w-md space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Importar ambiente</h3>
+    <p class="text-xs text-gray-400">Selecione um arquivo <code class="text-gray-300">.mwrenv</code> exportado e informe a passphrase usada na exportação. Um <strong>novo</strong> ambiente será criado (nada é sobrescrito).</p>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Arquivo</span>
+      <input id="ec-import-file" type="file" accept=".mwrenv,application/json"
+             class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 file:mr-2 file:rounded file:border-0 file:bg-gray-700 file:text-gray-200 file:px-2 file:py-1"/>
+    </label>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Passphrase</span>
+      <input id="ec-import-pass" type="password" placeholder="passphrase da exportação"
+             class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/>
+    </label>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Nome (opcional)</span>
+      <input id="ec-import-nome" placeholder="deixe vazio p/ usar o nome do arquivo"
+             class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/>
+    </label>
+    <div class="flex justify-end gap-2 pt-2">
+      <button id="ec-import-cancel" class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">Cancelar</button>
+      <button id="ec-import-confirm" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed">Importar</button>
     </div>
   </div>
 </div>

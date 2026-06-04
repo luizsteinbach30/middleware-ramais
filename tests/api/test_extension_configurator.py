@@ -109,6 +109,92 @@ def test_update_environment_atualiza_config_padrao(client, db) -> None:
     assert detail["config_padrao"]["keylock_enable"] == 2
 
 
+def test_duplicate_environment_requer_csrf(client, db) -> None:
+    csrf = _authed(client, db)
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Lab", "modelo_telefone": "HTEK UC902G"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    r = client.post("/api/extension-configurator/environments/lab/duplicate")
+    assert r.status_code == 403
+
+
+def test_duplicate_environment_copia_config_sem_linhas(client, db) -> None:
+    csrf = _authed(client, db)
+    # ambiente origem com config customizada + 2 ramais
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Matriz", "modelo_telefone": "Intelbras V5501"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    client.put(
+        "/api/extension-configurator/environments/matriz",
+        json={"config_padrao": {"sip_server": "pbx.matriz.com", "menu_password": "9090"}},
+        headers={"X-CSRF-Token": csrf},
+    )
+    client.put(
+        "/api/extension-configurator/environments/matriz/lines",
+        json={"linhas": [
+            {"ip": "192.168.0.10", "numero_ramal": "3660", "senha_sip": "s1"},
+            {"ip": "192.168.0.11", "numero_ramal": "3661", "senha_sip": "s2"},
+        ]},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    # duplica sem nome → "Cópia de Matriz"
+    r = client.post(
+        "/api/extension-configurator/environments/matriz/duplicate",
+        json={},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200, r.json()
+    body = r.json()
+    assert body["nome"] == "Cópia de Matriz"
+    assert body["id"] == "copia-de-matriz"
+    assert body["telefones"] == 0  # ramais NÃO são copiados
+
+    detail = client.get(
+        f"/api/extension-configurator/environments/{body['id']}",
+    ).json()
+    assert detail["modelo_telefone"] == "Intelbras V5501"
+    assert detail["config_padrao"]["sip_server"] == "pbx.matriz.com"
+    assert detail["config_padrao"]["menu_password"] == "9090"
+    assert detail["config_padrao"]["keylock_enable"] == 2  # defaults preservados
+    assert detail["linhas"] == []
+
+    # origem permanece intacta (ainda com os 2 ramais)
+    src = client.get("/api/extension-configurator/environments/matriz").json()
+    assert len(src["linhas"]) == 2
+
+
+def test_duplicate_environment_nome_customizado(client, db) -> None:
+    csrf = _authed(client, db)
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Matriz", "modelo_telefone": "HTEK UC902G"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    r = client.post(
+        "/api/extension-configurator/environments/matriz/duplicate",
+        json={"nome": "Filial Centro"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200, r.json()
+    assert r.json()["nome"] == "Filial Centro"
+    assert r.json()["id"] == "filial-centro"
+
+
+def test_duplicate_environment_inexistente(client, db) -> None:
+    csrf = _authed(client, db)
+    r = client.post(
+        "/api/extension-configurator/environments/nao-existe/duplicate",
+        json={},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 404
+
+
 def test_delete_environment(client, db) -> None:
     csrf = _authed(client, db)
     client.post(
@@ -252,6 +338,119 @@ def test_ping_batch_persiste_mac_no_ambiente(client, db, monkeypatch) -> None:
     # persistiu na linha do ambiente
     detail = client.get("/api/extension-configurator/environments/lab").json()
     assert detail["linhas"][0]["ultimo_mac"] == "aa:bb:cc:dd:ee:ff"
+
+
+def test_preview_line_mostra_campos_e_mascara_senha(client, db) -> None:
+    csrf = _authed(client, db)
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Lab", "modelo_telefone": "HTEK UC902G"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    r = client.put(
+        "/api/extension-configurator/environments/lab/lines",
+        json={"linhas": [
+            {"ip": "192.168.0.10", "numero_ramal": "3660", "senha_sip": "SenhaSecreta123"},
+        ]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    line_id = r.json()["linhas"][0]["id"]
+
+    pv = client.get(f"/api/extension-configurator/environments/lab/lines/{line_id}/preview")
+    assert pv.status_code == 200, pv.json()
+    body = pv.json()
+    assert body["status"] == "pending"
+    assert body["vai_mudar"] is True
+    assert len(body["campos"]) > 0
+    # a senha real NUNCA aparece no preview (nem no XML cru, nem nos campos)
+    assert "SenhaSecreta123" not in body["xml"]
+    valores = [c["valor"] for c in body["campos"]]
+    assert all("SenhaSecreta123" != v for v in valores)
+    # o placeholder mascarado aparece (campos são URL-decodificados p/ HTEK)
+    assert "********" in valores
+
+
+def test_preview_line_404_em_linha_de_outro_ambiente(client, db) -> None:
+    csrf = _authed(client, db)
+    for nome in ("Lab", "Outro"):
+        client.post(
+            "/api/extension-configurator/environments",
+            json={"nome": nome, "modelo_telefone": "HTEK UC902G"},
+            headers={"X-CSRF-Token": csrf},
+        )
+    r = client.put(
+        "/api/extension-configurator/environments/lab/lines",
+        json={"linhas": [{"ip": "192.168.0.10", "numero_ramal": "3660"}]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    line_id = r.json()["linhas"][0]["id"]
+    # a linha existe, mas não pertence ao ambiente 'outro'
+    pv = client.get(f"/api/extension-configurator/environments/outro/lines/{line_id}/preview")
+    assert pv.status_code == 404
+
+
+def test_export_requer_csrf(client, db) -> None:
+    csrf = _authed(client, db)
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Lab", "modelo_telefone": "HTEK UC902G"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    r = client.post(
+        "/api/extension-configurator/environments/lab/export",
+        json={"passphrase": "segredo"},
+    )
+    assert r.status_code == 403
+
+
+def test_export_import_roundtrip_preserva_senha(client, db) -> None:
+    csrf = _authed(client, db)
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Matriz", "modelo_telefone": "HTEK UC902G"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    client.put(
+        "/api/extension-configurator/environments/matriz/lines",
+        json={"linhas": [
+            {"ip": "192.168.0.10", "numero_ramal": "3660", "senha_sip": "ZapZap#42"},
+        ]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    # exporta cifrado
+    exp = client.post(
+        "/api/extension-configurator/environments/matriz/export",
+        json={"passphrase": "minha-frase"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert exp.status_code == 200, exp.text
+    blob = exp.text
+    # o arquivo cifrado NÃO contém a senha em claro
+    assert "ZapZap#42" not in blob
+
+    # passphrase errada → 400
+    bad = client.post(
+        "/api/extension-configurator/environments/import",
+        json={"passphrase": "errada", "blob": blob},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert bad.status_code == 400
+
+    # import correto → novo ambiente (slug novo, não sobrescreve)
+    imp = client.post(
+        "/api/extension-configurator/environments/import",
+        json={"passphrase": "minha-frase", "blob": blob, "nome": "Matriz"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert imp.status_code == 200, imp.json()
+    new_id = imp.json()["id"]
+    assert new_id != "matriz"  # colisão de nome gera slug novo
+    assert imp.json()["linhas"] == 1
+
+    # a senha chegou correta no destino (device receberia o valor certo)
+    detail = client.get(f"/api/extension-configurator/environments/{new_id}").json()
+    assert detail["linhas"][0]["senha_sip"] == "ZapZap#42"
+    assert detail["modelo_telefone"] == "HTEK UC902G"
 
 
 def test_apply_environment_sem_linhas_devolve_total_zero(client, db) -> None:

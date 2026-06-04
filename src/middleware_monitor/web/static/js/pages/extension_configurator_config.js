@@ -8,11 +8,18 @@ const FIELDS_STR = [
   'web_user', 'web_password', 'nova_web_user', 'nova_web_password',
   'menu_password', 'keylock_password',
 ];
-const FIELDS_INT = ['register_expiration', 'keylock_enable', 'keylock_timeout'];
-const FIELDS_BOOL = ['validar_conectividade'];
+const FIELDS_INT = ['register_expiration', 'keylock_enable', 'keylock_timeout', 'sip_account'];
+const FIELDS_BOOL = ['validar_conectividade', 'verificar_registro_sip'];
 
-const LINEKEYS = ['LineKey1', 'LineKey2', 'LineKey3', 'LineKey4'];
-const TIPOS_FUNCAO = [
+// Slots e tipos de tecla são populados por fabricante (catálogo do backend) em
+// reload(). Estes são só fallback até o catálogo carregar.
+let LINEKEYS = [
+  { value: 'LineKey1', label: 'LineKey1' },
+  { value: 'LineKey2', label: 'LineKey2' },
+  { value: 'LineKey3', label: 'LineKey3' },
+  { value: 'LineKey4', label: 'LineKey4' },
+];
+let TIPOS_FUNCAO = [
   ['disabled', 'Desabilitada'],
   ['line', 'Linha SIP'],
   ['speed_dial', 'Discagem rápida (número abreviado)'],
@@ -38,7 +45,7 @@ function fkRow(fk) {
     <label class="flex flex-col gap-1">
       <span class="text-gray-400">Tecla</span>
       <select data-f="key" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded px-2 py-1.5 text-gray-100">
-        ${LINEKEYS.map(k => `<option value="${k}"${k === fk.key ? ' selected' : ''}>${k}</option>`).join('')}
+        ${LINEKEYS.map(k => `<option value="${k.value}"${k.value === fk.key ? ' selected' : ''}>${escAttr(k.label)}</option>`).join('')}
       </select>
     </label>
     <label class="flex flex-col gap-1">
@@ -102,7 +109,7 @@ function collectFKs() {
 
 function defaultFK() {
   return {
-    key: 'LineKey3',
+    key: (LINEKEYS[0] && LINEKEYS[0].value) || 'LineKey1',
     type: 'speed_dial',
     label: '',
     value_source: 'linha',
@@ -128,6 +135,21 @@ async function reload() {
     : 'Function Keys (teclas programáveis)';
   // Avancadas so para Intelbras
   $('#ec-section-advanced').classList.toggle('hidden', !isIntelbras);
+
+  // Opções de tecla programável do FABRICANTE do modelo (catálogo do backend).
+  try {
+    const cat = await api(`/api/extension-configurator/softkey-catalog?modelo=${encodeURIComponent(modelo)}`);
+    if (Array.isArray(cat.key_slots) && cat.key_slots.length) LINEKEYS = cat.key_slots;
+    if (Array.isArray(cat.types) && cat.types.length) TIPOS_FUNCAO = cat.types.map((t) => [t.value, t.label]);
+    // Gating do seletor de conta: só habilita "Conta 2" onde o fabricante está confirmado.
+    const accounts = Array.isArray(cat.accounts) && cat.accounts.length ? cat.accounts : [1];
+    const opt2 = document.querySelector('#cfg-sip_account option[value="2"]');
+    const hint = $('#cfg-sip_account-hint');
+    if (opt2) opt2.disabled = !accounts.includes(2);
+    if (hint) hint.textContent = accounts.includes(2)
+      ? `${cat.vendor_label || ''}: contas 1 e 2 suportadas.`
+      : `${cat.vendor_label || ''}: por enquanto só a conta 1 (Account 2 ainda não mapeada para este fabricante).`;
+  } catch (_e) { /* mantém fallback */ }
 
   const cfg = env.config_padrao || {};
   FIELDS_STR.forEach((k) => { const el = $('#cfg-' + k); if (el) el.value = cfg[k] ?? ''; });

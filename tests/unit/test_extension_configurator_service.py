@@ -37,6 +37,11 @@ def test_adapter_for_intelbras_e_htek() -> None:
     assert c.vendor_id == "htek"
 
 
+def test_adapter_for_yealink_e_flyingvoice() -> None:
+    assert service.adapter_for("Yealink T31G").vendor_id == "yealink"
+    assert service.adapter_for("FlyingVoice P10").vendor_id == "flyingvoice"
+
+
 def test_compute_line_hash_e_determ_para_mesmo_input(db: DBSession) -> None:
     env, by_ramal = _env_with_lines(db, "HTEK UC902G")
     h1 = service.compute_line_hash(env, by_ramal["3660"])

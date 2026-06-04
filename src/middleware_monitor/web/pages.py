@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session as DBSession
 
@@ -35,7 +35,7 @@ def _maybe_user(
 ) -> User | None:
     if not cookie:
         return None
-    from middleware_monitor.core.security import _decode_cookie  # type: ignore[attr-defined]
+    from middleware_monitor.core.security import _decode_cookie
 
     raw = _decode_cookie(cookie)
     if not raw:
@@ -92,7 +92,7 @@ def login_page(
     request: Request,
     cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
     db: DBSession = Depends(get_session),
-) -> HTMLResponse:
+) -> Response:
     user = _maybe_user(request, db, cookie)
     if user:
         return RedirectResponse("/", status_code=302)
@@ -115,7 +115,7 @@ def dashboard_page(
     request: Request,
     cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
     db: DBSession = Depends(get_session),
-) -> HTMLResponse:
+) -> Response:
     user = _maybe_user(request, db, cookie)
     if user is None:
         return RedirectResponse("/login", status_code=302)
@@ -130,7 +130,7 @@ def _page(name: str, route: str) -> None:
         request: Request,
         cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
         db: DBSession = Depends(get_session),
-    ) -> HTMLResponse:
+    ) -> Response:
         user = _maybe_user(request, db, cookie)
         if user is None:
             return RedirectResponse("/login", status_code=302)

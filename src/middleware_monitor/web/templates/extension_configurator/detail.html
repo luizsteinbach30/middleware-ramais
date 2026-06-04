@@ -300,6 +300,9 @@
       <p id="ec-subtitle" class="text-xs text-gray-400 mt-0.5 truncate">—</p>
     </div>
     <a id="ec-config-link" href="#" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">⚙ Config padrão</a>
+    <button id="ec-preview" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs" title="Pré-visualizar a config que será enviada para a linha selecionada">👁 Pré-visualizar</button>
+    <button id="ec-duplicate" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs" title="Duplicar este ambiente (copia todas as configurações, sem os ramais)">⧉ Duplicar</button>
+    <button id="ec-export" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs" title="Exportar este ambiente (config + linhas) num arquivo cifrado">⤴ Exportar</button>
     <span id="ec-save-status" class="text-[11px] font-medium text-transparent transition-opacity min-w-[90px]"></span>
     <button id="ec-save" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">Salvar planilha</button>
     <button id="ec-apply-selected" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-4 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-blue-500/20">Aplicar selecionados (0)</button>
@@ -318,6 +321,7 @@
       IP tem máscara automática · alterações salvam sozinhas após 1,2&nbsp;s.
       <br>Marque o checkbox da coluna <strong>✓</strong> para escolher quais aparelhos enviar — útil quando alguns telefones estão offline e você quer voltar só nesses depois.
       <br>Coluna <strong>Device</strong>: 🟢/🔴/⚪ mostram status de rede do telefone vinculado (online/offline/sem ping ainda). <strong>Clique</strong> na célula para ver ou desvincular o device.
+      <br>Coluna <strong>👁</strong>: clique no olho de uma linha (já salva) para <strong>pré-visualizar</strong> a config que será enviada àquele ramal, sem aplicar.
     </div>
 
     <div class="flex flex-col items-end gap-2">
@@ -392,6 +396,40 @@
     </div>
     <p id="ec-run-summary" class="text-xs text-gray-400">—</p>
     <div id="ec-run-rows" class="max-h-64 overflow-auto text-xs"></div>
+  </div>
+</div>
+
+<!-- Modal Duplicar -->
+<div id="ec-dup-modal" class="hidden fixed inset-0 bg-black/60 z-30 flex items-center justify-center p-4">
+  <div class="bg-gray-900 ring-1 ring-gray-700 rounded-xl p-5 w-full max-w-md space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Duplicar ambiente</h3>
+    <p class="text-xs text-gray-400">Cria um <strong>novo</strong> ambiente copiando o modelo do telefone e <strong>todas as configurações</strong> (servidor SIP, credenciais, teclas, idioma, etc.). Os <strong>ramais não</strong> são copiados — o novo ambiente nasce vazio.</p>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Nome do novo ambiente</span>
+      <input id="ec-dup-nome" placeholder="Ex: Cópia de Unidade 03"
+             class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/>
+    </label>
+    <div class="flex justify-end gap-2 pt-2">
+      <button id="ec-dup-cancel" class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">Cancelar</button>
+      <button id="ec-dup-confirm" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed">Duplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Exportar (passphrase) -->
+<div id="ec-export-modal" class="hidden fixed inset-0 bg-black/60 z-30 flex items-center justify-center p-4">
+  <div class="bg-gray-900 ring-1 ring-gray-700 rounded-xl p-5 w-full max-w-md space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Exportar ambiente</h3>
+    <p class="text-xs text-gray-400">O arquivo carrega as senhas e é <strong>cifrado</strong> com a passphrase abaixo. Guarde-a: sem ela não dá para importar.</p>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Passphrase</span>
+      <input id="ec-export-pass" type="password" placeholder="escolha uma passphrase"
+             class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/>
+    </label>
+    <div class="flex justify-end gap-2 pt-2">
+      <button id="ec-export-cancel" class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">Cancelar</button>
+      <button id="ec-export-confirm" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed">Exportar</button>
+    </div>
   </div>
 </div>
 

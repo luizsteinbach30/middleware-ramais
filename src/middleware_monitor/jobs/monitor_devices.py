@@ -67,7 +67,7 @@ async def run_monitor_devices() -> None:
     recovered_device_ids: list[int] = []
     with session_factory() as db:
         for r in results:
-            if isinstance(r, Exception):
+            if isinstance(r, BaseException):
                 continue
             device_id, online, latency, new_mac = r
             d = db.get(Device, device_id)

@@ -236,7 +236,10 @@ class IntelbrasAdapter(VendorAdapter):
         keylock_enable = int(template.get("keylock_enable", 2))
         keylock_timeout = int(template.get("keylock_timeout", 30))
 
+        # Conta SIP alvo (1 ou 2). Config parcial → a outra linha fica intacta.
+        sip_line = "2" if str(template.get("sip_account", 1)) == "2" else "1"
         ctx = {
+            "sip_line": sip_line,
             "register_addr": xml_escape(register_addr),
             "register_user": xml_escape(register_user),
             "register_pwd": _xml_escape_password(register_pwd),

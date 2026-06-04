@@ -50,6 +50,7 @@ from .service import (
     line_status,
     pick_lines_to_apply,
 )
+from .verify import verify_registration_batch, verify_registration_one
 
 log = get_logger("extension_configurator.apply")
 
@@ -222,6 +223,7 @@ async def run_apply(
         )
         creds_chain = build_creds_chain(cfg)
         validar = bool(cfg.get("validar_conectividade", True))
+        verificar = bool(cfg.get("verificar_registro_sip", False))
         adapter = adapter_for(env.modelo_telefone)
         template = build_template(cfg)
 
@@ -297,6 +299,27 @@ async def run_apply(
             )))
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Verificação de registro SIP (opt-in): UMA consulta cobre todos os ramais
+        # que enviaram OK — não dispara 1 request por ramal. Roda antes de marcar
+        # finished_at para o run aparecer "em andamento" durante a checagem.
+        if verificar:
+            ok_rows = [
+                (r.numero_ramal, run_line_ids.get(r.line_id))
+                for r in rs.rows if r.stage == "done"
+            ]
+            ramais = [ramal for ramal, _rl in ok_rows if ramal]
+            res = await verify_registration_batch(session_factory, ramais) if ramais else None
+            if res is not None:
+                with session_factory() as db:
+                    for ramal, rl_id in ok_rows:
+                        if rl_id is None:
+                            continue
+                        rl = db.get(ExtensionApplyRunLine, rl_id)
+                        if rl is not None:
+                            rl.registro_sip = res.get(ramal, "unregistered") if ramal else "skipped"
+                    db.commit()
+
         rs.finished_at = time.time()
         ok = sum(1 for r in rs.rows if r.stage == "done")
         falha = sum(1 for r in rs.rows if r.stage == "error")
@@ -348,6 +371,7 @@ async def run_apply_single_line(
         cfg = repo.merged_config_padrao(env)
         creds_chain = build_creds_chain(cfg)
         validar = bool(cfg.get("validar_conectividade", True))
+        verificar = bool(cfg.get("verificar_registro_sip", False))
         adapter = adapter_for(env.modelo_telefone)
         template = build_template(cfg)
         payload = adapter.generate_config(template, build_row(line, cfg))
@@ -398,6 +422,11 @@ async def run_apply_single_line(
             validar_conectividade=validar,
             run_line_id=run_line_id,
         )
+        # Verificação de registro SIP (opt-in): consulta só este ramal.
+        registro: str | None = None
+        if verificar and rs.rows[0].stage == "done":
+            registro = await verify_registration_one(session_factory, line_ramal)
+
         rs.finished_at = time.time()
         ok = 1 if rs.rows[0].stage == "done" else 0
         falha = 1 if rs.rows[0].stage == "error" else 0
@@ -412,6 +441,10 @@ async def run_apply_single_line(
                 repo.finish_reapply_event(
                     db, ev_obj, status=ev_status, error=ev_error,
                 )
+            if registro is not None:
+                rl_obj = db.get(ExtensionApplyRunLine, run_line_id)
+                if rl_obj is not None:
+                    rl_obj.registro_sip = registro
             db.commit()
         log.info(
             "apply_single_finished", line_id=line_id, run_id=run_id,

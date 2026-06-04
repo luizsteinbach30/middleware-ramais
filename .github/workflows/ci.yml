@@ -29,11 +29,11 @@ jobs:
       - name: Ruff
         run: ruff check src tests
 
-      - name: Mypy (warnings only)
-        run: mypy src || true
+      - name: Mypy
+        run: mypy src
 
       - name: Pytest
-        run: pytest --cov=src/middleware_monitor --cov-report=xml --cov-fail-under=50
+        run: pytest --cov=src/middleware_monitor --cov-report=xml --cov-fail-under=60
 
       - name: Upload coverage
         if: always()

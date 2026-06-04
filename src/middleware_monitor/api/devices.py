@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
+from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -193,7 +194,8 @@ def history(
 ) -> HistoryWindow:
     granularity, points = history_aggregate(db, device_id, window=window)
     return HistoryWindow(
-        granularity=granularity,
+        # history_aggregate só produz "1m"/"5m"/"1h"; o cast restringe o str ao Literal
+        granularity=cast('Literal["1m", "5m", "1h"]', granularity),
         points=[
             HistoryPoint(timestamp=t, online_ratio=ratio, latency_ms_avg=avg, latency_ms_max=mx)
             for t, ratio, avg, mx in points

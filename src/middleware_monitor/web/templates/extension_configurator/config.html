@@ -24,6 +24,14 @@
         <span class="text-gray-300">Register expiration (min)</span>
         <input id="cfg-register_expiration" type="number" min="1" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/>
       </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Registrar na conta SIP</span>
+        <select id="cfg-sip_account" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100">
+          <option value="1">Conta 1</option>
+          <option value="2">Conta 2</option>
+        </select>
+        <span id="cfg-sip_account-hint" class="text-[10px] text-gray-500"></span>
+      </label>
     </div>
     <p class="text-[11px] text-gray-500">O servidor SIP é informado por linha na coluna <strong>Servidor SIP</strong> da planilha — uma config aqui seria redundante.</p>
   </div>
@@ -71,6 +79,15 @@
     <label class="flex items-center gap-3 text-xs cursor-pointer select-none">
       <input id="cfg-validar_conectividade" type="checkbox" class="accent-blue-500 w-4 h-4"/>
       <span class="text-gray-200">Validar conectividade (ping) antes de enviar config</span>
+    </label>
+    <p class="text-xs text-gray-500 leading-relaxed pt-1">
+      Após aplicar e o telefone reiniciar, o sistema pode consultar o <strong>USCall</strong> para
+      confirmar se o ramal <strong>registrou no PBX</strong>. Em lote, faz uma única consulta
+      cobrindo todos os ramais (sem martelar o USCall). Requer USCall configurado em Configurações.
+    </p>
+    <label class="flex items-center gap-3 text-xs cursor-pointer select-none">
+      <input id="cfg-verificar_registro_sip" type="checkbox" class="accent-blue-500 w-4 h-4"/>
+      <span class="text-gray-200">Verificar registro SIP no PBX após aplicar</span>
     </label>
   </div>
 
