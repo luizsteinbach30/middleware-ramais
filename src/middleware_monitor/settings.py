@@ -31,6 +31,9 @@ class Settings(BaseSettings):
 
     secret_key: str = "change-me"
     cookie_secure: bool = False
+    # Quando True, aborta o boot se secret_key continuar no default 'change-me'.
+    # Default False para não quebrar deploys existentes (só loga WARNING).
+    require_secret_key: bool = False
 
     log_level: str = "INFO"
     log_json: bool = False

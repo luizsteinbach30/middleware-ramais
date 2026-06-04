@@ -110,7 +110,7 @@ def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:
     for member in tar.getmembers():
         if not _is_safe_member(member.name):
             raise TarballUnsafe(f"unsafe path: {member.name}")
-    tar.extractall(path=dest, filter="data")  # type: ignore[arg-type]
+    tar.extractall(path=dest, filter="data")
 
 
 def _service_restart() -> None:

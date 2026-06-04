@@ -24,7 +24,7 @@
 -->
 <sysConf>
     <sip>
-        <line index="1">
+        <line index="{sip_line}">
             <PhoneNumber>{phone_number}</PhoneNumber>
             <DisplayName>{display_name}</DisplayName>
             <SipName>{sip_name}</SipName>

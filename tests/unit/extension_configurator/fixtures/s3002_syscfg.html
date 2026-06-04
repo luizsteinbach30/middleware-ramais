@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>S3002</title>
+<meta name="description" content="S3002">
+<meta name="Keywords" content="S3002">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=0.5, minimum-scale=0.5, maximum-scale=2.0, user-scalable=yes">
+<link href="css/style.css" rel="stylesheet" type="text/css" />
+<script language="JavaScript" src="/js/doctor.js" type="text/JavaScript"></script>
+<script language="JavaScript" src="js/cookies.js"></script>	
+<script language="JavaScript" src="js/jquery-1.7.2.js"></script>	
+<script>
+
+var child_id=0;
+
+function EnableControl(f)
+{
+	if(f==1)
+	{
+		SysConfig.BLTime.disabled = true;
+	}
+	else if(f==2)
+	{
+		SysConfig.BLTime.disabled = false;
+	}
+	else if(f==3)
+	{
+		SysConfig.BLTime.disabled = false;
+	}
+	else if(f==19)
+	{
+		SysConfig.ScreenSaverTime.disabled = true;
+	}
+	else if(f==20)
+	{
+		SysConfig.ScreenSaverTime.disabled = false;
+	}
+
+}
+
+function testSIPTime(str)
+{
+	var r = /^\d+(\.\d+)?$/;
+	return r.test(str);
+}
+
+function dosubmit()
+{
+		return true;							
+}
+
+function CheckEmergency()
+{
+		var c; 
+		var ch = "0123456789,"; 
+		var EmergencyCall=document.forms[1].EmergencyCall.value;
+		for (var i = 0; i < EmergencyCall.length; i++)
+		{ 
+			 c = EmergencyCall.charAt(i); 
+			 if (ch.indexOf(c) == -1)
+			 {
+			      alert(myArray["IsEmergencyRule"]);
+				  var element =document.forms[1].EmergencyCall;
+				  if(element)
+				  {
+					  element.focus();
+					  element.select();
+				  }
+				  return false; 
+			}
+		} 
+		return true;
+}
+
+function CheckPhoneUnlockPIN()
+{
+		var c; 
+		var ch = "0123456789";
+		var PhoneUnlockPIN=document.forms[1].PhoneUnlockPIN.value;
+		if(PhoneUnlockPIN.length >=4 && PhoneUnlockPIN.length<=15)
+		{
+			for (var i = 0; i < PhoneUnlockPIN.length; i++)
+			{ 
+				 c = PhoneUnlockPIN.charAt(i); 
+				 if (ch.indexOf(c) == -1)
+				 {
+				      alert(myArray["IsUnlockPINRule1"]);
+					  var element =document.forms[1].PhoneUnlockPIN;
+					  if(element)
+					  {
+						  element.focus();
+						  element.select();
+					  }
+					  return false; 
+				}
+			} 
+			return true;
+		}
+		else
+		{
+			alert(myArray["IsUnlockPINRule"]);
+		  	var element =document.forms[1].PhoneUnlockPIN;
+		  	if(element)
+		  	{
+			  	element.focus();
+			  	element.select();
+		  	}
+		  	return false; 
+		}
+		
+		return true;
+}
+
+function RecordPosition(obj)
+{
+	var childname=obj.parentNode.id.split("_")[0]+"_child";
+	SetURLCookie("currentPage", childname);
+}
+
+function Myfun(id)
+{
+	if(id==1)
+	{
+		
+		document.forms[1].action='/goform/SaveSysCfg';
+		var curPage=getURLCookie("currentPage");
+		if(curPage=="Lockkeys_child") {
+			$("#currentPage").val("Lockkeys_child");
+		}
+		else{
+			$("#currentPage").val("other_child");
+		}
+		
+		if(document.forms[1].LockKeys.value !=0 && child_id==3)
+		{
+			if(CheckPhoneUnlockPIN()==false)
+				return false;
+			if(CheckEmergency()==false)
+			   	return false;
+		}
+		   
+		return true;
+	}
+    if(id==2)
+	{
+		
+		//document.forms[1].action='/goform/delRingCfg';
+		document.forms[1].action='/goform/delRingCfg';
+	}
+    if(id==3)
+	{
+		if((1<<20) < document.getElementById("UpPicfile").files[0].size)
+		{
+			alert(myArray["PicfileSizeErr"]);
+			document.getElementById("UpPicfile").value = "";
+			return false;
+		}		
+		
+		document.forms[1].action='/goform/formsavePicture';
+		var k,re,kk;
+		k = document.SysConfig.UpPicfile.value;
+	    document.SysConfig.Upfile.disabled = true;
+		re=/['&']/g;
+		kk=k.replace(re,"");
+		document.SysConfig.Hidefilename.value=kk;
+
+	}
+	if(id==4)
+    {
+    	document.forms[1].action='/goform/ResetBgPicCfg';
+    }
+    if(id==7)
+	{
+		//DFVB-2573, Added by Pengsr, 2020-07-07. 
+		if(150*1024 < document.getElementById("Upfile").files[0].size)
+		{
+			alert(myArray["FileSizeErr"]);
+			document.getElementById("Upfile").value = "";
+			return false;
+		}
+		else
+		{
+			//document.forms[1].action='/goform/upldForm_music';
+			
+			document.forms[1].action='/goform/formsavemusic';
+		}
+
+
+	}
+	
+	document.forms[1].submit();
+}
+
+function fun(k,name)
+{
+	
+	var before;
+	var after;
+	var i;
+	var len;
+	
+	var kk;
+	var jj;
+	var reportName;
+		 if(k.indexOf("#")>=0)
+	 
+{ 
+				reportName=k;
+				
+				document.getElementById(name).value= reportName;
+	}		
+				
+	else
+				
+		document.getElementById(name).value= k;
+
+}
+
+function blockWeek()
+{
+document.getElementById("DSTStartDate").style.display="none";
+document.getElementById("DSTEndDate").style.display="none";
+document.getElementById("DSTWeekStartMonth").style.display="";
+document.getElementById("DSTWeekStartWeek").style.display="";
+document.getElementById("DSTWeekStartWeekInMonth").style.display="";
+document.getElementById("DSTWeekStartHour").style.display="";
+document.getElementById("DSTWeekEndMonth").style.display="";
+document.getElementById("DSTWeekEndWeek").style.display="";
+document.getElementById("DSTWeekEndWeekInMonth").style.display="";
+document.getElementById("DSTWeekEndHour").style.display="";
+document.getElementById("DSTOffset").style.display="";
+}
+
+function blockDate()
+{
+document.getElementById("DSTStartDate").style.display="";
+document.getElementById("DSTEndDate").style.display="";
+document.getElementById("DSTOffset").style.display="";
+document.getElementById("DSTWeekStartMonth").style.display="none";
+document.getElementById("DSTWeekStartWeek").style.display="none";
+document.getElementById("DSTWeekStartWeekInMonth").style.display="none";
+document.getElementById("DSTWeekStartHour").style.display="none";
+document.getElementById("DSTWeekEndMonth").style.display="none";
+document.getElementById("DSTWeekEndWeek").style.display="none";
+document.getElementById("DSTWeekEndWeekInMonth").style.display="none";
+document.getElementById("DSTWeekEndHour").style.display="none";
+}
+
+function DSTnone()
+{
+document.getElementById("DSTType").style.display="none";
+document.getElementById("DSTStartDate").style.display="none";
+document.getElementById("DSTEndDate").style.display="none";
+document.getElementById("DSTWeekStartMonth").style.display="none";
+document.getElementById("DSTWeekStartWeek").style.display="none";
+document.getElementById("DSTWeekStartWeekInMonth").style.display="none";
+document.getElementById("DSTWeekStartHour").style.display="none";
+document.getElementById("DSTWeekEndMonth").style.display="none";
+document.getElementById("DSTWeekEndWeek").style.display="none";
+document.getElementById("DSTWeekEndWeekInMonth").style.display="none";
+document.getElementById("DSTWeekEndHour").style.display="none";
+document.getElementById("DSTOffset").style.display="none";
+}
+
+function DSTBlock()
+{
+document.getElementById("DSTType").style.display="";
+if(document.getElementById("DaylightSaveingWeek").checked)
+{
+	
+	blockWeek();
+}
+else
+{
+	
+	blockDate();
+}
+}
+function DSTModeBlock()
+{
+document.getElementById("DSTMode").style.display="";
+if(document.getElementById("DaylightSaveingOn").checked)
+  DSTBlock();
+else
+  DSTnone();
+}
+function DSTModeNone()
+{
+document.getElementById("DSTMode").style.display="none";
+DSTnone();
+}
+
+function change(value)
+{
+	if(value==0)
+	{
+		document.getElementById("PhoneLockTimeOut").disabled=true;
+		document.getElementById("PhoneUnlockPIN").disabled=true;
+		if(document.getElementById("Operate").value != "Innomedia")
+			document.getElementById("EmergencyCall").disabled=true;
+	}
+	else
+	{
+		document.getElementById("PhoneLockTimeOut").disabled=false;
+		document.getElementById("PhoneUnlockPIN").disabled=false;
+		if(document.getElementById("Operate").value != "Innomedia")
+			document.getElementById("EmergencyCall").disabled=false;
+	}
+}
+
+function changeAgentContent(id)
+{
+	if(id == 1)
+	{
+		document.getElementById("inputFileAgent").value = document.getElementById("Upfile").value;
+	}
+	else if(id == 2)
+	{
+		document.getElementById("inputPicFileAgent").value = document.getElementById("UpPicfile").value;
+	}
+}
+
+
+
+function expandChild(obj)
+{
+	var childname=obj.parentNode.id.split("_")[0]+"_child";
+	var SysConfigIndex=[0,3,5];
+	var arr=["Basic_child","Time_child","Lockkeys_child"]; 
+	var showID=0;
+	
+	if(childname=="Basic_child")
+	{
+		child_id=1;
+	  	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[0]].className="hover"; 
+		document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[1]].className=""; 
+		document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[2]].className="";
+		$("#basic_node").show();
+		$("#time_setting_node").hide();
+		$("#keypad_lock_node").hide();
+	}
+	else if(childname=="Time_child")
+	{
+		child_id=2;
+	  	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[0]].className=""; 
+		document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[1]].className="hover"; 
+		document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[2]].className=""; 
+		$("#basic_node").hide();
+		$("#time_setting_node").show();
+		$("#keypad_lock_node").hide();
+	}
+	else if(childname=="Lockkeys_child")
+	{
+		child_id=3;
+	  	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[0]].className=""; 
+		document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[1]].className=""; 
+		document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[2]].className="hover";
+		$("#basic_node").hide();
+		$("#time_setting_node").hide();
+		$("#keypad_lock_node").show();
+	}
+	else
+	{
+		child_id=0;
+	    SetURLCookie("SysConfig",childname);
+		return true;
+	}
+	for(var i=0;i<arr.length;i++)
+	{
+		/* Modified by Yulong on 2017.06.20 for Features page display is hide and bugID are DFV-890, DFV-374. */
+		if(arr[i]==childname)
+		{	
+			/*
+			document.getElementById(childname).style.display="";
+			*/
+			showID = i;
+			SetURLCookie("SysConfig",childname);
+		}
+		else
+			document.getElementById(arr[i]).style.display="none";
+	}
+	
+	/* Modified by Yulong on 2017.06.20 for Features page display is hide and bugID are DFV-890, DFV-374. */
+	if(arr[showID]==childname)
+	{
+		document.getElementById(childname).style.display="";
+	}
+}
+
+function SetTimeFormatchange(value)
+{
+    if(value=="12hour")
+	{
+		document.getElementById("TimeFormatAMPM").style.display="";
+	}	
+	else
+	{
+		document.getElementById("TimeFormatAMPM").style.display="none";
+	}
+}
+
+</script>
+</head>
+<body class="page_body">
+	<div class="search">
+		<form></form>
+		<script language="JavaScript">
+			var status = "Success";
+			function clearLogFlag(){
+				document.forms[0].method= "post"; 
+				document.forms[0].action="/goform/clearLogFlag";
+				document.forms[0].submit();
+				return true;
+			}
+			if(status=="Fail" || status=="INIT"){
+				clearLogFlag();
+				window.location.href="login.asp";
+			}
+		</script>
+	</div>
+<div  id="tab1"> 
+<div class="page_top">
+    <div class="page_logo"><img src="images/page_logo.gif"></div>
+    
+    <div class="page_menu">
+    	<ul>
+        	<li  class="q1"><a id="one1" onClick="setTab('one',1)" href="home.asp" ><span id="Phone Status"></span></a></li>
+            <li  class="q2"><a id="one2" onClick="setTab('one',2)" href="NetWork.asp" ><span id="Network"></span></a></li>
+            <li  class="q3"><a id="one3" onClick="setTab('one',3)" href="name.asp" ><span id="SIP Account"></span></a></li>
+            <li  class="q4"><a id="one4" onClick="setTab('one',4)" href="linekey.asp" ><span id="Programmable Button"></span></a></li>
+            <li  class="q5"><a id="one5" onClick="setTab('one',5)" href="SysConfig.asp" class="hover"><span id="Intelbras Phone Setting"></span></a></li>
+            <li  class="q6"><a id="one6" onClick="setTab('one',6)" href="PhoneBookTab.asp"><span id="PhoneBook"></span></a></li>
+            <li  class="q7"><a id="one7" onClick="setTab('one',7)" href="http.asp"><span id="Phone Maintenance"></span></a></li>
+            <li  class="q8"><a id="one8" onClick="setTab('one',8)" href="UpholdPassword.asp"><span id="Security"></span></a></li>
+            <li  class="q9"><a id="one9" onClick="setTab('one',9)" href="login.asp" ><span id="Logout String"></span></a></li>
+        </ul>
+    </div>
+    <div class="clear"></div>
+</div>
+<!-- /* Modified by Yulong on 2017.06.20 for Features page display is hide and bugID are DFV-890, DFV-374. */ -->
+<div class="page_left">
+	<ul id="con_one_1" >
+
+		<!------------------------------------------------------------------- 
+		
+			DFVB-2711 Changed by Pengsr, 2020-08-07. 
+			changed items: 
+			1. Change "expandChild(this); return false" to "SetURLCookie('SysConfig', 'Basic_child');return ture"
+			2. Change "expandChild(this); return false" to "SetURLCookie('SysConfig', 'Time_child');return ture"
+			3. Change "expandChild(this); return false" to "SetURLCookie('SysConfig', 'Lockkeys_child');return ture"
+			
+		---------------------------------------------------------------------->
+		
+        <li><div id="Basic_english"><a href='SysConfig.asp' onClick="RecordPosition(this); SetURLCookie('SysConfig', 'Basic_child'); return true;"><span id="Basic"></span></a></div></li>
+		<li style="display: none"><div id="USBPhone_english"><a href='USBPhone.asp'><span id="USB Phone"></span></a></div></li>
+		<li><div id="Call_english"><a href='Features.asp' onClick="SetURLCookie('SysConfig', 'Call_child'); return true"><span id="Features"></span></a></div></li>
+		
+		<li><div id="Time_english"><a href='SysConfig.asp' onClick="RecordPosition(this); SetURLCookie('SysConfig', 'Time_child'); return true;"><span id="Time Settings"></span></a></div></li>
+		<li><a href='DialTab.asp' ><span id="Dial Plan"></span></a></li>
+		<li><div id="Lockkeys_english"><a href='SysConfig.asp' onClick="RecordPosition(this); SetURLCookie('SysConfig', 'Lockkeys_child'); return true;"><span id="Keys Lock String"></span></a></div></li>
+		
+		<li><div id="Forward_english"><a href='Features.asp' onClick="SetURLCookie('SysConfig', 'Forward_child'); return true"><span id="VOIP Call Forward"></span></a></div></li>
+		<li style="display:"><div id="Remote_english"><a href='Features.asp' onClick="SetURLCookie('SysConfig', 'Remote_child'); return true"><span id="Remote Control"></span></a></div></li>
+		<li style="display:"><div id="Action_english"><a href='Features.asp' onClick="SetURLCookie('SysConfig', 'Action_child'); return true"><span id="Action URL"></span></a></div></li>
+		<li style="display: none"><div id="MultiMedia_english"><a href='Features.asp' onClick="SetURLCookie('SysConfig', 'MultiMedia_child'); return true"></a></div></li>
+	<!--
+		<li><div id="RemoteLogin_english"><a href='Features.asp' onClick="expandChild(this); return true"><span id="Remote Login"></span></a></div></li>
+	-->	
+		<li><div id="Reboot_english"><a href='Features.asp' onClick="SetURLCookie('SysConfig', 'Reboot_child'); return true"><span id="Reboot Timing"></span></a></div></li>
+		<li style="display: none" ><a href='DialTabInnomedia.asp' ><span id="Second DialTone"></span></a></li>
+		<li><a href='MediaCodec.asp' ><span id="Audio"></span></a></li>
+		<li><a href='InternalRing.asp' ><span id="Internal Ring"></span></a></li>
+		<li><a href='BroadsofeBLF.asp' ><span id="BLF Setting"></span></a></li>
+		<li><a href='tr069.asp' >TR069</a></li>
+		<li style="display: none"><a href='BlueTooth.asp'><span id="Bluetooth Setting"></span></a></li>
+		<li style="display: none"><a href='SNMP.asp' ><span id="SNMP Settings"></span></a></li>
+		<li style="display: none"><a href='NetConnTest.asp' ><span id="NetConnTest Settings"></span></a></li>
+		<li style="display: none"><a href='EMSSetting.asp' ><span id="EMS Settings"></span></a></li>
+		<li style="display: none"><a href='SNMPSetting.asp' ><span id="Innomedia SNMP Settings"></span></a></li>
+		<li style="display: none"><a href='UserAgent.asp' ><span id="User agent define"></span></a></li>
+		<li style="display: none" ><a href='CallReportInnomedia.asp' ><span id="CallReportId"></span></a></li>
+		<li style="display: none"><a href='EMSVideoSetting.asp' ><span id="EMS Video Setting"></span></a></li>
+    </ul>
+</div>
+
+<div class="page_right_r">
+	<div class="title"><span id="Note"></span></div>
+	<div class="conter" id="basic_node">
+	
+	 	<strong><span id="BackLight String"></span>:</strong><br>
+     		<span id="BackLight Note String"></span><br><br>
+     	<strong><span id="Uploading Ring Tone String"></span>:</strong><br>
+     		<span id="Upload ring Note String"></span><br><br>
+     	<strong style="display: none"><span id="PictureFile String"></span>:</strong><br>	
+     	<span style="display: none" id="PictureFile Note String"></span>
+     	<span style="display: none" id="PictureFile Note ES620"></span>
+     	
+	</div>
+	<div class="conter" id="time_setting_node">
+	 	<strong><span id="Time Zone-GMT String"></span>:</strong><br>
+     		<span id="Time Zone-GMT Note String"></span><br><br>
+     		<strong><span id="Daylight Saving Time String"></span>:</strong><br>
+     		<span id="Daylight Saving Time Note String"></span><br><br>
+	  	<strong><span id="Update Interval String"></span>:</strong><br>
+     		<span id="Update Interval Note String"></span><br><br>
+	</div>
+	<div class="conter" id="keypad_lock_node">
+	 	<strong><span id="Keys Locks String"></span>:</strong><br>
+     		<span id="Keys Lock Note String"></span><br><br>
+	  	<strong><span id="Emergency String"></span>:</strong><br>
+     		<span id="Emergency Note String"></span>
+	</div>
+	<div class="title" style="display: none"><span id="News"></span></div>
+	<div class="conter" style="display: none">
+		<span class="tex"><a href="#"><span id="No Update"></span></a></span>
+		<a href="#"><img src="images/544.gif"></a>
+		<span class="dt"><a href="#"><span id="More"></span></a></span>
+	</div>
+</div>
+
+<script src="lang/common.js"></script>
+<script src='lang/br.js'></script>
+
+<div class="page_right">
+    <div class="page_right_l" id="body">
+
+<script language="JavaScript">
+var URL=getURLCookie("SysConfig");
+if(URL==null)
+   URL="Basic_child";
+var SysConfigIndex=[0,3,5];
+var arr=["Basic_child","Time_child","Lockkeys_child"];  
+if(URL=="Basic_child")
+{
+	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[0]].className="hover"; 
+	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[1]].className=""; 
+	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[2]].className=""; 
+	$("#basic_node").show();
+	$("#time_setting_node").hide();
+	$("#keypad_lock_node").hide();
+}
+else if(URL=="Time_child")
+{
+	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[0]].className=""; 
+	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[1]].className="hover"; 
+	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[2]].className=""; 
+	$("#basic_node").hide();
+	$("#time_setting_node").show();
+	$("#keypad_lock_node").hide();
+}
+else if(URL=="Lockkeys_child")
+{
+	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[0]].className=""; 
+	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[1]].className=""; 
+	document.getElementById("con_one_1").getElementsByTagName('li')[SysConfigIndex[2]].className="hover"; 
+	$("#basic_node").hide();
+	$("#time_setting_node").hide();
+	$("#keypad_lock_node").show();
+}
+
+	 document.getElementById("body").style.display="none";
+</script>	
+
+
+
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" class="table">
+    
+    <form method="post" name="SysConfig" onSubmit="return doSubmit(); " enctype="multipart/form-data">
+   
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" class="table" id="Basic_child" style="display:none;table-layout:fixed;">
+	
+	<tr>
+		<th width="25%"><div align="left" style="padding-left:50px"><span id="Selectlang"></span></div></th>
+		<td style="width:20px">  <select name="sel_lang" id="sel_lang"><option value="1"  id='English'>English</option><option value="6" selected id='Portuguesa'>Portuguesa</option><option value="9"  id='Spanish'>Spanish</option></select></td>
+		<td style="width:71px"></td>
+		<td style="width:20px"></td>
+		<td style="width:100px"></td>
+		<td style="width:20px"></td>
+		<td></td>
+	</tr>
+	
+	<tr style="display: none">
+		<th width="25%"><div align="left" style="padding-left:50px"><span id="Startup Voice"></span></div></th>
+		<td><input type="radio" name="StartupVoice" id="SUVOff" value="SUVOff" ></td>
+        <td><span id="off10"></span></td>
+        <td><input type="radio" name="StartupVoice" id="SUVOn" value="SUVOn" ></td>
+        <td><span id="on10"></span> &nbsp;&nbsp;
+		<a class="dxs" href="#">
+		<img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="Startup Voice Note"></span></span></a></td>
+	</tr>	
+	  
+	  <tr>
+		<th width="25%"><div align="left" style="padding-left:50px"><span id="BackLight"></span></div></th>
+		<td><input type="radio" name="BackLight" id="BLOff" value="BLOff"  onClick="EnableControl(1)"></td>
+              <td><span id="off9"></span></td>
+             	<td><input type="radio" name="BackLight" id="BLOn" value="BLOn"  onClick="EnableControl(2)"></td>
+             	<td><span id="BackLight on"></span> </td>
+		<td><input type="radio" name="BackLight" id="BLAUTO" value="BLAUTO" checked onClick="EnableControl(3)"></td>
+		<td><span id="BackLight Auto"></span><span id="BackLight Auto"></span>&nbsp;&nbsp;
+		<input type="text" style= "ime-mode:Disabled" name="BLTime" size="3" id="BLTime" value="60" maxlength="10" class="text" >&nbsp;<span id="BLTime Second"></span>&nbsp;<a class="dxs" href="#">
+		 <img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="BackLight Note"></span></span></a></td>
+	  </tr>
+	  
+	<tr>
+		<th width="25%"><div align="left" style="padding-left:50px"><span id="Ring Type"></span></div></th>
+		<td colspan="6"> <select name="RingType" class="list" id="RingType" onChange=""><option value="1" selected>Ring1</option><option value="2" >Ring2</option><option value="3" >Ring3</option><option value="4" >Ring4</option><option value="5" >Ring5</option><option value="6" >Ring6</option><option value="7" >Ring7</option><option value="8" >Ring8</option></select>&nbsp;<input  name="delRing" type="button" class="button"
+		style="padding:0px 10px;" onClick="Myfun(2)"  id="delRing" value="" ></td>
+	</tr>
+	
+	<tr>
+		<th width="25%"><div align="left" style="padding-left:50px"><span id="Uploading Ring Tone"></span></div></th>
+		<!--<input type="file" id="Upfile" name="Upfile">-->
+		<td colspan="6"><input type="file" id="Upfile" name="Upfile" style="display:none" onchange="changeAgentContent(1)">
+		<input type="text" value="" disabled id="inputFileAgent" >
+		<input type="button" style="padding:0px 10px;" class="button" onclick="document.getElementById('Upfile').click()" id="Upfile_name">&nbsp;&nbsp;
+		<input name="httpload" type="button" style="padding:0px 10px;" class="button" id="httpload"  value=""  onClick="return Myfun(7)">
+		<a class="dxs" href="#">
+		<img  src="images/wh.png">
+			<span class="dxsx"><span class="xsf"></span>
+			<span id="Upload ring Note"></span></a>
+       </td>
+	</tr>
+	
+	<tr style="display: none">
+    <th width="47%"><div align="left" style="padding-left:50px"><span id="picture file"></span></div></th>
+	<td colspan="6">
+      <!--<input name="UpPicfile" type="file" id="UpPicfile" />-->
+       <input type="file" id="UpPicfile" name="UpPicfile" style="display:none" onchange="changeAgentContent(2)">
+	<input type="text" value="" disabled id="inputPicFileAgent" >
+	<input type="button" style="padding:0px 10px;" class="button" onclick="document.getElementById('UpPicfile').click()" id="UpPicfile_name">&nbsp;&nbsp;
+	<input name="httploadPhone" type="button" style="padding:0px 10px;" class="button" id="httploadPhone"  value=""  onClick="return Myfun(3)" />&nbsp;&nbsp;
+	<input name="resetBgPic" type="button" style="padding:0px 10px;" class="button" id="resetBgPic"  value=""  onClick="return Myfun(4)" />
+
+    </td>
+	</tr>
+
+	<tr>
+		<td height="10">
+			<input name="Hidefilename" type="hidden" id="Hidefilename" value=""></input>
+		<td>
+	</tr>
+
+	</table>
+	
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" class="table" id="Time_child" style="display:none;table-layout:fixed;" >
+	  
+	   <tr>
+		<th width="40%"><div align="left" style="padding-left:50px"><span id="Set Time Mode"></span></div></th>
+		<td style="width:3%"><select name="SetTimeMode" class="list" id="SetTimeMode" onChange=
+			"SetTimeModechange(this.options[this.options.selectedIndex].value);">
+			<option value="0" selected>SNTP</option><option value="1"  id='SIP Server Time Mode'>SIP Server</option><option value="2"  id='Manual'></option> 
+			</select></td>
+		<td style="width:17%"></td>
+		<td style="width:3%"></td>
+		<td style="width:17%"></td>
+		<td style="width:3%"></td>
+		<td></td>
+	  </tr>
+	  
+	  <tr id="SNTPServerSelect">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="SNTP Server"></span></div></th>
+		<td colspan="6"><select name="SelectSNTPAddress" class="list" id="SelectSNTPAddress" onChange=
+			"SetTimeSNTPchange(this.options[this.options.selectedIndex].value);">
+            <option value="0">sparky.services.adelaide.edu.au</option><option value="1">www.time.ac.cn</option><option value="2">ntp.lth.se</option><option value="3">ntp0.pipex.net</option><option value="4">ntp0.nl.net</option><option value="5">ntp2.pipex.net</option><option value="6">ntp0.ja.net</option><option value="7">ntp1.pipex.net</option><option value="8">ntp.cs.strath.ac.uk</option><option value="9">ntp2a.mcc.ac.uk</option><option value="10">ntps1-0.cs.tu-berlin.de</option><option value="11">ntps1-0.uni-erlangen.de</option><option value="13">ntp-2.cso.uiuc.edu</option><option value="15">ntp3.cs.wisc.edu</option><option value="16">ntp.nasa.gov</option><option value="127" selected id='SetManual'></option> 
+			</select></td>
+	  </tr>
+	  
+	  <tr id="SNTPServerInput">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="SNTP Server"></span></div></th>
+		<td colspan="6"><input name="SNTPAddress" type="txt" value="a.ntp.br"  size="30" maxlength="50"></td>
+	  </tr>
+	  
+	  <tr id="SNTPBackupServerSelect">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Secondary SNTP server"></span></div></th>
+		<td colspan="6"><select name="SelectSNTPAddressBackup" class="list" id="SelectSNTPAddressBackup" onChange="SetTimeBackupSNTPchange(this.options[this.options.selectedIndex].value);">
+                <option value="0">sparky.services.adelaide.edu.au</option><option value="1">www.time.ac.cn</option><option value="2">ntp.lth.se</option><option value="3">ntp0.pipex.net</option><option value="4">ntp0.nl.net</option><option value="5">ntp2.pipex.net</option><option value="6">ntp0.ja.net</option><option value="7">ntp1.pipex.net</option><option value="8">ntp.cs.strath.ac.uk</option><option value="9">ntp2a.mcc.ac.uk</option><option value="10">ntps1-0.cs.tu-berlin.de</option><option value="11">ntps1-0.uni-erlangen.de</option><option value="13">ntp-2.cso.uiuc.edu</option><option value="15">ntp3.cs.wisc.edu</option><option value="16">ntp.nasa.gov</option><option value="127" selected id='SetManual String'></option> 
+              </select></td>
+	  </tr>
+	  
+	  <tr id="SNTPBackupServerInput">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="SNTP Server"></span></div></th>
+		<td colspan="6"><input name="SNTPAddressBackup" type="txt" value="b.ntp.br"  size="30" maxlength="50"></td>
+	  </tr>
+	  
+	  <tr id="TimeZone">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Time Zone-GMT"></span></div></th>
+		<td colspan="6"><select name="TimeZoneType" class="list" id="TimeZoneType" style="ime-mode:Disabled;width:51%">
+            <option value="0" >GMT-12:00 UTC-12</option><option value="1" >GMT-11:00 UTC-11</option><option value="41" >GMT-11:00 US-Samoa</option><option value="36" >GMT-10:00 US-Aleutian</option><option value="2" >GMT-10:00 UTC-10</option><option value="33" >GMT-10:00 US-Hawaii</option><option value="3" >GMT-09:00 UTC-9</option><option value="30" >GMT-09:00 US-Alaska</option><option value="4" >GMT-08:00 California</option><option value="35" >GMT-08:00 US-Pacific</option><option value="49" >GMT-08:00 Canada (Vancouver, Whitehorse)</option><option value="50" >GMT-08:00 Mexico (Tijuana, Mexicali)</option><option value="51" >GMT-07:00 Canada (Edmonton, Calgary)</option><option value="52" >GMT-07:00 Mexico (Mazatlan, Chihuahua)</option><option value="5" >GMT-07:00 LaPaz</option><option value="31" >GMT-07:00 US-Arizona</option><option value="40" >GMT-07:00 US-Mountain</option><option value="53" >GMT-06:00 Canada-Manitoba (Winnipeg)</option><option value="54" >GMT-06:00 Chile (Easter Islands)</option><option value="6" >GMT-06:00 Mexico (Mexico City, Acapulco)</option><option value="37" >GMT-06:00 US-Central</option><option value="39" >GMT-06:00 US-Indiana-Starke</option><option value="7" >GMT-05:00 Lima</option><option value="32" >GMT-05:00 US-Eastern</option><option value="34" >GMT-05:00 US-Michigan</option><option value="38" >GMT-05:00 US-East-Indiana</option><option value="55" >GMT-05:00 Bahamas (Nassau)</option><option value="56" >GMT-05:00 Canada (Montreal, Ottawa, Quebec)</option><option value="57" >GMT-05:00 Cuba (Havana)</option><option value="58" >GMT-04:30 Venezuela (Caracas)</option><option value="8" >GMT-04:00 Santiago de Chile</option><option value="42" >GMT-04:00 Canada-Atlantic</option><option value="59" >GMT-04:00 Paraguay (Asuncion)</option><option value="60" >GMT-04:00 United kingdom-Bermuda (Bermuda)</option><option value="61" >GMT-04:00 United kingdom (Falkland Islands)</option><option value="62" >GMT-04:00 Trinidad & Tobago</option><option value="43" >GMT-03:30 Canada-Newfoundland (St. Johns)</option><option value="9" selected>GMT-03:00 Brasil (Brasilia)</option><option value="63" >GMT-03:00 Denmark-Greenland (Nuuk)</option><option value="64" >GMT-03:00 Argentina (Buenos Aires)</option><option value="10" >GMT-02:00 UTC-02</option><option value="11" >GMT-01:00 Arquipelago Dos Acores</option><option value="65" >GMT-01:00 Portugal (Azores)</option><option value="12" >GMT Greenwich Mean Time</option><option value="66" >GMT+00:00 Greenland</option><option value="67" >GMT+00:00 Denmark-Faroe Islands (Torshavn)</option><option value="68" >GMT+00:00 Irelan (Dublin)</option><option value="69" >GMT+00:00 Portugal (Lisboa, Porto, Funchal)</option><option value="70" >GMT+00:00 Spain-Canary Islands (Las Palmas)</option><option value="71" >GMT+00:00 United-Kingdom (London)</option><option value="72" >GMT+00:00 Morocco</option><option value="73" >GMT+01:00 Albania (Tirane)</option><option value="74" >GMT+01:00 Austria (Vienna)</option><option value="75" >GMT+01:00 Belgium (Brussels)</option><option value="76" >GMT+01:00 Caicos</option><option value="77" >GMT+01:00 Chad</option><option value="78" >GMT+01:00 Spain (Madrid)</option><option value="79" >GMT+01:00 Croatia (Zagreb)</option><option value="80" >GMT+01:00 Czech Republic (Prague)</option><option value="81" >GMT+01:00 Denmark (Kopenhagen)</option><option value="82" >GMT+01:00 France (Paris)</option><option value="13" >GMT+01:00 Germany (Berlin)</option><option value="83" >GMT+01:00 Hungary (Budapest)</option><option value="84" >GMT+01:00 Italy (Rome)</option><option value="85" >GMT+01:00 Luxembourg (Luxembourg)</option><option value="86" >GMT+01:00 Macedonia (Skopje)</option><option value="87" >GMT+01:00 Netherlands (Amsterdam)</option><option value="88" >GMT+01:00 Namibia (Windhoek)</option><option value="89" >GMT+02:00 Estonia (Tallinn)</option><option value="90" >GMT+02:00 Finland (Helsinki)</option><option value="91" >GMT+02:00 Gaza Strip (Gaza)</option><option value="92" >GMT+02:00 Greece (Athens)</option><option value="93" >GMT+02:00 Jordan (Amman)</option><option value="94" >GMT+02:00 Latvia (Riga)</option><option value="95" >GMT+02:00 Lebanon (Beirut)</option><option value="96" >GMT+02:00 Moldova (Kishinev)</option><option value="97" >GMT+02:00 Russia (Kaliningrad)</option><option value="14" >GMT+02:00 Egypt (Cairo)</option><option value="45" >GMT+02:00 Israel (Tel Aviv)</option><option value="48" >GMT+02:00 Romania (Bucharest)</option><option value="98" >GMT+02:00 Syria (Damascus)</option><option value="99" >GMT+02:00 Turkey (Ankara)</option><option value="100" >GMT+02:00 Ukraine (Kyiv, Odessa)</option><option value="101" >GMT+03:00 East Africa Time</option><option value="102" >GMT+03:00 Iraq (Baghdad)</option><option value="15" >GMT+03:00 Bahrain,Russia (Moscow)</option><option value="47" >GMT+03:30 Iran(Teheran)</option><option value="103" >GMT+04:00 Armenia (Yerevan)</option><option value="104" >GMT+04:00 Azerbaijan (Baku)</option><option value="105" >GMT+04:00 Georgia (Tbilisi)</option><option value="106" >GMT+04:00 Kazakhstan (Aktau)</option><option value="107" >GMT+04:00 Russia (Samara)</option><option value="16" >GMT+04:00 Muscat</option><option value="108" >GMT+04:30 Afghanistan</option><option value="109" >GMT+05:00 Kazakhstan (Aqtobe)</option><option value="110" >GMT+05:00 Kyrgyzstan (Bishkek)</option><option value="17" >GMT+05:00 Pakistan (Islamabad)</option><option value="111" >GMT+05:00 Russia (Chelyabinsk)</option><option value="26" >GMT+05:30 India</option><option value="18" >GMT+06:00 Russia (Novosibirsk, Omsk)</option><option value="112" >GMT+06:00 Kazakhstan (Astana, Almaty)</option><option value="126" >GMT+06:00 Bangladesh (Dhaka)</option><option value="46" >GMT+06:30 Myanmar</option><option value="113" >GMT+07:00 Russia (Krasnoyarsk)</option><option value="19" >GMT+07:00 Thailand (Bangkok)</option><option value="20" >GMT+08:00 China (Beijing)</option><option value="114" >GMT+08:00 Singapore (Singapore)</option><option value="115" >GMT+08:00 Australia (Perth)</option><option value="116" >GMT+09:00 Korea (Seoul)</option><option value="21" >GMT+09:00 Japan (Tokyo)</option><option value="44" >GMT+09:30 Australia-Central</option><option value="117" >GMT+09:30 Australia (Adelaide, Darwin)</option><option value="22" >GMT+10:00 Sydney,Melbourne,Canberra,Brisbane,Hobart</option><option value="118" >GMT+10:00 Russia (Vladivostok)</option><option value="119" >GMT+10:30 Australia (Lord Howe Islands)</option><option value="120" >GMT+11:00 New Caledonia (Noumea)</option><option value="23" >GMT+11:00 Solomon Islands</option><option value="24" >GMT+12:00 New Zealand (Wellington, Auckland)</option><option value="121" >GMT+12:45 New Zealand (Chatham Islands)</option><option value="25" >GMT+13:00 Tonga (Nukualofa)</option>
+            </select>&nbsp;&nbsp;<a class="dxs" href="#"><img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="Time Zone-GMT Note"></span></span></a></td>
+	  </tr>
+	  
+	  <tr id="DSTMode">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Daylight Saving Time"></span></div></th>
+		<td><input name="DaylightSaveingFlag" type="radio" id="DaylightSaveingOff" onClick="DSTnone();" value="DaylightSaveingOff" checked ></td>
+		<td><span id="Intelbras always off"></span></td>
+		<td><input name="DaylightSaveingFlag" type="radio" id="DaylightSaveingOn" onClick="DSTBlock();" value="DaylightSaveingOn"  ></td>
+		<td><span id="Intelbras always on"></span></td>
+		<td><input name="DaylightSaveingFlag" type="radio" id="DaylightSaveingAuto" onClick="DSTnone();" value="DaylightSaveingAuto"  ></td>
+		<td><span id="DST Auto"></span>&nbsp;&nbsp;<a class="dxs" href="#"><img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="Daylight Saving Time Note"></span></span></a></td>
+	  </tr>
+	  
+	  <tr id="DSTInterval">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Update Interval"></span></div></th>
+		<td colspan="6"><input type="number" style= "ime-mode:Disabled;width:10%" name="UpdateInterval"  id="UpdateInterval" value="600" onkeyup="limitInput(this);" min="600" maxlength="8" >
+           <span id="second String"></span> <span id="UpdateInterval Default and range"></span> &nbsp;<a class="dxs" href="#">
+           <img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="Update Interval Note"></span></span></a></td>
+	  </tr>
+	  
+	  <tr id="DSTType">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Daylight Saving Type"></span></div></th>
+		<td colspan="6"><input name="DaylightSaveingType" type="radio" id="DaylightSaveingDate" 
+			  onclick="blockDate();"
+			  value="DaylightSaveingDate" checked >
+			    <span id="DST Date"></span>
+			    <input name="DaylightSaveingType" type="radio" id="DaylightSaveingWeek" 
+			onclick="blockWeek();" 
+			  value="DaylightSaveingWeek"  >
+			   <span id="DST Week"></span></td>
+	  </tr>
+	  
+	  <tr id="DSTStartDate">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="DST Start Date"></span></div></th>
+		<td colspan="6"><span id="DST Start Date"></span> 
+				  <input type="text" name="DSTStartMonth" size="4" id="DSTStartMonth"
+	     				value="1" maxlength="2" 
+		 				class="text">
+			   <span id="Month1"></span> 
+			    <input type="text" name="DSTStartDay" size="4" id="DSTStartDay"
+	     				value="1" maxlength="2" 
+		 				class="text">
+			    <span id="Day1"></span>
+			    <input type="text" name="DSTStartHour" size="4" id="DSTStartHour"
+	     				value="0" maxlength="2" 
+		 				class="text">
+			    <span id="Hour1"></span></td>
+	  </tr>
+	  
+	 <tr id="DSTEndDate">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="DST End Date"></span></div></th>
+		<td colspan="6"><span id="DST End Date"></span> 
+				  <input type="text" name="DSTEndMonth" size="4" id="DSTEndMonth"
+	     				value="12" maxlength="2" 
+		 				class="text">
+			   <span id="Month2"></span> 
+			    <input type="text" name="DSTEndDay" size="4" id="DSTEndDay"
+	     				value="31" maxlength="2" 
+		 				class="text">
+			    <span id="Day2"></span>
+			    <input type="text" name="DSTEndHour" size="4" id="DSTEndHour"
+	     				value="23" maxlength="2" 
+		 				class="text">
+			    <span id="Hour2"></span></td>
+	  </tr>
+	  
+	  <tr id="DSTWeekStartMonth">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="DST Start Month"></span></div></th>
+		<td colspan="6"><select name="DSTWeekStartMonth" class="list" id="MonthList1">
+               <option value="1" selected></option><option value="2" ></option><option value="3" ></option><option value="4" ></option><option value="5" ></option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="10" ></option><option value="11" ></option><option value="12" ></option>
+                </select></td>
+	  </tr>
+
+	  <tr id="DSTWeekStartWeek">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="DST Start Week"></span></div></th>
+		<td colspan="6"><select name="DSTWeekStartWeek" class="list" id="WeekList1">
+                <option value="0" selected></option><option value="1" ></option><option value="2" ></option><option value="3" ></option><option value="4" ></option><option value="5" ></option><option value="6" ></option>
+                </select></td>
+	  </tr>
+	  
+	  <tr id="DSTWeekStartWeekInMonth">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="DST Start Week In Month"></span></div></th>
+		<td colspan="6"><select name="DSTWeekStartWeekInMonth" class="list" id="WeekInMonthList1">
+               <option value="1" selected></option><option value="2" ></option><option value="3" ></option><option value="4" ></option><option value="5" ></option>
+                </select></td>
+	  </tr>
+
+      <tr id="DSTWeekStartHour">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="DST Start Hour"></span></div></th>
+		<td colspan="6"><input type="text" name="DSTWeekStartHour" size="4"
+	     	value="0" maxlength="2" 
+		 	class="text"></td>
+	  </tr>
+
+
+      <tr id="DSTWeekEndMonth">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="DST End Month"></span></div></th>
+		<td colspan="6"><select name="DSTWeekEndMonth" class="list" id="MonthList2">
+               <option value="1" ></option><option value="2" ></option><option value="3" ></option><option value="4" ></option><option value="5" ></option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="10" ></option><option value="11" ></option><option value="12" selected></option>
+            </select></td>
+	  </tr>
+
+
+       <tr id="DSTWeekEndWeek">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="DST End Week"></span></div></th>
+		<td colspan="6"><select name="DSTWeekEndWeek" class="list" id="WeekList2">
+               <option value="0" ></option><option value="1" ></option><option value="2" ></option><option value="3" ></option><option value="4" ></option><option value="5" ></option><option value="6" selected></option>
+            </select></td>
+	  </tr>
+	  
+	  <tr id="DSTWeekEndWeekInMonth">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="DST End Week In Month"></span></div></th>
+		<td colspan="6"><select name="DSTWeekEndWeekInMonth" class="list" id="WeekInMonthList2">
+            <option value="1" ></option><option value="2" ></option><option value="3" ></option><option value="4" ></option><option value="5" selected></option>
+            </select></td>
+	  </tr>
+	  
+	  <tr id="DSTWeekEndHour">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="DST End Hour"></span></div></th>
+		<td colspan="6"><input type="text" name="DSTWeekEndHour" size="4" 
+	     	value="23" maxlength="2" 
+		 	class="text"></td>
+	  </tr>
+	  
+	  <tr id="DSTOffset">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="DST Offset"></span></div></th>
+		<td colspan="6"><input type="text" name="DSTOffset" size="4" id="DSTOffset"
+	     	value="60" maxlength="4" 
+		 	class="text"> <span id="Minute1"></span></td>
+	  </tr>
+	  
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Time Format"></span></div></th>
+		<td><input type="radio" id="TimeFormatAMPMPM" name="TimeFormat"  value="24hour" checked onclick="SetTimeFormatchange(this.value);"></td>
+           	<td> 24-<span id="Time Format 24 Hour"></span> </td>
+           	<td><input type="radio" id="TimeFormatAMPMAM" name="TimeFormat"   value="12hour" 
+			onclick="SetTimeFormatchange(this.value);"></td>
+           	<td>  12-<span id="Time Format 12 Hour"></span></td>
+			<td style="width:47%" id="TimeFormatAMPMEnable">
+				<select name="TimeFormatAMPM" class="list" id="TimeFormatAMPM">
+				<option value="0" selected id='TimeFormatAM'></option><option value="1"  id='TimeFormatPM'></option> 
+			</select></td>
+	  </tr>
+	  
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Date Format"></span></div></th>
+		<td colspan="4"><select name="DateFormat" class="list" id="DateFormat"><option value="0" selected>DD MM WWW</option><option value="1" >MM DD WWW</option><option value="2" >WWW MMM DD</option><option value="3" >DD-MMM-YY</option><option value="4" >YYYY-MM-DD</option><option value="5" >YYYY/MM/DD</option><option value="6" >DD/MM/YYYY</option><option value="7" >DD-MM-YYYY</option><option value="8" >MM/DD/YY</option><option value="9" >DD MMM YYYY</option><option value="10" >WWW DD MMM</option></select></td>
+         </tr>
+	  
+	  <tr id="ManualTime">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Manual Setting"></span></div></th>
+		<td colspan="6"><input type="text" style= "ime-mode:Disabled" name="YearSet" size="4" id="YearSet"
+	     				value="2026" maxlength="4" 
+		 				class="text">
+			    <span id="Year"></span>
+			    <input type="text" style= "ime-mode:Disabled" name="MonthSet" size="1" id="MonthSet"
+	     				value="06" maxlength="2" 
+		 				class="text">
+			   <span id="Month"></span> 
+			    <input type="text" style= "ime-mode:Disabled" name="DaySet" size="1" id="DaySet"
+	     				value="04" maxlength="2" 
+		 				class="text">
+			    <span id="Day"></span>
+			    <input type="text" style= "ime-mode:Disabled" name="HourSet" size="1" id="HourSet"
+	     				value="10" maxlength="2" 
+		 				class="text">
+			    <span id="Hour"></span>
+			    <input type="text" style= "ime-mode:Disabled" name="MinuteSet" size="1" id="MinuteSet"
+	     				value="03" maxlength="2" 
+		 				class="text">
+			    <span id="Minute"></span>
+			    <input type="text" style= "ime-mode:Disabled" name="SecondSet" size="1" id="SecondSet"
+	     				value="47" maxlength="2" 
+		 				class="text">
+			    <span id="Second String String"></span></td>
+	  </tr>
+
+
+
+	</table>
+
+
+	
+	<table width="100%" border="0" cellspacing="0" cellpadding="0" class="table" id="Lockkeys_child" style="display:none">
+	  
+      <tr>
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Keys Lock"></span></div></th>
+		<td><select name="LockKeys" class="list" id="LockKeys" onChange="change(this.options[this.options.selectedIndex].value)">
+            <option value="0" selected></option><option value="1" ></option><option value="2" ></option><option value="3" ></option><option value="4" ></option>
+            </select>&nbsp;&nbsp;<a class="dxs" href="#"><img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="Keys Lock Note"></span></span></a></td>
+	  </tr>
+	  
+	   <tr>
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Phone Lock Time Out"></span></div></th>
+		<td><input name="PhoneLockTimeOut" type="number" style= "ime-mode:Disabled;width: 45px;" class="text" id="PhoneLockTimeOut"  value="0" min="0" max="3600" maxlength="4"> <span id="PhoneLockTimeOut Default and range"></span> </td>
+	  </tr>
+	  
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Phone Unlock PIN"></span></div></th>
+		<td><input name="PhoneUnlockPIN" type="text" style= "ime-mode:Disabled;width: 134px;" class="text" id="PhoneUnlockPIN"  value="1234"  size="15" maxlength="15"> (<span id="PhoneUnlockPIN Default and range"></span>)</td>
+	  </tr>
+	  
+	  
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="Emergency"></span></div></th>
+		<td><input name="EmergencyCall" type="text" style= "ime-mode:Disabled;width: 134px;" class="text" id="EmergencyCall"  value="190,191,193,198" size="15" maxlength="63">&nbsp;&nbsp;<a class="dxs" href="#"><img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="Emergency Note"></span></span></a></td>
+	  </tr>
+
+	  <tr style="display: none">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="EmergencyAllowByeHead"></span></div></th>
+		<td><input type="radio" style="width:25px" name="EmergencyAllowBye" id="EmergencyAllowByeOff" value="EmergencyAllowByeOff"  disabled>
+        <span id="off12"></span>
+        <input type="radio" style="width:25px" name="EmergencyAllowBye" id="EmergencyAllowByeOn" value="EmergencyAllowByeOn"  disabled>
+        <span  id="on12"></span>
+        </td>
+	  </tr>
+	  <tr style="display: none">
+		<th width="47%"><div align="left" style="padding-left:50px"><span id="EmergencyCallerIDHead"></span></div></th>
+		<td><input type="radio" style="width:25px" name="EmergencyCallerID" id="EmergencyCallerIDOff" value="EmergencyCallerIDOff"  disabled>
+        <span id="off13"></span>
+        <input type="radio" style="width:25px" name="EmergencyCallerID" id="EmergencyCallerIDOn" value="EmergencyCallerIDOn"  disabled> 
+        <span  id="on13"></span>
+        </td>
+	  </tr>
+
+	</table>
+	
+	
+	  <tr>
+		<th colspan="2">
+		  <div class="line"></div>
+		  <br>
+		  <div align="center">
+				<input type="submit" name="save" style="padding:0px 10px;" class="button" id="save" value=""  onClick="return Myfun(1)">	
+				<input type="hidden" name="Operate" id="Operate" value=>
+				<input type="hidden" name="currentPage" id="currentPage" value="">
+		  </div>
+        </th>
+	</tr>
+    </form>
+    </table>
+
+    </div>
+
+    <div class="clear"></div>
+</div>
+</div>
+<script type="text/javascript"> 
+function setTab(name,cursel){ 
+if(cursel==3)
+  SetURLCookie("SIP","SIP_child");
+else if(cursel==5)
+  SetURLCookie("SysConfig","Basic_child");
+else if(cursel==9)
+{
+   clearLogFlag();
+}
+cursel_0=cursel; 
+for(var i=1; i<=links_len; i++){ 
+var menu = document.getElementById(name+i); 
+var menudiv = document.getElementById("con_"+name+"_"+i); 
+if(i==cursel){ 
+menu.className="hover"; 
+menudiv.style.display="block"; 
+} 
+else{ 
+menu.className=""; 
+menudiv.style.display="none"; 
+} 
+} 
+} 
+function Next(){ 
+cursel_0++; 
+if (cursel_0>links_len)cursel_0=1 
+setTab(name_0,cursel_0); 
+} 
+var name_0='one'; 
+var cursel_0=1; 
+var links_len,iIntervalId; 
+onload=function(){ 
+var links = document.getElementById("tab1").getElementsByTagName('li') 
+links_len=links.length; 
+for(var i=0; i<links_len; i++){ 
+links[i].onmouseover=function(){ 
+clearInterval(iIntervalId); 
+} 
+} 
+document.getElementById("con_"+name_0+"_"+links_len).parentNode.onmouseover=function(){ 
+clearInterval(iIntervalId); 
+} 
+setTab(name_0,cursel_0); 
+} 
+</script>
+
+</body>
+
+<script src="lang/common.js"></script>
+<script src='lang/br.js'></script>
+<script language="JavaScript">
+document.getElementById("body").style.display="block";
+/* Modified by Yulong on 2017.06.20 for Features page display is hide and bugID are DFV-890, DFV-374. */
+$("#body table").show();
+var element =document.getElementById('');
+if(element){
+	  element.focus();
+	  element.select();
+}
+</script>
+<script>
+var URL=getURLCookie("SysConfig");
+var showID=0;
+if(URL==null)
+   URL="Basic_child";
+var arr=["Basic_child","Time_child","Lockkeys_child"]; 
+for(var i=0;i<arr.length;i++)
+{
+	if(arr[i]==URL)
+	{
+		/* Modified by Yulong on 2017.06.20 for Features page display is hide and bugID are DFV-890, DFV-374. */
+		/*
+	    document.getElementById(URL).style.display="";
+		*/
+		showID = i;
+	}
+	else
+	{
+		if(document.getElementById(arr[i]))
+		   document.getElementById(arr[i]).style.display="none";
+	}
+}
+
+var sel=document.getElementById("LockKeys");
+if(sel)
+{
+	selvalue=sel.value;
+	if(selvalue==0)
+	{
+		document.getElementById("PhoneLockTimeOut").disabled=true;
+		document.getElementById("PhoneUnlockPIN").disabled=true;
+		if(document.getElementById("Operate").value != "Innomedia")
+			document.getElementById("EmergencyCall").disabled=true;
+	}
+	else
+	{
+		document.getElementById("PhoneLockTimeOut").disabled=false;
+		document.getElementById("PhoneUnlockPIN").disabled=false;
+		if(document.getElementById("Operate").value != "Innomedia")
+			document.getElementById("EmergencyCall").disabled=false;
+	}
+}
+
+/* Modified by Yulong on 2017.06.20 for Features page display is hide and bugID are DFV-890, DFV-374. */
+if(arr[showID]==URL)
+{
+	document.getElementById(URL).style.display="";
+}
+
+function SetTimeSNTPchange(value)
+{
+    if(value==127)
+	{
+	   document.getElementById("SNTPServerInput").style.display="";
+	}	
+	else
+	{
+	   document.getElementById("SNTPServerInput").style.display="none";
+	}
+}
+
+function SetTimeBackupSNTPchange(value)
+{
+    if(value==127)
+	{
+	   document.getElementById("SNTPBackupServerInput").style.display="";
+	}	
+	else
+	{
+	   document.getElementById("SNTPBackupServerInput").style.display="none";
+	}
+}
+
+function SetTimeModechange(value)
+{
+    var selectvalue;
+    var obj;
+
+	var ampm_enable = "";
+
+    if(value==0)
+	{
+	   document.getElementById("SNTPServerSelect").style.display="";
+	   obj=document.getElementById("SelectSNTPAddress");
+       selectvalue=obj.options[obj.options.selectedIndex].value;
+	   SetTimeSNTPchange(selectvalue);
+	   
+	   document.getElementById("SNTPBackupServerSelect").style.display="";
+	   obj=document.getElementById("SelectSNTPAddressBackup");
+       selectvalue=obj.options[obj.options.selectedIndex].value;
+	   SetTimeBackupSNTPchange(selectvalue);
+	   
+	   document.getElementById("DSTInterval").style.display="";
+	   document.getElementById("TimeZone").style.display="";
+	   document.getElementById("ManualTime").style.display="none";
+	   
+	   document.getElementById("TimeFormatAMPM").style.display="none";
+
+	   /* DFVB-4085, Added by Pengsr, 2021-12-03. */
+	   if(ampm_enable==0)
+	   {
+		   document.getElementById("TimeFormatAMPMEnable").style.display="none";
+	   }
+	      	
+	   DSTModeBlock();
+	   if(document.getElementById("DaylightSaveingOn").checked)
+	   {
+			if(document.getElementById("DaylightSaveingWeek").checked)
+			{
+				blockWeek();
+			}
+			else
+			{
+				
+				blockDate();
+			}
+		}
+	}		
+	else if(value==1)
+	{
+	   document.getElementById("SNTPServerSelect").style.display="none";
+       document.getElementById("SNTPServerInput").style.display="none";
+	   document.getElementById("SNTPBackupServerSelect").style.display="none";
+	   document.getElementById("SNTPBackupServerInput").style.display="none";
+	   document.getElementById("DSTInterval").style.display="";
+	   document.getElementById("TimeZone").style.display="";
+	   document.getElementById("ManualTime").style.display="none";
+	   document.getElementById("TimeFormatAMPM").style.display="none";
+
+	   /* DFVB-4085, Added by Pengsr, 2021-12-03. */
+	   if(ampm_enable==0)
+	   {
+		   document.getElementById("TimeFormatAMPMEnable").style.display="none";
+	   }
+	   
+	   DSTModeBlock();
+	   if(document.getElementById("DaylightSaveingOn").checked)
+	   {
+			if(document.getElementById("DaylightSaveingWeek").checked)
+			{
+				
+				blockWeek();
+			}
+			else
+			{
+				
+				blockDate();
+			}
+		}
+	}
+	else if(value==2)
+	{
+       document.getElementById("SNTPServerSelect").style.display="none";
+       document.getElementById("SNTPServerInput").style.display="none";
+	   document.getElementById("SNTPBackupServerSelect").style.display="none";
+	   document.getElementById("SNTPBackupServerInput").style.display="none";
+	   document.getElementById("DSTInterval").style.display="none";
+	   document.getElementById("TimeZone").style.display="none";
+	   document.getElementById("ManualTime").style.display="";
+
+	   /* DFVB-4085, Added by Pengsr, 2021-12-03. */
+	   document.getElementById("TimeFormatAMPMEnable").style.display="";
+	   
+	   if(document.getElementById("TimeFormatAMPMPM").checked)
+	   {
+			document.getElementById("TimeFormatAMPM").style.display="none";
+	   }
+	   else
+	   {
+			document.getElementById("TimeFormatAMPM").style.display="";
+	   }
+	   
+       DSTModeNone();
+	}	
+}
+var selectvalue;
+var obj;	
+obj=document.getElementById("SetTimeMode");
+selectvalue=obj.options[obj.options.selectedIndex].value;
+SetTimeModechange(selectvalue);
+
+if(SysConfig.BackLight[0].checked)
+	EnableControl(1);
+if(SysConfig.SNTPType[0].checked)
+	EnableControl(12);
+if(SysConfig.SNTPType[1].checked)
+	EnableControl(13);
+if(SysConfig.SNTPType[2].checked)
+	EnableControl(14);
+if(SysConfig.ScreenSaver[0].checked)
+	EnableControl(19);	
+if(SysConfig.ScreenSaver[1].checked)
+	EnableControl(20);	
+
+</script>
+</html>
+

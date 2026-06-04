@@ -27,13 +27,13 @@ except ImportError:  # pragma: no cover
     class _Noop:
         def __init__(self, *_: Any, **__: Any) -> None: ...
 
-        def __getattr__(self, _: str) -> Any:  # type: ignore[override]
+        def __getattr__(self, _: str) -> Any:
             return lambda *a, **kw: None
 
     Counter = Gauge = Histogram = _Noop  # type: ignore[assignment,misc]
     REGISTRY = _Noop()  # type: ignore[assignment]
 
-    def generate_latest(_=None) -> bytes:  # type: ignore[no-untyped-def]
+    def generate_latest(*_: Any, **__: Any) -> bytes:  # type: ignore[misc]
         return b""
 
 
@@ -84,10 +84,10 @@ if HAS_PROMETHEUS:
         "mm_update_apply_total", "Update applications", ["result"]
     )
 else:  # pragma: no cover
-    APP_INFO = DEVICES_TOTAL = PING_TOTAL = PING_LATENCY = _Noop()  # type: ignore[name-defined]
-    COLLECT_DURATION = COLLECT_FAILURES = WEBHOOK_ATTEMPTS = WEBHOOK_DURATION = _Noop()  # type: ignore[name-defined]
-    UPDATE_CHECKS = UPDATE_APPLIES = _Noop()  # type: ignore[name-defined]
+    APP_INFO = DEVICES_TOTAL = PING_TOTAL = PING_LATENCY = _Noop()  # type: ignore[assignment]
+    COLLECT_DURATION = COLLECT_FAILURES = WEBHOOK_ATTEMPTS = WEBHOOK_DURATION = _Noop()  # type: ignore[assignment]
+    UPDATE_CHECKS = UPDATE_APPLIES = _Noop()  # type: ignore[assignment]
 
 
 def render_text() -> tuple[bytes, str]:
-    return generate_latest(REGISTRY), CONTENT_TYPE_LATEST  # type: ignore[arg-type]
+    return generate_latest(REGISTRY), CONTENT_TYPE_LATEST

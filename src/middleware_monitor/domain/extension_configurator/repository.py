@@ -30,6 +30,7 @@ from .defaults import default_config_padrao
 __all__ = [
     "add_devices_as_lines",
     "auto_link_lines_by_ip",
+    "clone_environment",
     "create_environment",
     "create_reapply_event",
     "create_run",
@@ -53,6 +54,7 @@ __all__ = [
     "save_lines",
     "unlink_line_from_device",
     "update_environment",
+    "update_line_macs",
     "update_line_status",
 ]
 
@@ -110,6 +112,25 @@ def create_environment(
     db.add(env)
     db.flush()
     return env
+
+
+def clone_environment(
+    db: DBSession, src: ExtensionEnvironment, *, nome: str | None = None,
+) -> ExtensionEnvironment:
+    """Cria um NOVO ambiente copiando o modelo e TODA a config padrão de `src`.
+
+    Não copia ramais (linhas) nem histórico de execuções — só o "molde" do
+    ambiente. `merged_config_padrao` garante que o conjunto integral de chaves
+    (servidor SIP, credenciais web/SIP, function keys, softkeys, idioma, etc.)
+    seja levado. Nome padrão "Cópia de {nome}"; colisão de slug é resolvida por
+    `create_environment`.
+    """
+    new_nome = (nome or "").strip() or f"Cópia de {src.nome}"
+    new_env = create_environment(db, nome=new_nome, modelo_telefone=src.modelo_telefone)
+    new_env.config_padrao = json.dumps(merged_config_padrao(src), ensure_ascii=False)
+    new_env.updated_at = _now()
+    db.flush()
+    return new_env
 
 
 def list_environments(db: DBSession) -> list[ExtensionEnvironment]:
@@ -293,6 +314,28 @@ def update_line_status(
     db.flush()
 
 
+def update_line_macs(db: DBSession, env_id: str, mac_by_ip: dict[str, str]) -> int:
+    """Persiste o MAC coletado (via ARP) nas linhas do ambiente, casado por IP.
+
+    Chamado pelo monitor de ping ao vivo — precisa ser idempotente e barato:
+    só grava quando o MAC é novo ou mudou (nada a fazer nas rodadas seguintes).
+    Retorna quantas linhas foram efetivamente atualizadas.
+    """
+    if not mac_by_ip:
+        return 0
+    now = _now()
+    changed = 0
+    for line in list_lines(db, env_id):
+        mac = mac_by_ip.get(line.ip or "")
+        if mac and line.ultimo_mac != mac:
+            line.ultimo_mac = mac
+            line.updated_at = now
+            changed += 1
+    if changed:
+        db.flush()
+    return changed
+
+
 def create_run(
     db: DBSession, env_id: str, *, total: int, forcado: bool, operador: str | None,
 ) -> ExtensionApplyRun:
@@ -350,12 +393,15 @@ def finish_run_line(
     status_depois: str,
     erro: str | None = None,
     modelo: str | None = None,
+    registro_sip: str | None = None,
 ) -> None:
     run_line.status_depois = status_depois
     if erro is not None:
         run_line.erro = erro
     if modelo is not None:
         run_line.modelo = modelo
+    if registro_sip is not None:
+        run_line.registro_sip = registro_sip
     db.flush()
 
 

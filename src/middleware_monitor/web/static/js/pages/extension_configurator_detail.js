@@ -10,6 +10,18 @@ let pollTimer = null;
 let currentRun = null;
 let modeloTelefone = '';
 let isHtek = false;
+let envNome = '';
+
+// ----- Monitor de ping ao vivo -------------------------------------------------
+// Liga/desliga via toggle. Enquanto ligado, pinga os IPs preenchidos na planilha
+// a cada N segundos e pinta uma bolinha antes do IP: verde = responde, vermelho =
+// sem resposta. Para sozinho ao salvar, aplicar, recarregar ou sair da tela.
+let monitorOn = false;
+let monitorTimer = null;
+let monitorBusy = false;
+let monitorAbort = null;           // aborta o fetch em voo ao desligar/sair da tela
+let pingRounds = 0;                // nº de rodadas concluídas (sensação de tempo real)
+const pingStatusByIp = new Map();  // ip -> true (up) | false (down) | undefined (aguardando)
 
 // Charset "seguro" para senhas SIP no firmware HTEK. O aparelho aceita o XML
 // mas falha o registro silenciosamente se a senha tem chars fora desse conjunto
@@ -23,10 +35,11 @@ function senhaProblematica(senha) {
 }
 
 const STATUS_META = {
-  applied:  { color: "green",  label: "aplicado" },
-  outdated: { color: "yellow", label: "desatualizado" },
-  pending:  { color: "gray",   label: "pendente" },
-  error:    { color: "red",    label: "erro" },
+  applied:    { color: "green",  label: "aplicado" },
+  registered: { color: "green",  label: "registrado" },
+  outdated:   { color: "yellow", label: "desatualizado" },
+  pending:    { color: "gray",   label: "pendente" },
+  error:      { color: "red",    label: "erro" },
 };
 const statusLabel = (s) => (STATUS_META[s] || STATUS_META.pending).label;
 
@@ -37,6 +50,7 @@ const statusLabel = (s) => (STATUS_META[s] || STATUS_META.pending).label;
 const COLUMNS = [
   { type: "hidden",   name: "id" },
   { type: "checkbox", name: "_sel",              title: "✓",             width: 36 },
+  { type: "text",     name: "_preview",          title: "👁",            width: 40, readOnly: true },
   { type: "text",     name: "ip",                title: "IP",            width: 140 },
   { type: "text",     name: "nome_visivel",      title: "Nome visível",  width: 180 },
   { type: "text",     name: "numero_ramal",      title: "Ramal",         width: 100 },
@@ -53,6 +67,14 @@ const COLUMNS = [
 ];
 const COL_INDEX = Object.fromEntries(COLUMNS.map((c, i) => [c.name, i]));
 const EDITABLE_FIELDS = ["ip","nome_visivel","numero_ramal","user_auth","senha_sip","servidor_sip","numero_abreviado"];
+// Índices das colunas que o usuário edita. Mudanças fora delas (MAC/status/device
+// escritos pelo monitor de ping ou pelo polling de aplicação, checkbox de seleção)
+// NÃO devem marcar a planilha como "não salva" nem disparar autosave.
+const EDITABLE_COL_IDX = new Set(EDITABLE_FIELDS.map((f) => COL_INDEX[f]));
+function recordsTouchEditable(records) {
+  if (!Array.isArray(records) || records.length === 0) return false;
+  return records.some((r) => EDITABLE_COL_IDX.has(parseInt(r.x)));
+}
 
 // Mapas auxiliares: line_id -> { device_id, device_name } e row_idx -> line_id
 const lineDeviceMap = new Map();
@@ -75,6 +97,7 @@ function rowToArray(l) {
   return COLUMNS.map(c => {
     switch (c.name) {
       case "_sel":     return false;
+      case "_preview": return l.id ? "👁" : "";  // ícone clicável só em linha salva
       case "_device":  return deviceCellLabel(l);
       case "_status":  return statusLabel(l.status || "pending");
       case "_modelo":  return l.ultimo_modelo || "";
@@ -398,6 +421,11 @@ function buildSheet(linhas) {
     onafterchanges: (_instance, records) => {
       refreshSelectedCount();
       if (_silentMutation) return;
+      // Backstop contra autosave em loop: se a mudança só tocou colunas
+      // readonly/internas (MAC do monitor, status do polling, checkbox), ignora.
+      // (O Jspreadsheet às vezes dispara onafterchanges async, escapando do
+      // guard _silentMutation — por isso checamos as colunas afetadas aqui.)
+      if (!recordsTouchEditable(records)) { _pasteInProgress = false; return; }
       if (_pasteInProgress) {
         _pasteInProgress = false;
         scheduleAutosave();
@@ -411,6 +439,12 @@ function buildSheet(linhas) {
       }
       smartAutofill(records);
       scheduleAutosave();
+    },
+    updateTable: (_instance, cell, col, _row, val) => {
+      // Decora a célula de IP com a classe de status do monitor. Roda a cada
+      // render do Jspreadsheet, então as bolinhas sobrevivem a edições/refresh.
+      if (col !== COL_INDEX.ip) return;
+      applyPingClass(cell, String(val ?? '').trim());
     },
     oneditionstart: (_instance, cell, x, _y) => {
       if (x !== COL_INDEX.ip) return;
@@ -427,6 +461,7 @@ function buildSheet(linhas) {
   });
   attachFillPreview(container);
   attachDevicePopover(container);
+  attachPreviewClick(container);
 }
 
 // ----- Popover de ações no device vinculado (ver / desvincular) ---------------
@@ -601,7 +636,7 @@ function setCell(rowIdx, fieldName, value) {
 }
 
 function renderStatusPills(linhas) {
-  const counts = { applied: 0, outdated: 0, pending: 0, error: 0 };
+  const counts = { applied: 0, registered: 0, outdated: 0, pending: 0, error: 0 };
   linhas.forEach(l => {
     const s = l.status || "pending";
     counts[s] = (counts[s] || 0) + 1;
@@ -619,9 +654,11 @@ function renderStatusPills(linhas) {
 }
 
 async function reload() {
+  stopMonitor();  // dados/planilha recriados — recomeça limpo se o usuário religar
   const env = await api(`/api/extension-configurator/environments/${encodeURIComponent(envId)}`);
   modeloTelefone = env.modelo_telefone || '';
   isHtek = String(modeloTelefone).toLowerCase().startsWith("htek");
+  envNome = env.nome || '';
   $('#ec-title').textContent = env.nome;
   $('#ec-subtitle').textContent = `${modeloTelefone} · ${env.linhas.length} ${env.linhas.length === 1 ? 'ramal' : 'ramais'}`;
   $('#ec-config-link').href = `/extension-configurator/environments/${encodeURIComponent(envId)}/config`;
@@ -641,6 +678,7 @@ async function save({ silent = false } = {}) {
     // silenciosas pra nao re-disparar autosave nem smartAutofill)
     env.linhas.forEach((l, i) => {
       setCellSilent(i, "id", l.id);
+      setCellSilent(i, "_preview", l.id ? "👁" : "");  // habilita o olho em linhas recém-salvas
       setCellSilent(i, "_status", statusLabel(l.status || "pending"));
       setCellSilent(i, "_device", deviceCellLabel(l));
       lineDeviceMap.set(l.id, l.device_id ? {
@@ -662,6 +700,7 @@ function setApplyButtonsDisabled(v) {
 }
 
 async function apply({ selectedIds = null } = {}) {
+  stopMonitor();  // os aparelhos reiniciam ao aplicar — ping ficaria vermelho à toa
   try { await save(); } catch (_e) { return; }
   const force = $('#ec-force').checked;
 
@@ -761,8 +800,342 @@ async function pollRun() {
   } catch (_e) { /* swallow */ }
 }
 
+// ----- Monitor de ping: implementação ----------------------------------------
+
+// Aplica a classe de status (up/down/aguardando) numa <td> da coluna IP.
+function applyPingClass(cell, ip) {
+  cell.classList.remove('ec-ping-cell', 'ec-ping-up', 'ec-ping-down');
+  if (!monitorOn || !ip) return;
+  cell.classList.add('ec-ping-cell');
+  const st = pingStatusByIp.get(ip);
+  if (st === true) cell.classList.add('ec-ping-up');
+  else if (st === false) cell.classList.add('ec-ping-down');
+  // undefined => só a bolinha cinza "aguardando" (ec-ping-cell sozinha)
+}
+
+// ----- Chip "ao vivo": feedback de que os pings estão de fato rolando ---------
+
+function showPingStatus() {
+  const el = $('#ec-ping-panel');
+  if (!el) return;
+  el.classList.remove('hidden');
+  el.classList.add('flex');
+}
+
+function hidePingStatus() {
+  const el = $('#ec-ping-panel');
+  if (!el) return;
+  el.classList.add('hidden');
+  el.classList.remove('flex');
+  const bar = $('#ec-ping-progress-bar');
+  if (bar) { bar.style.transition = 'none'; bar.style.width = '0%'; }
+  const rounds = $('#ec-ping-rounds'); if (rounds) rounds.textContent = '#0';
+  const tally = $('#ec-ping-tally'); if (tally) tally.textContent = '—';
+}
+
+// Barra que preenche de 0→100% ao longo do intervalo, dando a sensação de
+// contagem regressiva até o próximo ping. Reinicia a cada agendamento.
+function animateProgressBar(durationMs) {
+  const bar = $('#ec-ping-progress-bar');
+  if (!bar) return;
+  bar.style.transition = 'none';
+  bar.style.width = '0%';
+  void bar.offsetWidth;  // força reflow pra animação reiniciar
+  bar.style.transition = `width ${durationMs}ms linear`;
+  bar.style.width = '100%';
+}
+
+// Pisca o painel quando uma rodada acaba de chegar (confirmação visual).
+function flashPingChip() {
+  const el = $('#ec-ping-panel');
+  if (!el) return;
+  el.classList.remove('ec-ping-flash');
+  void el.offsetWidth;
+  el.classList.add('ec-ping-flash');
+}
+
+function updatePingChip(res) {
+  let up = 0, down = 0;
+  Object.values(res || {}).forEach((r) => { if (r.online) up++; else down++; });
+  pingRounds += 1;
+  const rounds = $('#ec-ping-rounds'); if (rounds) rounds.textContent = `#${pingRounds}`;
+  const tally = $('#ec-ping-tally');
+  if (tally) tally.textContent = `🟢 ${up}  🔴 ${down}`;
+  flashPingChip();
+}
+
+function monitorIntervalMs() {
+  let s = parseInt($('#ec-ping-interval')?.value, 10);
+  if (!Number.isFinite(s)) s = 5;
+  s = Math.min(3600, Math.max(2, s));  // piso de 2s p/ não martelar a rede
+  return s * 1000;
+}
+
+// IPs únicos e não-vazios da planilha (a validação fina de IPv4 é no backend).
+function collectMonitorIps() {
+  if (!sheet) return [];
+  const ipx = COL_INDEX.ip;
+  const set = new Set();
+  for (const row of sheet.getData()) {
+    const ip = String(row[ipx] ?? '').trim();
+    if (ip) set.add(ip);
+  }
+  return [...set];
+}
+
+// Repinta todas as células de IP visíveis a partir do mapa de status atual.
+function decorateIpCells() {
+  if (!sheet) return;
+  const ipx = COL_INDEX.ip;
+  document.querySelectorAll(`#ec-spreadsheet td[data-x="${ipx}"]`).forEach((td) => {
+    const y = parseInt(td.dataset.y);
+    if (!Number.isFinite(y)) return;
+    applyPingClass(td, String(sheet.getValueFromCoords(ipx, y) ?? '').trim());
+  });
+}
+
+// Preenche a célula MAC da linha (casada por IP) quando o ARP resolve um valor
+// novo. Silencioso pra não disparar autosave/autofill; o backend já persistiu.
+function applyMacToCell(ip, mac) {
+  const idx = findRowIdxByIp(ip);
+  if (idx < 0) return;
+  const cur = String(sheet.getValueFromCoords(COL_INDEX._mac, idx) ?? '');
+  if (cur !== mac) setCellSilent(idx, '_mac', mac);
+}
+
+async function pingRound() {
+  if (!monitorOn || monitorBusy) return;
+  const ips = collectMonitorIps();
+  if (!ips.length) { decorateIpCells(); return; }
+  monitorBusy = true;
+  monitorAbort = new AbortController();
+  try {
+    const res = await api('/api/extension-configurator/ping', {
+      method: 'POST', body: { ips, environment_id: envId }, signal: monitorAbort.signal,
+    });
+    if (!monitorOn) return;  // desligou durante o request
+    Object.entries(res || {}).forEach(([ip, r]) => {
+      pingStatusByIp.set(ip, !!r.online);
+      if (r.mac) applyMacToCell(ip, r.mac);  // MAC coletado via ARP → preenche a coluna
+    });
+    decorateIpCells();
+    updatePingChip(res);
+  } catch (_e) {
+    // abortado (desligou/saiu) ou rede instável: não quebra, tenta no próximo ciclo
+  } finally {
+    monitorBusy = false;
+    monitorAbort = null;
+  }
+}
+
+// setTimeout encadeado (não setInterval): a próxima rodada só agenda depois da
+// anterior terminar, evitando empilhar requests se o ping demorar.
+function scheduleNextPing() {
+  if (monitorTimer) { clearTimeout(monitorTimer); monitorTimer = null; }
+  if (!monitorOn) return;
+  const ms = monitorIntervalMs();
+  animateProgressBar(ms);  // barra preenche enquanto aguarda a próxima rodada
+  monitorTimer = setTimeout(async () => {
+    await pingRound();
+    scheduleNextPing();
+  }, ms);
+}
+
+function startMonitor() {
+  if (monitorOn) return;
+  monitorOn = true;
+  pingRounds = 0;
+  const t = $('#ec-ping-toggle'); if (t) t.checked = true;
+  pingStatusByIp.clear();
+  showPingStatus();
+  decorateIpCells();                       // pinta tudo como "aguardando"
+  pingRound().then(scheduleNextPing);      // 1ª rodada imediata, depois agenda
+}
+
+function stopMonitor() {
+  monitorOn = false;
+  if (monitorTimer) { clearTimeout(monitorTimer); monitorTimer = null; }
+  if (monitorAbort) { monitorAbort.abort(); monitorAbort = null; }  // mata o fetch em voo
+  const t = $('#ec-ping-toggle'); if (t) t.checked = false;
+  pingStatusByIp.clear();
+  hidePingStatus();
+  decorateIpCells();                       // limpa as bolinhas
+}
+
+// ----- Preview (dry-run): mostra o que será escrito no aparelho ----------------
+
+function getActiveRowIndex() {
+  // sheet.selectedCell = [x1, y1, x2, y2] quando há célula/seleção ativa.
+  const sc = sheet && sheet.selectedCell;
+  if (!Array.isArray(sc) || sc.length < 2) return -1;
+  const y = parseInt(sc[1]);
+  return Number.isFinite(y) ? y : -1;
+}
+
+let _previewModal = null;
+function closePreviewModal() {
+  if (_previewModal && _previewModal.parentNode) _previewModal.parentNode.removeChild(_previewModal);
+  _previewModal = null;
+  document.removeEventListener('keydown', _previewEsc, true);
+}
+function _previewEsc(e) { if (e.key === 'Escape') closePreviewModal(); }
+
+function showPreviewModal(data) {
+  closePreviewModal();
+  const meta = STATUS_META[data.status] || STATUS_META.pending;
+  const mudarBadge = data.vai_mudar
+    ? '<span class="px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-500/30">vai aplicar</span>'
+    : '<span class="px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-500/15 text-green-400 ring-1 ring-inset ring-green-500/30">em dia</span>';
+  const linhas = (data.campos || []).map((c) => `
+    <tr class="border-b border-gray-800/60">
+      <td class="py-1.5 pr-4 text-gray-400 align-top whitespace-nowrap">${esc(c.label)}</td>
+      <td class="py-1.5 text-gray-100 font-mono break-all">${esc(c.valor)}</td>
+    </tr>`).join('');
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;padding:24px;';
+  overlay.innerHTML = `
+    <div style="background:#111827;border:1px solid #374151;border-radius:14px;max-width:720px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px -20px rgba(0,0,0,0.7);">
+      <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid #1f2937;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14px;font-weight:600;color:#f3f4f6;">Pré-visualização — ramal ${esc(data.numero_ramal || '—')}</div>
+          <div style="font-size:11px;color:#9ca3af;margin-top:2px;">${esc(data.modelo_telefone || '')} · ${esc(data.ip || 'sem IP')}</div>
+        </div>
+        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset bg-${meta.color}-500/15 text-${meta.color}-400 ring-${meta.color}-500/30">${meta.label}</span>
+        ${mudarBadge}
+        <button data-act="close" style="background:transparent;border:none;color:#9ca3af;font-size:20px;cursor:pointer;line-height:1;padding:0 4px;">×</button>
+      </div>
+      <div style="padding:14px 18px;overflow:auto;">
+        <p style="font-size:11px;color:#6b7280;margin:0 0 10px;">O que será gravado no aparelho ao aplicar (senhas mascaradas). Nada é enviado nesta tela.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">${linhas || '<tr><td style="color:#6b7280;padding:8px 0;">Sem campos.</td></tr>'}</table>
+        <details style="margin-top:14px;">
+          <summary style="cursor:pointer;color:#93c5fd;font-size:12px;">Ver XML cru</summary>
+          <pre style="margin-top:8px;background:#0b1220;border:1px solid #1f2937;border-radius:8px;padding:10px;font-size:11px;color:#cbd5e1;overflow:auto;max-height:280px;white-space:pre-wrap;word-break:break-all;">${esc(data.xml || '')}</pre>
+        </details>
+      </div>
+    </div>`;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closePreviewModal(); });
+  overlay.querySelector('[data-act="close"]').addEventListener('click', closePreviewModal);
+  document.body.appendChild(overlay);
+  _previewModal = overlay;
+  document.addEventListener('keydown', _previewEsc, true);
+}
+
+async function openPreviewForLineId(lineId) {
+  if (!lineId) { toast.info('Salve a planilha antes de pré-visualizar esta linha.'); return; }
+  try {
+    const data = await api(
+      `/api/extension-configurator/environments/${encodeURIComponent(envId)}/lines/${encodeURIComponent(lineId)}/preview`,
+    );
+    showPreviewModal(data);
+  } catch (e) {
+    toast.error('Falha ao gerar preview: ' + e.message);
+  }
+}
+
+// Clique no ícone 👁 da linha → preview daquela linha (jeito intuitivo, não
+// precisa pré-selecionar célula). A coluna _preview só tem 👁 em linhas salvas.
+function attachPreviewClick(container) {
+  container.addEventListener('click', (e) => {
+    const td = e.target.closest && e.target.closest('td');
+    if (!td || td.dataset.x == null) return;
+    if (parseInt(td.dataset.x) !== COL_INDEX._preview) return;
+    const yi = parseInt(td.dataset.y);
+    if (!Number.isFinite(yi)) return;
+    const row = sheet.getData()[yi];
+    const lineId = row && row[COL_INDEX.id];
+    if (!lineId) { toast.info('Salve a planilha antes de pré-visualizar (linha ainda sem ID).'); return; }
+    e.stopPropagation();
+    openPreviewForLineId(String(lineId));
+  });
+}
+
+// Botão da barra: usa a linha da célula atualmente selecionada (atalho).
+async function previewActiveLine() {
+  const idx = getActiveRowIndex();
+  if (idx < 0) { toast.info('Clique no ícone 👁 da linha que quer pré-visualizar (ou selecione uma célula da linha).'); return; }
+  const row = sheet.getData()[idx];
+  const lineId = row && row[COL_INDEX.id];
+  await openPreviewForLineId(lineId ? String(lineId) : '');
+}
+
+// ----- Exportar ambiente (.mwrenv cifrado) -------------------------------------
+
+function openExportModal() {
+  $('#ec-export-pass').value = '';
+  $('#ec-export-modal').classList.remove('hidden');
+  $('#ec-export-pass').focus();
+}
+function closeExportModal() { $('#ec-export-modal').classList.add('hidden'); }
+
+async function doExportEnv() {
+  const passphrase = $('#ec-export-pass').value;
+  if (!passphrase) { toast.error('Informe uma passphrase'); return; }
+  const btn = $('#ec-export-confirm');
+  btn.disabled = true;
+  try {
+    // O endpoint devolve o envelope JSON cifrado; baixamos como .mwrenv.
+    const envelope = await api(
+      `/api/extension-configurator/environments/${encodeURIComponent(envId)}/export`,
+      { method: 'POST', body: { passphrase } },
+    );
+    const blob = new Blob([JSON.stringify(envelope)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${envId}.mwrenv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    closeExportModal();
+    toast.success('Ambiente exportado (cifrado)');
+  } catch (e) {
+    toast.error('Falha ao exportar: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ----- Duplicar ambiente -------------------------------------------------------
+
+function openDupModal() {
+  $('#ec-dup-nome').value = `Cópia de ${envNome}`;
+  $('#ec-dup-confirm').disabled = false;
+  $('#ec-dup-modal').classList.remove('hidden');
+  setTimeout(() => { $('#ec-dup-nome').focus(); $('#ec-dup-nome').select(); }, 50);
+}
+function closeDupModal() { $('#ec-dup-modal').classList.add('hidden'); }
+
+async function doDuplicate() {
+  const nome = $('#ec-dup-nome').value.trim();
+  const btn = $('#ec-dup-confirm');
+  btn.disabled = true;
+  try {
+    const env = await api(
+      `/api/extension-configurator/environments/${encodeURIComponent(envId)}/duplicate`,
+      { method: 'POST', body: { nome: nome || undefined } },
+    );
+    // Vai direto pro novo ambiente para cadastrar os ramais.
+    location.href = `/extension-configurator/environments/${encodeURIComponent(env.id)}`;
+  } catch (e) {
+    toast.error('Falha ao duplicar: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
 // --- handlers ---
+// Salvar é ação na própria tela → mantém o monitor ativo (só sair da tela desliga).
 $('#ec-save').addEventListener('click', save);
+$('#ec-preview').addEventListener('click', previewActiveLine);
+$('#ec-duplicate').addEventListener('click', openDupModal);
+$('#ec-dup-cancel').addEventListener('click', closeDupModal);
+$('#ec-dup-confirm').addEventListener('click', doDuplicate);
+$('#ec-dup-modal').addEventListener('click', (e) => { if (e.target.id === 'ec-dup-modal') closeDupModal(); });
+$('#ec-export').addEventListener('click', openExportModal);
+$('#ec-export-cancel').addEventListener('click', closeExportModal);
+$('#ec-export-confirm').addEventListener('click', doExportEnv);
+$('#ec-export-modal').addEventListener('click', (e) => { if (e.target.id === 'ec-export-modal') closeExportModal(); });
 $('#ec-apply').addEventListener('click', () => apply());
 $('#ec-apply-selected').addEventListener('click', () => {
   const ids = getSelectedIds();
@@ -790,6 +1163,16 @@ $('#ec-run-cancel').addEventListener('click', async () => {
     toast.info('Cancelamento solicitado');
   } catch (e) { toast.error(e.message); }
 });
+
+$('#ec-ping-toggle').addEventListener('change', (e) => {
+  if (e.target.checked) startMonitor(); else stopMonitor();
+});
+$('#ec-ping-interval').addEventListener('change', () => {
+  if (monitorOn) scheduleNextPing();  // aplica o novo intervalo na hora
+});
+
+// Sair da tela (navegar/fechar aba) encerra o monitor e zera o timer.
+window.addEventListener('pagehide', stopMonitor);
 
 pollTimer = setInterval(() => { if (currentRun) pollRun(); }, 1500);
 

@@ -62,25 +62,67 @@ from middleware_monitor.web import pages as web_pages
 log = get_logger("app")
 
 
+# CSP em modo *Report-Only*: o navegador NÃO bloqueia nada — apenas reporta
+# violações no console. Serve para medir a superfície atual (Tailwind Play CDN
+# inline, jsdelivr, estilos inline) antes de, no futuro, endurecer e impor uma
+# CSP real. A política reflete o uso atual para não gerar ruído, mas já fixa
+# object-src/base-uri/frame-ancestors (não usados → seguro).
+_CSP_REPORT_ONLY = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data:; "
+    "font-src 'self' data: https://cdn.jsdelivr.net; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'"
+)
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "same-origin")
         response.headers.setdefault("X-Frame-Options", "DENY")
-        if request.url.path.startswith("/api"):
+        path = request.url.path
+        if path.startswith("/api"):
             response.headers.setdefault("Cache-Control", "no-store")
-        elif request.url.path.startswith("/static"):
+        elif path.startswith("/static"):
             # Assets revalidam a cada load (ETag/Last-Modified → 304 quando não
             # mudou, refetch quando muda). Evita servir JS/CSS/módulos antigos
             # do cache do navegador após um deploy/reinício.
             response.headers.setdefault("Cache-Control", "no-cache")
+        else:
+            # Só nos documentos HTML (não /api, não /static).
+            response.headers.setdefault(
+                "Content-Security-Policy-Report-Only", _CSP_REPORT_ONLY,
+            )
         return response
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
     configure_logging(settings.log_level, json=settings.log_json)
+
+    # Segurança: o default 'change-me' assina as sessões com chave conhecida.
+    # No modo desktop o secret.key é gerado automaticamente; em modo servidor/
+    # headless avisa alto. Hard-fail só quando APP_REQUIRE_SECRET_KEY=1, para
+    # não quebrar quem hoje sobe com o default.
+    if settings.secret_key == "change-me":
+        if settings.require_secret_key:
+            raise RuntimeError(
+                "APP_SECRET_KEY nao configurado (valor default 'change-me'). "
+                "Defina APP_SECRET_KEY ou remova APP_REQUIRE_SECRET_KEY."
+            )
+        log.warning(
+            "insecure_secret_key",
+            detail=(
+                "APP_SECRET_KEY usando default 'change-me' — sessoes assinadas com "
+                "chave conhecida. Defina APP_SECRET_KEY em producao."
+            ),
+        )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:

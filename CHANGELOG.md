@@ -2,6 +2,54 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.6.0] — 2026-06-03
+
+### Added
+- **Novos fabricantes no Configurador de Ramais:**
+  - **Yealink (T3x/T4x)** — engenharia validada contra T31G (fw 124.86.104.1).
+    HTTPS com cert self-signed (`verify=False`), login com senha cifrada em
+    **RSA no cliente** (PKCS#1 v1.5), token CSRF `g_strToken` e envio de config
+    via import `localcfg`.
+  - **Intelbras S3002 (linha S / firmware GoAhead)** — adapter próprio,
+    **distinto do V-series** (RapidLogic). Login plaintext com sessão por IP,
+    discover via `/home.asp` e envio de conta SIP por *replay* de formulário.
+    **Paridade de configuração com o V5501:** conta SIP, troca de credencial web,
+    teclas programáveis e **bloqueio de teclado/menu** (`SysConfig.asp` →
+    `SaveSysCfg`, escopado por `currentPage=Lockkeys_child`, preservando os
+    números de emergência via replay). `keylock_enable` 0/1/2 é mapeado para o
+    `LockKeys` do S3002 e o PIN (`keylock_password`) exige 4–15 dígitos.
+    Validado em lab (fw V1.7.0.010412359).
+- **Catálogo de softkeys por fabricante** (`/config` → teclas programáveis): a
+  UI passa a listar os **tipos de tecla nativos do fabricante** do modelo
+  selecionado (em vez de uma lista genérica), expondo só os tipos com encoding
+  confirmado. No FlyingVoice isso inclui **Menu**, DND, Histórico, Diretório,
+  LDAP, Status, Paging, alternância de conta, etc.
+- **Seleção da conta SIP (1 ou 2) por fabricante.** O seletor de conta só
+  habilita "Conta 2" onde o mapeamento está confirmado (Yealink); demais
+  fabricantes seguem aplicando na conta 1.
+- **Verificação de registro SIP pós-aplicação** (opt-in `verificar_registro_sip`):
+  depois de aplicar e o telefone reiniciar, confirma via USCall se o ramal
+  voltou a **registrar no PBX**. Consulta em lote (1 request cobre todo o run)
+  ou por ramal. Snapshot do registro gravado no relatório de execução
+  (migration `0005`).
+- **Export/import de ambientes cifrado por passphrase** (`export_crypto`):
+  envelope portátil (PBKDF2-HMAC-SHA256 + Fernet) que pode ser importado em
+  outra instalação desde que se conheça a passphrase — diferente do `SecretBox`,
+  atrelado à instalação.
+- **Monitor de ping ao vivo na tela Ambiente** e **coleta de MAC via ARP**.
+- **Duplicar ambiente** (lista e detalhe): cria um novo ambiente copiando o
+  modelo do telefone e **toda a config padrão** (servidor SIP, credenciais,
+  teclas programáveis, idioma, etc.). Os **ramais não** são copiados — o novo
+  ambiente nasce vazio para receber outros telefones.
+
+### Fixed
+- **FlyingVoice — conta da softkey de discagem rápida (off-by-one).** O campo
+  `line` da softkey é 0-based no aparelho (0 = Conta 1), mas a tela expõe
+  "Account" 1-based; o adapter enviava o valor cru, então **"Account 1" virava
+  Conta 2** no telefone (e Account 0 virava Conta 1). Agora a conta é
+  convertida (`account − 1`, com clamp ≥ 0): **Account 1 → Conta 1**,
+  **Account 2 → Conta 2**.
+
 ## [2.5.0] — 2026-05-25
 
 ### Added

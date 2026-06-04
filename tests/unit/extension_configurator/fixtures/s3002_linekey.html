@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>S3002</title>
+<meta name="description" content="S3002">
+<meta name="Keywords" content="S3002">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=0.5, minimum-scale=0.5, maximum-scale=2.0, user-scalable=yes">
+<link href="css/style.css" rel="stylesheet" type="text/css" />
+<script language="JavaScript" src="/js/doctor.js" type="text/JavaScript"></script>
+<script language="JavaScript" src="js/cookies.js"></script>	
+<script>
+String.prototype.realLength = function()
+{
+  return this.replace(/[^\x00-\xff]/g,"**").length;
+}
+function check_number(num_string)
+{ 
+    var c; 
+	var ch = "0123456789"; 
+	for (var i = 0; i < num_string.length; i++){ 
+	     c = num_string.charAt(i); 
+		 if (ch.indexOf(c) == -1) 
+		      return false; 
+	} 
+	return true; 
+}
+function fun( k,name)
+{
+	var reportName;
+	if(k.indexOf("#")>=0)
+	{ 
+		reportName=k;				
+		document.getElementById(name).value= reportName;
+	}					
+	else
+		document.getElementById(name).value= k;
+}
+function doSubmit()
+{
+	var k;
+	var Name;
+	var i=0;
+	
+	var Num = "";
+	var MaxAccountNum = parseInt(Num);
+	
+	for(i = 1; i<= MaxAccountNum; i++)
+	{
+		if(document.getElementById("NUM"+i))
+		 {		
+			 k=document.getElementById("NUM"+i).value;
+			 Name="NUM"+i;
+			fun(k,Name);
+		 }
+		if(document.getElementById("NAME"+i))
+		 {	
+			 k=document.getElementById("NAME"+i).value;
+			 Name="NAME"+i;
+			 fun(k,Name);
+		 }
+		 
+		 if(document.getElementById("pNUM"+i))
+		 {		
+		 	k=document.getElementById("pNUM"+i).value;
+		 	Name="pNUM"+i;
+			fun(k,Name);
+		 }
+		if(document.getElementById("pNAME"+i))
+		 {	
+			k=document.getElementById("pNAME"+i).value;
+			Name="pNAME"+i;
+			fun(k,Name);
+		}
+		
+		if(document.getElementById("pNUM"+i).readOnly==false)
+		{
+			if(document.getElementById("pNUM"+i).value == "")
+			{
+				alert(myArray["IsDSSKeysLineKeysNumber"]);
+				return false;
+			}
+		}
+	}
+}
+
+function change(value, i)
+{
+	if(value=="0" || value=="22"|| value=="23")
+	{	
+		document.getElementById("pSipAccounts"+i).disabled=true ;
+		document.getElementById("pNAME"+i).style.background="#ebebe4";
+		document.getElementById("pNUM"+i).style.background="#ebebe4";
+		document.getElementById("pNAME"+i).style.cursor="auto";
+		document.getElementById("pNUM"+i).style.cursor="auto";
+		document.getElementById("pNAME"+i).readOnly=true;
+		document.getElementById("pNUM"+i).readOnly=true;
+		document.getElementById("LineblfTab"+i).innerHTML="";
+
+		if(value=="23")
+		{
+			var Num = "";
+			var line = parseInt(Num);
+			document.getElementById("ptype"+line).disabled=true;
+		}
+	 }
+	else if(value=="4")
+	{
+		document.getElementById("pSipAccounts"+i).disabled=true ;
+		document.getElementById("pNAME"+i).style.background="#fff";
+		document.getElementById("pNUM"+i).style.background="#fff";
+		document.getElementById("pNAME"+i).style.cursor="text";
+		document.getElementById("pNUM"+i).style.cursor="text";
+		document.getElementById("pNAME"+i).className="";
+		document.getElementById("pNAME"+i).readOnly=false;	
+		document.getElementById("pNUM"+i).className="";
+		document.getElementById("pNUM"+i).readOnly=false;	
+		document.getElementById("LineblfTab"+i).innerHTML="";
+	}
+	else if(value=="11")
+	{
+		document.getElementById("pSipAccounts"+i).disabled=false;
+		document.getElementById("pNAME"+i).style.background="#fff";
+		document.getElementById("pNUM"+i).style.background="#fff";
+		document.getElementById("pNAME"+i).style.cursor="text";
+		document.getElementById("pNUM"+i).style.cursor="text";
+		document.getElementById("pNAME"+i).className="";
+		document.getElementById("pNAME"+i).readOnly=false;	
+		document.getElementById("pNUM"+i).className="";
+		document.getElementById("pNUM"+i).readOnly=false;	 
+		document.getElementById("LineblfTab"+i).innerHTML="<a href='/goform/SaveBLFLineCfg?Operate=ShowPhoneBookOfGroup&GID="+i+"'><image border='0' src='edit.gif' alt='modify' /></a>";
+	}
+	else
+	{
+		document.getElementById("pSipAccounts"+i).disabled=false;
+		document.getElementById("pNAME"+i).style.background="#fff";
+		document.getElementById("pNUM"+i).style.background="#fff";
+		document.getElementById("pNAME"+i).style.cursor="text";
+		document.getElementById("pNUM"+i).style.cursor="text";
+		document.getElementById("pNAME"+i).className="";
+		document.getElementById("pNAME"+i).readOnly=false;	
+		document.getElementById("pNUM"+i).className="";
+		document.getElementById("pNUM"+i).readOnly=false;	 
+		document.getElementById("LineblfTab"+i).innerHTML="";
+	}
+
+}
+		
+function changehotline(value,i)
+{
+	if(value=="4")
+	{
+		document.getElementById("SipAccounts"+i).disabled=true ;
+	}
+	else
+	{
+		document.getElementById("SipAccounts"+i).disabled=false; 
+	}
+}
+
+</script>	
+</head>
+<body class="page_body">
+	<div class="search">
+	<form></form>
+	<script language="JavaScript">
+		var status = "INIT";
+		function clearLogFlag(){
+			document.forms[0].method= "post"; 
+			document.forms[0].action="/goform/clearLogFlag";
+			document.forms[0].submit();
+			return true;
+		}
+		if(status=="Fail" || status=="INIT"){
+			clearLogFlag();
+			window.location.href="login.asp";
+		}
+	</script>
+</div>
+<div  id="tab1"> 
+<div class="page_top">
+    <div class="page_logo"><img src="images/page_logo.gif"></div>
+    
+    <div class="page_menu">
+    	<ul>
+        	<li  class="q1"><a id="one1" onClick="setTab('one',1)" href="home.asp" ><span id="Phone Status"></span></a></li>
+            <li  class="q2"><a id="one2" onClick="setTab('one',2)" href="NetWork.asp" ><span id="Network"></span></a></li>
+            <li  class="q3"><a id="one3" onClick="setTab('one',3)" href="name.asp" ><span id="SIP Account"></span></a></li>
+            <li  class="q4"><a id="one4" onClick="setTab('one',4)" href="linekey.asp"  class="hover"><span id="Programmable Button"></span></a></li>
+            <li  class="q5"><a id="one5" onClick="setTab('one',5)" href="SysConfig.asp" ><span id="Intelbras Phone Setting"></span></a></li>
+            <li  class="q6"><a id="one6" onClick="setTab('one',6)" href="PhoneBookTab.asp"><span id="PhoneBook"></span></a></li>
+            <li  class="q7"><a id="one7" onClick="setTab('one',7)" href="http.asp"><span id="Phone Maintenance"></span></a></li>
+            <li  class="q8"><a id="one8" onClick="setTab('one',8)" href="UpholdPassword.asp"><span id="Security"></span></a></li>
+            <li  class="q9"><a id="one9" onClick="setTab('one',9)" href="login.asp" ><span id="Logout String"></span></a></li>
+        </ul>
+    </div>
+    <div class="clear"></div>
+</div>
+<div class="page_left">
+	<ul id="con_one_1" >
+		<li style="display: none" ><a href="programbutton.asp"><span id="memory keys"></span></a></li>
+		<li style="display: none"><a href="PaperlessProgramKey.asp"><span id="Paperless Program Keys"></span></a></li>
+		<li class="hover"><a href="linekey.asp"><span id="line keys"></span></a></li>
+		<li><a href="key.asp"><span id="Programmable Key"></span></a></li>
+		<li style="display:"><a href="softkey.asp"><span id="Softkey Key"></span></a></li>
+		<li style="display: none"><a href=""><span id="EX Module1"></span></a></li>
+    </ul>
+</div>
+
+<div class="page_right_r">
+	<div class="title"><span id="Note"></span></div>
+	<div class="conter">
+     <strong><span id="line keys String String"></span>:</strong>
+     	<br>
+     <span id="line keys Note String"></span>
+	<!--<br>
+	<br>
+     <strong><span id="EXTMode2 String"></span>:</strong>
+ 	<br>
+     <span id="EXTMode2 Note String"></span>
+ 	<br>
+	<br>
+     <strong><span id="Operation String"></span>:</strong>
+     	<br>
+     <span id="Operation Note String"></span>-->
+	</div>
+	<div class="title" style="display: none"><span id="News"></span></div>
+	<div class="conter" style="display: none">
+		<span class="tex"><a href="#"><span id="No Update"></span></a></span>
+		<a href="#"><img src="images/544.gif"></a>
+		<span class="dt"><a href="#"><span id="More"></span></a></span>
+	</div>
+</div>
+
+<script src="lang/common.js"></script>
+<script src='lang/br.js'></script>
+
+<div class="page_right">
+    <div class="page_right_l" id="body">
+	
+<script language="JavaScript">
+	 document.getElementById("body").style.display="none";
+</script>	
+
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" class="table" style="table-layout:fixed;">
+    <form method="post" onSubmit="" name="WebDialRule" action = "/goform/SaveLineKeyCfg">
+
+	 <tr>
+			  <td style="width:90px"></td>
+			  <td style="width:170px"><div align="center"><span id="Operation"></span></div></td>
+			  <td style="width:110px"><div align="center"><span id="EXTAccount1"></span></div>
+			  <td style="width:160px"><div align="center"><span id="EXTName1"></span></div></td>
+			  <td style="width:160px"><div align="center"><span id="EXTNumber1"></span></div></td>
+			  <td style="width:10px"></td>
+	 </tr>
+	 
+	 
+	 <tr>
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button1"></span> 1</div></td>
+			  <td><div align="center"><select name="ptype1" class="list" id="Intelbras ptype1" onChange="change(this.options[this.options.selectedIndex].value,1)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts1" class="list" id="pSipAccounts1">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME1" type="text" class="text" id="pNAME1" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM1" type="text" style= "ime-mode:Disabled" class="text" id="pNUM1" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab1"></span></div></td>
+	 </tr>
+
+	 <tr >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button2"></span> 2</div></td>
+			  <td><div align="center"><select name="ptype2" class="list" id="Intelbras ptype2" onChange="change(this.options[this.options.selectedIndex].value,2)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts2" class="list" id="pSipAccounts2">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME2" type="text" class="text" id="pNAME2" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM2" type="text" style= "ime-mode:Disabled" class="text" id="pNUM2" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab2"></span></div></td>
+	 </tr>
+	 
+	 <tr  style="display: none">
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button3"></span> 3</div></td>
+			  <td><div align="center"><select name="ptype3" class="list" id="Intelbras ptype3" onChange="change(this.options[this.options.selectedIndex].value,3)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts3" class="list" id="pSipAccounts3">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME3" type="text" class="text" id="pNAME3" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM3" type="text" style= "ime-mode:Disabled" class="text" id="pNUM3" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab3"></span></div></td>
+	 </tr>
+	 
+	 <tr  style="display: none" >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button4"></span> 4</div></td>
+			  <td><div align="center"><select name="ptype4" class="list" id="Intelbras ptype4" onChange="change(this.options[this.options.selectedIndex].value,4)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts4" class="list" id="pSipAccounts4">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME4" type="text" class="text" id="pNAME4" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM4" type="text" style= "ime-mode:Disabled" class="text" id="pNUM4" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab4"></span></div></td>
+	 </tr>
+	 
+	 <tr  style="display: none"  >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button5"></span> 5</div></td>
+			  <td><div align="center"><select name="ptype5" class="list" id="Intelbras ptype5" onChange="change(this.options[this.options.selectedIndex].value,5)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts5" class="list" id="pSipAccounts5">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME5" type="text" class="text" id="pNAME5" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM5" type="text" style= "ime-mode:Disabled" class="text" id="pNUM5" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab5"></span></div></td>
+	 </tr>
+	 
+	 <tr  style="display: none"  >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button6"></span> 6</div></td>
+			  <td><div align="center"><select name="ptype6" class="list" id="Intelbras ptype6" onChange="change(this.options[this.options.selectedIndex].value,6)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts6" class="list" id="pSipAccounts6">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME6" type="text" class="text" id="pNAME6" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM6" type="text" style= "ime-mode:Disabled" class="text" id="pNUM6" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab6"></span></div></td>
+	 </tr>
+	  
+	 <tr  style="display: none"   >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button7"></span> 7</div></td>
+			  <td><div align="center"><select name="ptype7" class="list" id="Intelbras ptype7" onChange="change(this.options[this.options.selectedIndex].value,7)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts7" class="list" id="pSipAccounts7">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME7" type="text" class="text" id="pNAME7" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM7" type="text" style= "ime-mode:Disabled" class="text" id="pNUM7" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab7"></span></div></td>
+	 </tr>
+	 
+	 <tr  style="display: none"   >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button8"></span> 8</div></td>
+			  <td><div align="center"><select name="ptype8" class="list" id="Intelbras ptype8" onChange="change(this.options[this.options.selectedIndex].value,8)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts8" class="list" id="pSipAccounts8">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME8" type="text" class="text" id="pNAME8" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM8" type="text" style= "ime-mode:Disabled" class="text" id="pNUM8" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab8"></span></div></td>
+	 </tr>
+
+	 <tr  style="display: none"    >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button9"></span> 9</div></td>
+			  <td><div align="center"><select name="ptype9" class="list" id="Intelbras ptype9" onChange="change(this.options[this.options.selectedIndex].value,9)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts9" class="list" id="pSipAccounts9">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME9" type="text" class="text" id="pNAME9" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM9" type="text" style= "ime-mode:Disabled" class="text" id="pNUM9" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab9"></span></div></td>
+	 </tr>
+
+	 <tr  style="display: none"    >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button10"></span> 10</div></td>
+			  <td><div align="center"><select name="ptype10" class="list" id="Intelbras ptype10" onChange="change(this.options[this.options.selectedIndex].value,10)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts10" class="list" id="pSipAccounts10">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME10" type="text" class="text" id="pNAME10" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM10" type="text" style= "ime-mode:Disabled" class="text" id="pNUM10" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab10"></span></div></td>
+	 </tr>
+
+	 <tr  style="display: none"     >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button11"></span> 11</div></td>
+			  <td><div align="center"><select name="ptype11" class="list" id="Intelbras ptype11" onChange="change(this.options[this.options.selectedIndex].value,11)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts11" class="list" id="pSipAccounts11">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME11" type="text" class="text" id="pNAME11" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM11" type="text" style= "ime-mode:Disabled" class="text" id="pNUM11" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab11"></span></div></td>
+	 </tr>
+
+	 <tr  style="display: none"     >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button12"></span> 12</div></td>
+			  <td><div align="center"><select name="ptype12" class="list" id="Intelbras ptype12" onChange="change(this.options[this.options.selectedIndex].value,12)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts12" class="list" id="pSipAccounts12">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME12" type="text" class="text" id="pNAME12" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM12" type="text" style= "ime-mode:Disabled" class="text" id="pNUM12" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab12"></span></div></td>
+	 </tr>
+
+	 <tr  style="display: none"     >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button13"></span> 13</div></td>
+			  <td><div align="center"><select name="ptype13" class="list" id="Intelbras ptype13" onChange="change(this.options[this.options.selectedIndex].value,13)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts13" class="list" id="pSipAccounts13">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME13" type="text" class="text" id="pNAME13" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM13" type="text" style= "ime-mode:Disabled" class="text" id="pNUM13" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab13"></span></div></td>
+	 </tr>
+
+	 <tr  style="display: none"     >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button14"></span> 14</div></td>
+			  <td><div align="center"><select name="ptype14" class="list" id="Intelbras ptype14" onChange="change(this.options[this.options.selectedIndex].value,14)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts14" class="list" id="pSipAccounts14">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME14" type="text" class="text" id="pNAME14" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM14" type="text" style= "ime-mode:Disabled" class="text" id="pNUM14" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab14"></span></div></td>
+	 </tr>
+
+	 <tr  style="display: none"     >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button15"></span> 15</div></td>
+			  <td><div align="center"><select name="ptype15" class="list" id="Intelbras ptype15" onChange="change(this.options[this.options.selectedIndex].value,15)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts15" class="list" id="pSipAccounts15">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME15" type="text" class="text" id="pNAME15" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM15" type="text" style= "ime-mode:Disabled" class="text" id="pNUM15" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab15"></span></div></td>
+	 </tr>
+
+	 <tr  style="display: none"     >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button16"></span> 16</div></td>
+			  <td><div align="center"><select name="ptype16" class="list" id="Intelbras ptype16" onChange="change(this.options[this.options.selectedIndex].value,16)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts16" class="list" id="pSipAccounts16">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME16" type="text" class="text" id="pNAME16" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM16" type="text" style= "ime-mode:Disabled" class="text" id="pNUM16" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab16"></span></div></td>
+	 </tr>
+
+	 <tr  style="display: none"     >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button17"></span> 17</div></td>
+			  <td><div align="center"><select name="ptype17" class="list" id="Intelbras ptype17" onChange="change(this.options[this.options.selectedIndex].value,17)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts17" class="list" id="pSipAccounts17">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME17" type="text" class="text" id="pNAME17" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM17" type="text" style= "ime-mode:Disabled" class="text" id="pNUM17" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab17"></span></div></td>
+	 </tr>
+
+	 <tr  style="display: none"     >
+			  <td width="100%"><div align="left" style="padding-left:10px"><span id="Button18"></span> 18</div></td>
+			  <td><div align="center"><select name="ptype18" class="list" id="Intelbras ptype18" onChange="change(this.options[this.options.selectedIndex].value,18)">
+                   <option value="0" selected></option><option value="5" ></option><option value="2" ></option><option value="4" ></option><option value="1" >BLF</option><option value="6" ></option><option value="7" ></option><option value="8" ></option><option value="9" ></option><option value="11" ></option><option value="3" ></option><option value="10"  style="display: none"></option><option value="22"  style="display: none"></option><option value="23"  style="display: none"></option>
+                   </select></div></td>
+			  <td><div align="center"> <select name="pSipAccounts18" class="list" id="pSipAccounts18">
+				    <option value="127"></option><option value="0" selected></option><option value="1"></option>
+			        </select></div>
+			  <td><div align="center"><input name="pNAME18" type="text" class="text" id="pNAME18" 
+						  value="" size="18" maxlength="16"></td>
+			  <td><div align="center"><input name="pNUM18" type="text" style= "ime-mode:Disabled" class="text" id="pNUM18" 
+			  value="" size="18" maxlength="21" oninput="value=value.replace(/[^A-Za-z0-9\x21-\x2f\x3a-\x40\x5b-\x60\x7B-\x7F]/ig,'')"></div></td>
+			  <td><div align="left"><span id="LineblfTab18"></span></div></td>
+	 </tr>
+
+	  <tr>
+		<th colspan="5">
+		  <div class="line"></div>
+		  <br>
+		  <div align="center">
+			<input name="Save" type="submit" style="padding:0px 10px;" class="button" id="save" value=""
+				 onClick="return doSubmit();" tabindex="13">
+		  </div>        </th>
+	</tr>
+    </form>
+    </table>
+
+    </div>
+
+    <div class="clear"></div>
+</div>
+</div>
+<script type="text/javascript"> 
+function setTab(name,cursel){ 
+if(cursel==3)
+  SetURLCookie("SIP","SIP_child");
+else if(cursel==5)
+  SetURLCookie("SysConfig","Basic_child");
+else if(cursel==9)
+{
+   clearLogFlag();
+}
+cursel_0=cursel; 
+for(var i=1; i<=links_len; i++){ 
+var menu = document.getElementById(name+i); 
+var menudiv = document.getElementById("con_"+name+"_"+i); 
+if(i==cursel){ 
+menu.className="hover"; 
+menudiv.style.display="block"; 
+} 
+else{ 
+menu.className=""; 
+menudiv.style.display="none"; 
+} 
+} 
+} 
+function Next(){ 
+cursel_0++; 
+if (cursel_0>links_len)cursel_0=1 
+setTab(name_0,cursel_0); 
+} 
+var name_0='one'; 
+var cursel_0=1; 
+var links_len,iIntervalId; 
+onload=function(){ 
+var links = document.getElementById("tab1").getElementsByTagName('li') 
+links_len=links.length; 
+for(var i=0; i<links_len; i++){ 
+links[i].onmouseover=function(){ 
+clearInterval(iIntervalId); 
+} 
+} 
+document.getElementById("con_"+name_0+"_"+links_len).parentNode.onmouseover=function(){ 
+clearInterval(iIntervalId); 
+} 
+setTab(name_0,cursel_0); 
+} 
+</script>
+
+</body>
+
+<script src="lang/common.js"></script>
+<script src='lang/br.js'></script>
+<script language="JavaScript">
+document.getElementById("body").style.display="block";
+var element =document.getElementById('');
+if(element){
+	  element.focus();
+	  element.select();
+}
+</script>
+<script>
+for(var i=1;i<19;i++)
+{
+	var sel = 0;
+
+	switch(i)
+	{
+		case 1: sel=document.getElementById('Intelbras ptype1');break;
+		case 2: sel=document.getElementById('Intelbras ptype2');break;
+		case 3: sel=document.getElementById('Intelbras ptype3');break;
+		case 4: sel=document.getElementById('Intelbras ptype4');break;
+		case 5: sel=document.getElementById('Intelbras ptype5');break;
+		case 6: sel=document.getElementById('Intelbras ptype6');break;
+		case 7: sel=document.getElementById('Intelbras ptype7');break;
+		case 8: sel=document.getElementById('Intelbras ptype8');break;
+		case 9: sel=document.getElementById('Intelbras ptype9');break;
+		case 10: sel=document.getElementById('Intelbras ptype10');break;
+		case 11: sel=document.getElementById('Intelbras ptype11');break;
+		case 12: sel=document.getElementById('Intelbras ptype12');break;
+		case 13: sel=document.getElementById('Intelbras ptype13');break;
+		case 14: sel=document.getElementById('Intelbras ptype14');break;
+		case 15: sel=document.getElementById('Intelbras ptype15');break;
+		case 16: sel=document.getElementById('Intelbras ptype16');break;
+		case 17: sel=document.getElementById('Intelbras ptype17');break;
+		case 18: sel=document.getElementById('Intelbras ptype18');break;
+		case 19: sel=document.getElementById('');break;
+
+	}
+
+if(sel)
+{
+selvalue=sel.value;
+if(selvalue=="0" || selvalue=="22" || selvalue=="23")
+{
+		document.getElementById("pSipAccounts"+i).disabled=true ;
+		document.getElementById("pNAME"+i).style.background="#ebebe4";
+		document.getElementById("pNUM"+i).style.background="#ebebe4";
+		document.getElementById("pNAME"+i).style.cursor="auto";
+		document.getElementById("pNUM"+i).style.cursor="auto";
+		document.getElementById("pNAME"+i).className="STYLE3";
+		document.getElementById("pNAME"+i).setAttribute("readonly",true,0);
+		document.getElementById("pNUM"+i).className="STYLE3";
+		document.getElementById("pNUM"+i).setAttribute("readonly",true,0);
+
+		if(selvalue=="23")
+		{
+			var Num = "";
+			var line = parseInt(Num);
+			document.getElementById("ptype"+line).disabled=true;
+		}
+}
+else if(selvalue=="4")
+{
+	       document.getElementById("pSipAccounts"+i).disabled=true ;
+		document.getElementById("pNAME"+i).style.background="#fff";
+		document.getElementById("pNUM"+i).style.background="#fff";
+		document.getElementById("pNAME"+i).style.cursor="text";
+		document.getElementById("pNUM"+i).style.cursor="text";
+		document.getElementById("pNAME"+i).className="";
+		document.getElementById("pNAME"+i).readOnly=false;	
+		document.getElementById("pNUM"+i).className="";
+		document.getElementById("pNUM"+i).readOnly=false;	
+}
+else if(selvalue=="11")
+{
+		document.getElementById("pNAME"+i).className="";
+		document.getElementById("pNAME"+i).style.background="#fff";
+		document.getElementById("pNUM"+i).style.background="#fff";
+		document.getElementById("pNAME"+i).style.cursor="text";
+		document.getElementById("pNUM"+i).style.cursor="text";
+		document.getElementById("pNAME"+i).readOnly=false;	
+		document.getElementById("pNUM"+i).className="";
+		document.getElementById("pNUM"+i).readOnly=false;
+		document.getElementById("LineblfTab"+i).innerHTML="<a href='/goform/SaveBLFLineCfg?Operate=ShowPhoneBookOfGroup&GID="+i+"'><image border='0' src='edit.gif' alt='modify' /></a>";
+}
+else
+{
+		document.getElementById("pNAME"+i).className="";
+		document.getElementById("pNAME"+i).style.background="#fff";
+		document.getElementById("pNUM"+i).style.background="#fff";
+		document.getElementById("pNAME"+i).style.cursor="text";
+		document.getElementById("pNUM"+i).style.cursor="text";
+		document.getElementById("pNAME"+i).readOnly=false;	
+		document.getElementById("pNUM"+i).className="";
+		document.getElementById("pNUM"+i).readOnly=false;
+}
+}
+}
+for(var i=1;i<=18;i++)
+{
+var selhot=document.getElementById("type"+i);
+if(selhot)
+{
+selhotval=selhot.value;
+if(selhotval=="4")
+{
+   document.getElementById("SipAccounts"+i).disabled=true ;
+}
+}
+}
+</script>
+</html>
+

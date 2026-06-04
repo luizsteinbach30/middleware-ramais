@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
-from sqlalchemy import delete
+from sqlalchemy import Delete, delete
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
@@ -24,6 +27,15 @@ def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
 
+def _delete_count(db: DBSession, stmt: Delete) -> int:
+    """Executa um DELETE e devolve o nº de linhas afetadas.
+
+    ``Session.execute`` é tipado como ``Result``; em runtime é um
+    ``CursorResult`` que expõe ``rowcount``. Cast restrito ao tipo real.
+    """
+    return cast("CursorResult[Any]", db.execute(stmt)).rowcount
+
+
 async def run_retention() -> None:
     with session_factory() as db:
         cfg = load_config(db)
@@ -33,11 +45,11 @@ async def run_retention() -> None:
         cutoff_syslogs = _now() - timedelta(days=cfg.system_log_retention_days)
         cutoff_login = _now() - timedelta(days=14)
 
-        a = db.execute(delete(DevicePing).where(DevicePing.timestamp < cutoff_pings)).rowcount
-        b = db.execute(delete(WebhookEvent).where(WebhookEvent.timestamp < cutoff_webhooks)).rowcount
-        c = db.execute(delete(Collection).where(Collection.collected_at < cutoff_collections)).rowcount
-        d = db.execute(delete(SystemLog).where(SystemLog.timestamp < cutoff_syslogs)).rowcount
-        e = db.execute(delete(LoginAttempt).where(LoginAttempt.timestamp < cutoff_login)).rowcount
+        a = _delete_count(db, delete(DevicePing).where(DevicePing.timestamp < cutoff_pings))
+        b = _delete_count(db, delete(WebhookEvent).where(WebhookEvent.timestamp < cutoff_webhooks))
+        c = _delete_count(db, delete(Collection).where(Collection.collected_at < cutoff_collections))
+        d = _delete_count(db, delete(SystemLog).where(SystemLog.timestamp < cutoff_syslogs))
+        e = _delete_count(db, delete(LoginAttempt).where(LoginAttempt.timestamp < cutoff_login))
         db.commit()
 
     log.info(

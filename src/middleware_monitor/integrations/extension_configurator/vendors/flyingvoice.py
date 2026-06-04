@@ -51,11 +51,11 @@ Status de homologacao (P10 fw V0.11.6, validado em produção 2026-05-23):
 from __future__ import annotations
 
 import re
-import socket
 from typing import Any
 
 import httpx
 
+from . import _form_replay
 from .base import DiscoveryResult, VendorAdapter, VendorAuthError, VendorCredentials
 
 # Chaves que ESTE adapter pode sobrescrever no form da conta SIP. Qualquer
@@ -116,10 +116,7 @@ class FlyingVoiceAdapter(VendorAdapter):
             headers={"User-Agent": "Mozilla/5.0", "Connection": "close"},
         )
 
-    @staticmethod
-    def _checkstring(html: str) -> str | None:
-        m = re.search(r'name="CheckString"[^>]*value="([^"]+)"', html)
-        return m.group(1) if m else None
+    _checkstring = staticmethod(_form_replay.checkstring)
 
     # ------------------------------------------------------------ fingerprint
     async def fingerprint(self, ip: str) -> float:
@@ -253,7 +250,13 @@ class FlyingVoiceAdapter(VendorAdapter):
             line = value = ext = ""
             label = str(fk.get("label", "") or "")
             if t == 8:  # Discagem Rapida
-                line = str(fk.get("account", 0) or 0)
+                # A UI expoe "Account" 1-based (1 = Conta 1). O P10 indexa a
+                # conta da softkey 0-based no campo `line` (0 = Conta 1, ver
+                # fixture DBIDArray do hardware). Sem o -1 a tecla cai na conta
+                # SEGUINTE (Conta 1 da tela virava Conta 2 no telefone). Clamp
+                # >=0 tolera 0/vazio (tratado como Conta 1).
+                acct = int(fk.get("account", 1) or 1)
+                line = str(max(acct - 1, 0))
                 if fk.get("value_source") == "linha":
                     value = str(row.get(fk.get("value_field", "numero_abreviado"), "") or "")
                 else:
@@ -272,78 +275,15 @@ class FlyingVoiceAdapter(VendorAdapter):
         return out
 
     # ------------------------------------------------------------- form replay
-    @staticmethod
-    def _parse_form_fields(
-        html: str, form_name: str,
-    ) -> tuple[list[tuple[str, str]], str]:
-        """Extrai (todos os pares name=value do form, CheckString).
-
-        Replica o que o browser enviaria: inputs text/hidden/password com seu
-        value; checkbox/radio so quando `checked`; select com a option
-        `selected` (fallback: primeira).
-        """
-        i = html.find(f'name="{form_name}"')
-        if i < 0:
-            raise RuntimeError(f"FlyingVoice: form {form_name} nao encontrado")
-        start = html.rfind("<form", 0, i)
-        end = html.find("</form>", start)
-        region = html[start:end]
-        pairs: list[tuple[str, str]] = []
-        for m in re.finditer(r"<input\b[^>]*>", region, re.I):
-            tag = m.group(0)
-            nm = re.search(r'name="([^"]+)"', tag)
-            if not nm:
-                continue
-            name = nm.group(1)
-            typ = (re.search(r'type="([^"]+)"', tag) or [None, "text"])[1].lower()
-            val = (re.search(r'value="([^"]*)"', tag) or [None, ""])[1]
-            if typ in ("submit", "button", "file"):
-                continue
-            if typ in ("checkbox", "radio") and not re.search(r"\bchecked\b", tag, re.I):
-                continue
-            pairs.append((name, val))
-        for m in re.finditer(
-            r'<select\b[^>]*name="([^"]+)"[^>]*>(.*?)</select>', region, re.I | re.S
-        ):
-            name, body = m.group(1), m.group(2)
-            sel = re.search(r'<option\b[^>]*value="([^"]*)"[^>]*\bselected\b', body, re.I)
-            opts = re.findall(r'<option\b[^>]*value="([^"]*)"', body, re.I)
-            pairs.append((name, sel.group(1) if sel else (opts[0] if opts else "")))
-        cs = FlyingVoiceAdapter._checkstring(region) or ""
-        return pairs, cs
+    _parse_form_fields = staticmethod(_form_replay.parse_form_fields)
 
     @staticmethod
     def _http10_post(ip: str, path: str, body: str, cookie: str, referer: str) -> int:
-        """POST cru em HTTP/1.0 (obrigatorio — o firmware nao fala 1.1 direito).
-
-        Retorna o status HTTP. Levanta em erro de socket.
-        """
-        req = (
-            f"POST {path} HTTP/1.0\r\n"
-            f"Host: {ip}\r\n"
-            f"Cookie: ASPSSIONID={cookie}\r\n"
-            f"Referer: {referer}\r\n"
-            f"Content-Type: application/x-www-form-urlencoded\r\n"
-            f"Content-Length: {len(body)}\r\n"
-            f"Connection: close\r\n\r\n{body}"
+        """POST cru em HTTP/1.0 com a sessao do FlyingVoice (cookie ASPSSIONID)."""
+        return _form_replay.http10_post(
+            ip, path, body,
+            headers={"Cookie": f"ASPSSIONID={cookie}", "Referer": referer},
         )
-        sk = socket.socket()
-        sk.settimeout(20.0)
-        try:
-            sk.connect((ip, 80))
-            sk.sendall(req.encode("latin1"))
-            resp = b""
-            while True:
-                chunk = sk.recv(4096)
-                if not chunk:
-                    break
-                resp += chunk
-                if len(resp) > 65536:
-                    break
-        finally:
-            sk.close()
-        m = re.match(rb"HTTP/1\.[01] (\d{3})", resp)
-        return int(m.group(1)) if m else 0
 
     async def send_config(
         self, ip: str, creds: VendorCredentials, cfg: bytes, *, fmt: str = "cfg",
@@ -395,24 +335,10 @@ class FlyingVoiceAdapter(VendorAdapter):
 
     @staticmethod
     def _merge_body(pairs, cs, overrides, form_name, quote):
-        """Replay do form: sobrescreve overrides, refresca CheckString."""
-        merged: list[tuple[str, str]] = []
-        seen: set[str] = set()
-        for name, val in pairs:
-            if name in overrides:
-                out_val = overrides[name]
-            elif name == "CheckString":
-                out_val = cs
-            else:
-                out_val = val
-            merged.append((name, out_val))
-            seen.add(name)
-        for k, v in overrides.items():
-            if k not in seen:
-                merged.append((k, v))
-        if "FormName" not in seen:
-            merged.append(("FormName", form_name))
-        return "&".join(f"{quote(n, safe='')}={quote(v, safe='')}" for n, v in merged)
+        """Replay do form: sobrescreve overrides, refresca CheckString, garante FormName."""
+        return _form_replay.merge_body(
+            pairs, overrides, cs=cs, ensure={"FormName": form_name},
+        )
 
     _MULTIFUNC_PAGE = "/phone/Phone_MultiFunc.asp"
     _MULTIFUNC_SET = "/goform/saveMultiFunc"

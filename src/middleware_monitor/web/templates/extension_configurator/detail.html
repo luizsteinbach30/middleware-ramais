@@ -218,6 +218,74 @@
   .ec-toggle:has(input:checked) span.text-gray-300 {
     color: #93c5fd;
   }
+
+  /* Monitor de ping ao vivo: bolinha colorida antes do IP na célula */
+  .ec-spreadsheet .jexcel > tbody > tr > td.ec-ping-cell {
+    padding-left: 22px;
+    position: relative;
+  }
+  .ec-spreadsheet .jexcel > tbody > tr > td.ec-ping-cell::before {
+    content: "";
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #6b7280;            /* aguardando 1ª resposta */
+    transition: background-color 150ms ease, box-shadow 150ms ease;
+  }
+  .ec-spreadsheet .jexcel > tbody > tr > td.ec-ping-up::before {
+    background: #22c55e;            /* verde — respondeu ao ping */
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18);
+  }
+  .ec-spreadsheet .jexcel > tbody > tr > td.ec-ping-down::before {
+    background: #ef4444;            /* vermelho — sem resposta */
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18);
+  }
+
+  /* Chip "ao vivo" do monitor de ping */
+  .ec-live-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #22c55e;
+    flex-shrink: 0;
+    animation: ec-live-pulse 1.4s ease-out infinite;
+  }
+  @keyframes ec-live-pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55); }
+    70%  { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+  }
+  .ec-ping-progress {
+    height: 3px;
+    background: rgba(148, 163, 184, 0.18);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .ec-ping-progress > span {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: linear-gradient(90deg, #3b82f6, #60a5fa);
+    border-radius: 999px;
+  }
+  /* 5 controles padronizados: mesma altura, alinhamento e peso de texto */
+  .ec-pill {
+    min-height: 30px;
+    line-height: 1;
+  }
+
+  /* Flash sutil quando uma rodada de ping acaba de chegar */
+  #ec-ping-panel.ec-ping-flash {
+    animation: ec-ping-flash 0.5s ease-out;
+  }
+  @keyframes ec-ping-flash {
+    0%   { background: rgba(96, 165, 250, 0.35); }
+    100% { background: rgba(59, 130, 246, 0.10); }
+  }
 </style>
 
 <div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
@@ -232,6 +300,9 @@
       <p id="ec-subtitle" class="text-xs text-gray-400 mt-0.5 truncate">—</p>
     </div>
     <a id="ec-config-link" href="#" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">⚙ Config padrão</a>
+    <button id="ec-preview" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs" title="Pré-visualizar a config que será enviada para a linha selecionada">👁 Pré-visualizar</button>
+    <button id="ec-duplicate" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs" title="Duplicar este ambiente (copia todas as configurações, sem os ramais)">⧉ Duplicar</button>
+    <button id="ec-export" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs" title="Exportar este ambiente (config + linhas) num arquivo cifrado">⤴ Exportar</button>
     <span id="ec-save-status" class="text-[11px] font-medium text-transparent transition-opacity min-w-[90px]"></span>
     <button id="ec-save" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">Salvar planilha</button>
     <button id="ec-apply-selected" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-4 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-blue-500/20">Aplicar selecionados (0)</button>
@@ -241,7 +312,7 @@
 
 <div class="px-6 py-4 space-y-3">
   <div id="ec-status-pills" class="flex items-center gap-2 text-xs"></div>
-  <div class="flex items-center justify-between gap-3 flex-wrap text-xs text-gray-400">
+  <div class="flex items-start justify-between gap-3 flex-wrap text-xs text-gray-400">
     <div class="leading-relaxed max-w-3xl">
       Planilha estilo Excel: clique e arraste para selecionar blocos ·
       <kbd class="ec-kbd">Ctrl+C</kbd> / <kbd class="ec-kbd">Ctrl+V</kbd> (paste mantém o valor original) ·
@@ -250,35 +321,63 @@
       IP tem máscara automática · alterações salvam sozinhas após 1,2&nbsp;s.
       <br>Marque o checkbox da coluna <strong>✓</strong> para escolher quais aparelhos enviar — útil quando alguns telefones estão offline e você quer voltar só nesses depois.
       <br>Coluna <strong>Device</strong>: 🟢/🔴/⚪ mostram status de rede do telefone vinculado (online/offline/sem ping ainda). <strong>Clique</strong> na célula para ver ou desvincular o device.
+      <br>Coluna <strong>👁</strong>: clique no olho de uma linha (já salva) para <strong>pré-visualizar</strong> a config que será enviada àquele ramal, sem aplicar.
     </div>
 
-    <div class="flex items-center gap-2 flex-wrap">
-      <div class="inline-flex rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 overflow-hidden divide-x divide-gray-700">
+    <div class="flex flex-col items-end gap-2">
+      <!-- 5 controles padronizados: mesma forma/tamanho/escrita, só a cor muda -->
+      <div class="flex items-center justify-end gap-2 flex-wrap">
         <button id="ec-sel-all" type="button"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-blue-300 hover:bg-blue-500/15 hover:text-blue-200 transition-colors">
-          <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/></svg>
-          marcar todos
+                class="ec-pill inline-flex items-center rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 px-3 py-1.5 text-[11px] font-medium text-blue-300 hover:bg-blue-500/15 hover:text-blue-200 transition-colors select-none">
+          Marcar todos
         </button>
         <button id="ec-sel-none" type="button"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-gray-300 hover:bg-gray-700/60 hover:text-gray-100 transition-colors">
-          <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.25 10a.75.75 0 01.75-.75h10a.75.75 0 010 1.5H5a.75.75 0 01-.75-.75z" clip-rule="evenodd"/></svg>
-          desmarcar
+                class="ec-pill inline-flex items-center rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 px-3 py-1.5 text-[11px] font-medium text-gray-300 hover:bg-gray-700/60 hover:text-gray-100 transition-colors select-none">
+          Desmarcar
         </button>
         <button id="ec-sel-errors" type="button"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-yellow-300 hover:bg-yellow-500/15 hover:text-yellow-200 transition-colors">
-          <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v4a.75.75 0 01-1.5 0v-4A.75.75 0 0110 5zm0 8a.75.75 0 100 1.5.75.75 0 000-1.5z" clip-rule="evenodd"/></svg>
-          só erros/pendentes
+                class="ec-pill inline-flex items-center rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 px-3 py-1.5 text-[11px] font-medium text-yellow-300 hover:bg-yellow-500/15 hover:text-yellow-200 transition-colors select-none">
+          Pendentes
         </button>
+        <label class="ec-toggle ec-pill inline-flex items-center gap-2 rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 hover:bg-gray-700/60 px-3 py-1.5 cursor-pointer transition-colors select-none">
+          <span class="ec-toggle-switch" aria-hidden="true">
+            <input id="ec-force" type="checkbox" class="sr-only"/>
+            <span class="ec-toggle-track"></span>
+            <span class="ec-toggle-thumb"></span>
+          </span>
+          <span class="text-[11px] font-medium text-gray-300">Forçar reaplicação</span>
+        </label>
+        <label class="ec-toggle ec-pill inline-flex items-center gap-2 rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 hover:bg-gray-700/60 px-3 py-1.5 cursor-pointer transition-colors select-none">
+          <span class="ec-toggle-switch" aria-hidden="true">
+            <input id="ec-ping-toggle" type="checkbox" class="sr-only"/>
+            <span class="ec-toggle-track"></span>
+            <span class="ec-toggle-thumb"></span>
+          </span>
+          <span class="text-[11px] font-medium text-gray-300">Monitorar ping</span>
+        </label>
       </div>
 
-      <label class="ec-toggle inline-flex items-center gap-2 rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 hover:bg-gray-700/60 px-3 py-1.5 cursor-pointer transition-colors select-none">
-        <span class="ec-toggle-switch" aria-hidden="true">
-          <input id="ec-force" type="checkbox" class="sr-only"/>
-          <span class="ec-toggle-track"></span>
-          <span class="ec-toggle-thumb"></span>
-        </span>
-        <span class="text-[11px] font-medium text-gray-300">Forçar reaplicação</span>
-      </label>
+      <!-- Painel do monitor: intervalo + mostrador "ao vivo". Aparece abaixo do
+           "Monitorar ping" só quando ligado; não desloca os controles acima. -->
+      <div id="ec-ping-panel" class="hidden items-center gap-3 rounded-lg ring-1 ring-inset ring-blue-500/40 bg-blue-500/10 px-3 py-2">
+        <label class="inline-flex items-center gap-1.5 text-[11px] font-medium text-blue-200/90 whitespace-nowrap">
+          <span>intervalo</span>
+          <input id="ec-ping-interval" type="number" min="2" max="3600" value="5"
+                 class="w-12 rounded-md bg-gray-900 ring-1 ring-inset ring-gray-700 px-1.5 py-1 text-gray-200 text-[11px] tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          <span>s</span>
+        </label>
+        <span class="w-px h-5 bg-blue-500/30"></span>
+        <div class="flex flex-col gap-1 min-w-[170px]">
+          <div class="inline-flex items-center gap-2 text-[11px] font-medium whitespace-nowrap">
+            <span class="ec-live-dot" aria-hidden="true"></span>
+            <span class="text-blue-200">ao vivo</span>
+            <span id="ec-ping-rounds" class="text-blue-300/80 tabular-nums">#0</span>
+            <span class="text-gray-600">·</span>
+            <span id="ec-ping-tally" class="tabular-nums text-gray-300">—</span>
+          </div>
+          <div class="ec-ping-progress" aria-hidden="true"><span id="ec-ping-progress-bar"></span></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -297,6 +396,40 @@
     </div>
     <p id="ec-run-summary" class="text-xs text-gray-400">—</p>
     <div id="ec-run-rows" class="max-h-64 overflow-auto text-xs"></div>
+  </div>
+</div>
+
+<!-- Modal Duplicar -->
+<div id="ec-dup-modal" class="hidden fixed inset-0 bg-black/60 z-30 flex items-center justify-center p-4">
+  <div class="bg-gray-900 ring-1 ring-gray-700 rounded-xl p-5 w-full max-w-md space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Duplicar ambiente</h3>
+    <p class="text-xs text-gray-400">Cria um <strong>novo</strong> ambiente copiando o modelo do telefone e <strong>todas as configurações</strong> (servidor SIP, credenciais, teclas, idioma, etc.). Os <strong>ramais não</strong> são copiados — o novo ambiente nasce vazio.</p>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Nome do novo ambiente</span>
+      <input id="ec-dup-nome" placeholder="Ex: Cópia de Unidade 03"
+             class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/>
+    </label>
+    <div class="flex justify-end gap-2 pt-2">
+      <button id="ec-dup-cancel" class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">Cancelar</button>
+      <button id="ec-dup-confirm" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed">Duplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Exportar (passphrase) -->
+<div id="ec-export-modal" class="hidden fixed inset-0 bg-black/60 z-30 flex items-center justify-center p-4">
+  <div class="bg-gray-900 ring-1 ring-gray-700 rounded-xl p-5 w-full max-w-md space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Exportar ambiente</h3>
+    <p class="text-xs text-gray-400">O arquivo carrega as senhas e é <strong>cifrado</strong> com a passphrase abaixo. Guarde-a: sem ela não dá para importar.</p>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Passphrase</span>
+      <input id="ec-export-pass" type="password" placeholder="escolha uma passphrase"
+             class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/>
+    </label>
+    <div class="flex justify-end gap-2 pt-2">
+      <button id="ec-export-cancel" class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">Cancelar</button>
+      <button id="ec-export-confirm" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed">Exportar</button>
+    </div>
   </div>
 </div>
 

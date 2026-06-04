@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>S3002</title>
+<meta name="description" content="S3002">
+<meta name="Keywords" content="S3002">
+<meta http-equiv="Refresh" content="30">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=0.5, minimum-scale=0.5, maximum-scale=2.0, user-scalable=yes">
+<link href="css/style.css" rel="stylesheet" type="text/css" />
+</head>
+<body class="page_body">
+	<div class="search">
+    	<form></form>
+		<script language="JavaScript">
+			var status = "Success";
+			function clearLogFlag(){
+				document.forms[0].method= "post"; 
+				document.forms[0].action="/goform/clearLogFlag";
+				document.forms[0].submit();
+				return true;
+			}
+			if(status=="Fail" || status=="INIT"){
+				clearLogFlag();
+				window.location.href="login.asp";
+			}
+		</script>	
+    </div>
+<script language="JavaScript" src="js/cookies.js"></script>	
+<div  id="tab1"> 
+<div class="page_top">
+    <div class="page_logo"><img src="images/page_logo.gif"></div>
+    
+    <div class="page_menu">
+    	 <ul>
+        	<li  class="q1"><a id="one1" onClick="setTab('one',1)" href="home.asp" class="hover" ><span id="Phone Status"></span></a></li>
+            <li  class="q2"><a id="one2" onClick="setTab('one',2)" href="NetWork.asp" ><span id="Network"></span></a></li>
+            <li  class="q3"><a id="one3" onClick="setTab('one',3)" href="name.asp" ><span id="SIP Account"></span></a></li>
+            <li  class="q4"><a id="one4" onClick="setTab('one',4)" href="linekey.asp" ><span id="Programmable Button"></span></a></li>
+            <li  class="q5"><a id="one5" onClick="setTab('one',5)" href="SysConfig.asp" ><span id="Intelbras Phone Setting"></span></a></li>
+            <li  class="q6"><a id="one6" onClick="setTab('one',6)" href="PhoneBookTab.asp" ><span id="PhoneBook"></span></a></li>
+            <li  class="q7"><a id="one7" onClick="setTab('one',7)" href="http.asp" ><span id="Phone Maintenance"></span></a></li>
+            <li  class="q8"><a id="one8" onClick="setTab('one',8)" href="UpholdPassword.asp" ><span id="Security"></span></a></li>
+            <li  class="q9"><a id="one9" onClick="setTab('one',9)" href="login.asp" ><span id="Logout String"></span></a></li>
+        </ul>
+    </div>
+    <div class="clear"></div>
+</div>
+<div class="page_left">
+	<ul id="con_one_1" >
+        <li class="hover"><a href="home.asp"><span id="Phone Status String" ></span></a></li>
+    </ul>
+</div>
+<div class="page_right">
+
+    <div class="page_right_r">
+        <div class="title"><span id="Note"></span></div>
+        <div class="conter">
+		 <strong><span id="Register status String"></span>:</strong>
+		 <br>
+		 <span id="Register Status Note String"></span>
+		 <br>
+		 <br>
+		 <strong><span id="IPModeV4 String"></span>:</strong>
+		 <br>
+		 <span id="IPModeV4 Note String"></span>
+		 <br>
+		 <br>
+		 <strong><span id="IPModeV6 String"></span>:</strong>
+		 <br>
+		 <span id="IPModeV6 Note String"></span>
+		 <br>
+		 <br>
+		 <strong><span id="system info String"></span>:</strong>
+		 <br>
+		 <span id="system info Note String"></span>
+        </div>
+        <div class="title" style="display: none"><span id="News"></span></div>
+        <div class="conter" style="display: none">
+			<span class="tex"><a href="#"><span id="No Update"></span></a></span>
+            <a href="#"><img src="images/544.gif"></a>
+            <span class="dt"><a href="#"><span id="More"></span></a></span>
+        </div>
+    </div>
+	
+<script src="lang/common.js"></script>
+<script src='lang/br.js'></script>
+
+    <div class="page_right_l"  id="body">
+	
+<script language="JavaScript">
+    document.getElementById("body").style.display="none";
+</script>	
+
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" class="table">
+	<tr>
+         <th style="width:50%"><div align="left" style="padding-left:50px" ><strong><span id="System Run Time"></span></ strong></div> </th>
+         <td>0 <span id="Day"></span> 0 <span id="Hour"></span> 26 <span id="Minute"></span>  30 <span id="Second"></span> </td>
+    </tr>
+	
+	<tr>
+		<th width="47%"><div align="left" style="padding-left:50px"><strong><span id="Register status"></span></strong>&nbsp;&nbsp;<a class="dxs" href="#"><img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="Register Status Note"></span></span></a></div></th>
+		<td>&nbsp;</td>
+   </tr>
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account1"></span> 1  </div></th>
+		<td><div style="color:red"><span id='Register None1'></span></div></td>
+	  </tr>
+	  
+	  <tr >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account2"></span> 2  </div></th>
+		<td><div style="color:red"><span id='Register None2'></span></div></td>
+	  </tr>
+	  
+	  <tr  style="display: none">
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account3"></span> 3  </div></th>
+		<td><div style="color:red"><span id='Register None3'></span></div></td>
+	  </tr>
+	  
+	   <tr  style="display: none" >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account4"></span> 4 </div></th>
+		<td><div style="color:red"><span id='Register None4'></span></div></td>
+	  </tr>
+	  
+	  <tr  style="display: none"   >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account5"></span> 5 </div></th>
+		<td><div style="color:red"><span id='Register None5'></span></div></td>
+	  </tr>
+	  
+	  <tr  style="display: none"   >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account6"></span> 6 </div></th>
+		<td><div style="color:red"><span id='Register None6'></span></div></td>
+	  </tr>
+
+	  <tr  style="display: none"    >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account7"></span> 7 </div></th>
+		<td><div style="color:red"><span id='Register None7'></span></div></td>
+	  </tr>
+
+	  <tr  style="display: none"    >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account8"></span> 8 </div></th>
+		<td><div style="color:red"><span id='Register None8'></span></div></td>
+	  </tr>
+	  
+	   <tr  style="display: none"    >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account9"></span> 9</div></th>
+		<td><div style="color:red"><span id='Register None9'></span></div></td>
+	  </tr>
+	  
+	  <tr  style="display: none"     >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account10"></span> 10</div></th>
+		<td><div style="color:red"><span id='Register None10'></span></div></td>
+	  </tr>
+	  
+	  <tr  style="display: none"     >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account11"></span> 11</div></th>
+		<td><div style="color:red"><span id='Register None11'></span></div></td>
+	  </tr>
+
+	  <tr  style="display: none"     >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account12"></span> 12</div></th>
+		<td><div style="color:red"><span id='Register None12'></span></div></td>
+	  </tr>
+
+	  <tr  style="display: none"     >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account13"></span> 13</div></th>
+		<td><div style="color:red"><span id='Register None13'></span></div></td>
+	  </tr>
+	  
+	   <tr  style="display: none"     >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account14"></span> 14</div></th>
+		<td><div style="color:red"><span id='Register None14'></span></div></td>
+	  </tr>
+	  
+	  <tr  style="display: none"     >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account15"></span> 15</div></th>
+		<td><div style="color:red"><span id='Register None15'></span></div></td>
+	  </tr>
+	  
+	  <tr  style="display: none"     >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account16"></span> 16</div></th>
+		<td><div style="color:red"><span id='Register None16'></span></div></td>
+	  </tr>
+
+	  <tr  style="display: none"     >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account17"></span> 17</div></th>
+		<td><div style="color:red"><span id='Register None17'></span></div></td>
+	  </tr>
+
+	  <tr  style="display: none"     >
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Account18"></span> 18</div></th>
+		<td><div style="color:red"><span id='Register None18'></span></div></td>
+	  </tr>
+	  
+	  <tr style="display: none">
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="EX Module1"></span> 1  </div></th>
+		<td><div style="color:gray"><span id='Off Line1'></span></div></td>
+	  </tr>
+	  <tr style="display: none">
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="EX Module2"></span> 2  </div></th>
+		<td><div style="color:gray"><span id='Off Line2'></span></div></td>
+	  </tr>
+
+	  <tr style="display: none">
+		<th width="47%"><div align="left" style="padding-left:50px"><strong><span id="Network Status"></span></strong>&nbsp;&nbsp;<a class="dxs" href="#"><img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="Network Status Note"></span></span></a></div></th>
+		<td>&nbsp;</td>
+	  </tr>
+	  
+	  <tr  style="display:">
+		<th width="47%"><div align="left" style="padding-left:50px"><strong><span id="IPModeV4"></span></strong>&nbsp;&nbsp;<a class="dxs" href="#"><img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="IPModeV4 Note"></span></span></a></div></th>
+		<td>&nbsp;</td>
+	  </tr>
+	  
+	  <tr >
+		<th width="47%"><div align="left" style="padding-left:100px">LAN&nbsp;<span id="IPV4 PortType"></span>  </div></th>
+		<td><span id='Dynamic'></span></td>
+	  </tr>
+	  
+	  <tr >
+	     <th width="47%"><div align="left"><span id="MAC Address" style="padding-left:100px"></span>  </div></th>
+	     <td>d8:36:5f:90:61:19</td>
+	  </tr>
+	 
+	  <tr >
+		  <th width="47%"><div align="left" style="padding-left:100px">LAN&nbsp;<span id="IPV4 Address"></span>  </div></th>
+		  <td>192.168.0.48</td>
+	  </tr>
+	  
+	  <tr >
+		  <th width="47%"><div align="left" style="padding-left:100px"><span id="IPV4 Netmask"></span>  </div></th>
+		  <td>255.255.255.0</td>
+	  </tr >
+	  
+	  <tr >
+		  <th width="47%"><div align="left" style="padding-left:100px"><span id="IPV4 Gateway"></span>  </div></th>
+		  <td>192.168.0.1</td>
+	  </tr>
+	  
+	  <tr >
+		  <th width="47%"><div align="left" style="padding-left:100px"><span id="Primary DNS"></span>  </div></th>
+		  <td>8.8.8.8</td>
+	  </tr>
+	  
+	  <tr >
+		  <th width="47%"><div align="left" style="padding-left:100px"><span id="Secondary DNS"></span>  </div></th>
+		  <td>8.8.4.4</td>
+	  </tr>
+
+		<tr style="display: none" >
+			<th width="47%"><div align="left" style="padding-left:100px"><span id="Third DNS"></span>  </div></th>
+			<td></td>
+		</tr>
+	  
+	  <tr style="display: none"  style="display:">
+		<th width="47%"><div align="left" style="padding-left:50px"><strong><span id="IPModeV6"></span></strong>&nbsp;&nbsp;<a class="dxs" href="#"><img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="IPModeV6 Note"></span></span></a></div></th>
+		<td>&nbsp;</td>
+	  </tr>
+	  
+	  <tr style="display: none" style="display:">
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="MAC Address String"></span>  </div></th>
+		<td>d8:36:5f:90:61:19</td>
+	  </tr>
+	  
+	  <tr style="display: none" style="display:">
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="IPV6 Address"></span>  </div></th>
+		<td>::/64</td>
+	  </tr>
+	  
+	  <tr style="display: none" style="display:">
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="IPV6 Gateway"></span>  </div></th>
+		<td></td>
+	  </tr>
+	  
+	  <tr style="display: none" style="display:">
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="IPV6 Primary DNS String"></span>  </div></th>
+		<td></td>
+	  </tr>
+	  
+	  <tr style="display: none" style="display:">
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="IPV6 Secondary DNS String"></span>  </div></th>
+		<td></td>
+	  </tr>
+
+	  <tr style="display: none" style="display:" style="display: none">
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="IPV6 Third DNS String"></span>  </div></th>
+		<td></td>
+	  </tr>
+	  
+	<!--
+		<tr >
+			<th width="47%"><div align="left" style="padding-left:50px"><strong><span id="WIFI Status"></span></strong>&nbsp;&nbsp;<a class="dxs" href="#"><img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="WIFI Status Note"></span></span></a></div></th>
+			<td>&nbsp;</td>
+	    </tr>
+
+	  <tr>
+	    <th width="47%"><div align="left" style="padding-left:100px">SSID  </div></th>
+		<td></td>
+	  </tr>
+	   <tr>
+	    <th width="47%"><div align="left" style="padding-left:100px"><span id="WIFIState"></span></div></th>
+		<td></td>
+	  </tr>
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Signal"></span></div></th>
+		<td></td>
+	  </tr>
+	  
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="EXTMode1"></span></div></th>
+		<td></td>
+	  </tr>
+
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Band"></span></div></th>
+		<td></td>
+	  </tr>
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px">BSSID   </div></th>
+		<td></td>
+	  </tr>
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Encrytion"></span></div></th>
+		<td></td>
+	  </tr>
+	   <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="IP Address"></span></div></th>
+		<td></td>
+	  </tr>
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px">WIFI MAC</div></th>
+		<td></td>
+	  </tr>
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="System Version"></span></div></th>
+		<td></td>
+	  </tr>
+	 -->
+	  
+	  <tr >
+		<th width="47%"><div align="left" style="padding-left:50px"><strong><span id="VPNMode"></span></strong>&nbsp;&nbsp;<a class="dxs" href="#"><img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="VPNMode Note"></span></span></a></div></th>
+		<td>&nbsp;</td>
+	  </tr>
+	  
+	  <tr>
+		  <th width="47%"><div align="left" style="padding-left:100px"><span id="VPN IP Address"></span>  </div></th>
+		  <td></td>
+	  </tr>
+	  
+	  <tr>
+		  <th width="47%"><div align="left" style="padding-left:100px">Router&nbsp;<span id="PCPortIPAddress"></span>  </div></th>
+		  <td></td>
+	  </tr>
+	  <tr>
+		  <th width="47%"><div align="left" style="padding-left:100px">Router&nbsp;<span id="PCPortIPMask"></span>  </div></th>
+		  <td></td>
+	  </tr>
+	  <tr>
+		  <th width="47%"><div align="left" style="padding-left:100px"><span id="Device Type"></span>  </div></th>
+		  <td><span id='Brigde'></span></td>
+	  </tr>
+	  <tr>
+		  <th width="47%"><div align="left" style="padding-left:100px"><span id="DHCPServerEnable"></span>  </div></th>
+		  <td><span id='off1'></span></td>
+	  </tr>
+	
+	<!--
+		<tr>
+			<th width="47%">
+				<div align="left" style="padding-left:50px">
+					<strong><span id="4G Status"></span></strong>&nbsp;&nbsp;
+					<a class="dxs" href="#">
+						<img  src="images/wh.png">
+						<span class="dxsx"><span class="xsf"></span>
+							<span id="4G Note"></span>
+						</span>
+					</a>
+				</div>
+			</th>
+			
+			<td></td>
+		</tr>
+		<tr>
+			<th width="47%">
+				<div align="left" style="padding-left:100px">
+					<span id="4G_card_state"></span>  
+				</div>
+			</th>
+			<td><span id=></span></td>
+		</tr>
+		<tr>
+			<th width="47%">
+				<div align="left" style="padding-left:100px">
+					<span id="4G_signal_strength"></span>  
+				</div>
+			</th>
+			<td></td>
+		</tr>
+		<tr>
+			<th width="47%">
+				<div align="left" style="padding-left:100px">
+					<span id="4G_module_version"></span>  
+				</div>
+			</th>
+			<td></td>
+		</tr>
+		<tr>
+			<th width="47%">
+				<div align="left" style="padding-left:100px">
+					<span id="4G_iemi"></span>  
+				</div>
+			</th>
+			<td></td>
+		</tr>
+		<tr>
+			<th width="47%">
+				<div align="left" style="padding-left:100px">
+					<span id="4G_capabilities"></span>  
+				</div>
+			</th>
+			<td></td>
+		</tr>
+		<tr>
+			<th width="47%">
+				<div align="left" style="padding-left:100px">
+					<span id="4G_connect status"></span>
+				</div>
+			</th>
+			<td></td>
+		</tr>
+		<tr>
+			<th width="47%">
+				<div align="left" style="padding-left:100px">
+					<span id="4G_frequency"></span>
+				</div>
+			</th>
+			<td></td>
+		</tr>
+		<tr>
+			<th width="47%">
+				<div align="left" style="padding-left:100px">
+					<span id="4G_Data Rate"></span>
+				</div>
+			</th>
+			<td></td>
+		</tr>
+		<tr>
+			<th width="47%">
+				<div align="left" style="padding-left:100px">
+					<span id="4G_Send Received"></span>
+				</div>
+			</th>
+			<td></td>
+		</tr>
+	-->
+
+	  <tr>
+		  <th width="47%"><div align="left" style="padding-left:50px"><strong><span id="system info"></span></strong>&nbsp;&nbsp;<a class="dxs" href="#"><img  src="images/wh.png"><span class="dxsx"><span class="xsf"></span><span id="system info Note"></span></span></a></div></th>
+		  <td></td>
+	  </tr>
+	   <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Phone Model"></span>  </div></th>
+		<td>S3002</td>
+	  </tr>
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Software Version"></span>  </div></th>
+		<td>V1.7.0.010412359</td>
+	  </tr>
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Hardware Version"></span>  </div></th>
+		<td>V2.x.x</td>
+	  </tr>
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Hardware ID"></span>  </div></th>
+		<td>0</td>
+	  </tr>
+	 <!-- <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="Kernel Version"></span>  </div></th>
+		<td>V1.0.0</td>
+	  </tr>-->
+	  
+	  <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="AutoProvision Server URL"></span>  </div></th>
+		<td>https://irps.intelbras.com.br/</td>
+	  </tr>
+	   <tr>
+		<th width="47%"><div align="left" style="padding-left:100px"><span id="TFTP Server IP"></span>  </div></th>
+		<td></td>
+	  </tr>
+	  
+	  <tr>
+		<th colspan="2">
+		  <div class="line"></div>
+		  <br>
+		  <div align="center">
+		        <input name="Refresh" type="button" style="padding:0px 10px;" class="button" id="Refresh" 
+				value="" onClick="self.location.reload(true)">		
+		    </div></th>
+		</tr>
+     
+    </table>
+
+    </div>
+    <div class="clear"></div>
+</div>
+</div>
+<script type="text/javascript"> 
+function setTab(name,cursel){ 
+	if(cursel==3)
+	  SetURLCookie("SIP","SIP_child");
+	else if(cursel==5)
+	  SetURLCookie("SysConfig","Basic_child");
+		else if(cursel==9)
+		{
+			clearLogFlag();
+		}
+	cursel_0=cursel; 
+	for(var i=1; i<=links_len; i++){ 
+		var menu = document.getElementById(name+i); 
+		var menudiv = document.getElementById("con_"+name+"_"+i); 
+		if(i==cursel){ 
+			menu.className="hover"; 
+			menudiv.style.display="block"; 
+		} 
+		else{ 
+			menu.className=""; 
+			menudiv.style.display="none"; 
+		} 
+	} 
+} 
+function Next(){ 
+cursel_0++; 
+if (cursel_0>links_len)cursel_0=1 
+	setTab(name_0,cursel_0); 
+}
+
+var name_0='one'; 
+var cursel_0=1; 
+var links_len,iIntervalId; 
+onload=function(){ 
+	var links = document.getElementById("tab1").getElementsByTagName('li') 
+	links_len=links.length; 
+	for(var i=0; i<links_len; i++){ 
+		links[i].onmouseover=function(){ 
+			clearInterval(iIntervalId); 
+		} 
+	} 
+	document.getElementById("con_"+name_0+"_"+links_len).parentNode.onmouseover=function(){ 
+		clearInterval(iIntervalId); 
+	} 
+	setTab(name_0,cursel_0); 
+} 
+</script>
+
+</body>
+
+<script src="lang/common.js"></script>
+<script src='lang/br.js'></script>
+<script language="JavaScript">
+document.getElementById("body").style.display="block";
+var element =document.getElementById('');
+if(element){
+	  element.focus();
+	  element.select();
+}
+window.onload=function(){
+parent.document.location="UpholdPassword.asp"; 
+}
+</script>
+
+</html>

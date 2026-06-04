@@ -20,7 +20,9 @@ PHONE_MODELS: list[str] = [
     "Intelbras V3101",
     "Intelbras V3501",
     "Intelbras V5501",
+    "Intelbras S3002",
     "FlyingVoice P10",
+    "Yealink T31G",
 ]
 
 
@@ -29,6 +31,10 @@ def default_config_padrao() -> dict[str, Any]:
     return {
         "sip_server": "",
         "sip_transport": "udp",
+        # Conta SIP do aparelho que recebe a config (1 ou 2). Suporte por
+        # fabricante: Yealink confirmado; demais aplicam sempre na conta 1 até
+        # o mapeamento da Account 2 ser confirmado.
+        "sip_account": 1,
         "web_user": "admin",
         "web_password": "admin",
         "nova_web_user": "",
@@ -39,6 +45,8 @@ def default_config_padrao() -> dict[str, Any]:
         "lcd_language": "pt-BR",
         "register_expiration": 30,
         "validar_conectividade": True,
+        # Opt-in: após aplicar, confirma via USCall se o ramal registrou no PBX.
+        "verificar_registro_sip": False,
         # Intelbras-only: bloqueio universal do menu habilitado por padrão
         # (EnableKeyLock=2 trava o menu; timeout em segundos).
         "menu_password": "123",

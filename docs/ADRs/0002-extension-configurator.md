@@ -102,3 +102,35 @@ src/middleware_monitor/
 ## Histórico
 - 2026-05-19 a 2026-05-21: bootstrap, vendors, refinamentos no POC `autocfg-ramais`
 - 2026-05-21: PRs 1-5 mergeados, release v2.2.0 publicada
+- 2026-05-23: adapter **FlyingVoice P10** (`flyingvoice.py`) — login com
+  `CheckString`, replay do form da conta SIP em HTTP/1.0, validado em produção.
+- 2026-05-27: adapter **Yealink T31G** (`yealink.py` + `yealink_template.cfg`) —
+  1º adapter **HTTPS** (cert self-signed, `verify=False`). Login com senha
+  cifrada **RSA PKCS#1 v1.5** no cliente (chave `g_rsa_n`/`g_rsa_e` da página) +
+  token CSRF `g_strToken`. "Send" = import de config local:
+  `POST /servlet?m=mod_res&p=upload&type=localcfg` (campo `UploadName`, formato
+  `.cfg` key=value), que **exige** `&maxlength=<RSAEncrypt("5MB")>` — sem ele o
+  firmware responde `result:noparam` e não aplica. Whitelist de prefixos
+  (`account.1.`/`linekey.`/`local_time.`) mantém a regra de nunca tocar em rede.
+  Validado em hardware na bancada (192.168.0.173).
+- 2026-06-03: adapter **Intelbras S3002** (`intelbras_s3002.py`) — linha S, firmware
+  **GoAhead-Webs** (`.asp` + `/goform/`), distinto do V-series/RapidLogic. **Login
+  plaintext** (`POST /goform/SavewebLogin`), **sessão por IP sem cookie** com login
+  único (`/goform/clearLogFlag` limpa o flag de sessão presa). SIP via replay do form
+  `/name.asp` (`id=Accountname`) → `POST /goform/SaveSipUserCfg` (hidden `Operate=Submit`,
+  HTTP/1.0 cru); teclas via `/linekey.asp` → `/goform/SaveLineKeyCfg`
+  (`ptypeN`/`pSipAccountsN`/`pNAMEn`/`pNUMn`; `ptype`: Linha=0, Discagem rápida=5,
+  BLF=1, Broadsoft BLF=11). Helpers de replay extraídos do FlyingVoice para
+  `vendors/_form_replay.py` (compartilhado). **Mapeamento crítico:** `UserNumber`
+  ("Sip Username") = `auth_id`, igual ao `appName` ("Authenticate Name") — o PBX exige
+  username == auth name (validado: com `UserNumber=número` o ramal NÃO registra; com
+  `UserNumber=auth` registra). Roteamento desambigua `Intelbras S\d` (regex
+  `is_intelbras_s_series`) → adapter S3002; `Intelbras V*` continua no RapidLogic.
+  **Homologado ao vivo** em 192.168.0.48 (fw V1.7.0.010412359): ramal 3677/work-3677
+  → status **Registered**, `/NetWork.asp` idêntico ao baseline (rede intacta) e tecla
+  speed-dial aplicada. **Troca de credencial web** (`nova_web_*` → `/UpholdPassword.asp`
+  → `POST /goform/SaveMaintenUsrCfg`, campos `role`/`UserName`/`PwdOld`/`PwdNew`/`PwdConfirm`;
+  `PwdOld` = senha atual; os dois grupos de radio `role` são colapsados num único
+  `role=admin`) **também homologada ao vivo** (admin→temp→revert: senha nova autentica,
+  antiga recusada, rede intacta). Conta 2 (`AccountID=1`) ainda não validada → catálogo
+  expõe só conta 1.

@@ -49,8 +49,7 @@ class UscallClient:
     def _url(self) -> str:
         return f"https://{self.host}/api/extenstatus"
 
-    async def fetch_extensions(self) -> list[dict[str, Any]]:
-        params = {"token": self.token, "tipo": "all"}
+    async def _get(self, params: dict[str, str]) -> list[dict[str, Any]]:
         try:
             async with httpx.AsyncClient(verify=self.verify_ssl, timeout=self.timeout) as client:
                 resp = await client.get(self._url, params=params)
@@ -67,6 +66,18 @@ class UscallClient:
         if not isinstance(data, list):
             raise UscallProtocolError("payload_not_list")
         return data
+
+    async def fetch_extensions(self) -> list[dict[str, Any]]:
+        """Lista o status de TODOS os ramais (1 request cobre o ambiente inteiro)."""
+        return await self._get({"token": self.token, "tipo": "all"})
+
+    async def fetch_extension(self, ramal: str) -> dict[str, Any] | None:
+        """Status de UM ramal (payload mínimo) — usa o parâmetro ``ramal`` do extenStatus."""
+        rows = await self._get({"token": self.token, "tipo": "all", "ramal": str(ramal)})
+        for row in rows:
+            if str(row.get("ramal", "")) == str(ramal):
+                return row
+        return rows[0] if rows else None
 
     async def test(self) -> UscallTestResult:
         started = time.perf_counter()

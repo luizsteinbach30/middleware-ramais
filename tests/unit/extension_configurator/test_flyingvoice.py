@@ -80,11 +80,26 @@ def test_render_softkeys_menu_e_speeddial():
     tpl = {"function_keys": [
         {"key": "SoftKey3", "type": "menu"},
         {"key": "SoftKey4", "type": "speed_dial", "label": "Central",
-         "value_source": "fixo", "value_fixed": "800", "account": 0},
+         "value_source": "fixo", "value_fixed": "800", "account": 1},
     ]}
     out = FlyingVoiceAdapter._render_softkeys(tpl, {})
     assert out[3] == "5,,,,"
+    # UI "Account 1" (1-based) -> campo `line` 0-based do P10 (0 = Conta 1).
     assert out[4] == "8,0,800,Central,"
+
+
+def test_render_softkey_account_e_1based():
+    # Regressao do off-by-one: Account 2 na tela -> line=1 (Conta 2 no
+    # telefone), nao Conta 3. Account 0/ausente cai em Conta 1 (line=0).
+    tpl = {"function_keys": [
+        {"key": "SoftKey1", "type": "speed_dial", "value_source": "fixo",
+         "value_fixed": "900", "account": 2},
+        {"key": "SoftKey2", "type": "speed_dial", "value_source": "fixo",
+         "value_fixed": "901", "account": 0},
+    ]}
+    out = FlyingVoiceAdapter._render_softkeys(tpl, {})
+    assert out[1] == "8,1,900,,"
+    assert out[2] == "8,0,901,,"
 
 
 def test_generate_config_inclui_softkeys():
