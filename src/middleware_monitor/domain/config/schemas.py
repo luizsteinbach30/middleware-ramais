@@ -11,6 +11,31 @@ from typing import Literal
 from pydantic import BaseModel, Field, HttpUrl
 
 
+class UscallServerOut(BaseModel):
+    """Servidor USCall como exposto na API/UI (token sempre mascarado)."""
+
+    id: int
+    nome: str
+    host: str
+    token: Literal["set"] | None = None
+    verify_ssl: bool = True
+    enabled: bool = True
+
+
+class UscallServerIn(BaseModel):
+    """Criação/edição de servidor USCall.
+
+    ``token``: ``None`` ou o literal ``"set"`` mantém o token atual (edição);
+    string não-vazia define/re-cifra; ``""`` é inválido (token obrigatório).
+    """
+
+    nome: str = Field(min_length=1, max_length=64)
+    host: str = Field(min_length=1, max_length=255)
+    token: str | None = None
+    verify_ssl: bool = True
+    enabled: bool = True
+
+
 class WebhookConfig(BaseModel):
     enabled: bool = False
     url: str = ""
@@ -93,6 +118,8 @@ class UscallTestResponse(BaseModel):
 __all__: list[str] = [
     "AppConfigOut",
     "AppConfigUpdate",
+    "UscallServerIn",
+    "UscallServerOut",
     "UscallTestRequest",
     "UscallTestResponse",
     "WebhookConfig",
