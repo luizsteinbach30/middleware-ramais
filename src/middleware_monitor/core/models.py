@@ -60,6 +60,27 @@ class AppConfig(Base):
     updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
+class UscallServer(Base):
+    """Servidor USCall configurado (multi-servidor desde a v2.7.0).
+
+    ``token`` guarda o ciphertext SecretBox (mesma cifra da ``app_config``);
+    nunca exponha o valor decriptado fora de jobs/integrações.
+    """
+
+    __tablename__ = "uscall_servers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    nome: Mapped[str] = mapped_column(String(64), nullable=False)
+    host: Mapped[str] = mapped_column(String(255), nullable=False)
+    token: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    verify_ssl: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    devices: Mapped[list[Device]] = relationship(back_populates="uscall_server")
+
+
 class Device(Base):
     __tablename__ = "devices"
 
@@ -75,11 +96,19 @@ class Device(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_ping_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Origem da coleta (multi-USCall). Ramais não se repetem entre servidores,
+    # então `name` continua único global; o campo serve para observabilidade e
+    # para a verificação de registro SIP consultar o servidor certo.
+    uscall_server_id: Mapped[int | None] = mapped_column(
+        ForeignKey("uscall_servers.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     pings: Mapped[list[DevicePing]] = relationship(back_populates="device", cascade="all, delete-orphan")
     extension_lines: Mapped[list[ExtensionLine]] = relationship(back_populates="device")
+    uscall_server: Mapped[UscallServer | None] = relationship(back_populates="devices")
 
 
 class DevicePing(Base):
