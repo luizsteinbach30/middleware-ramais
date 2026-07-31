@@ -296,7 +296,15 @@
       Ambientes
     </a>
     <div class="flex-1 min-w-0">
-      <h1 id="ec-title" class="text-lg font-semibold text-gray-100 truncate">—</h1>
+      <div class="flex items-center gap-1.5 min-w-0">
+        <h1 id="ec-title" class="text-lg font-semibold text-gray-100 truncate">—</h1>
+        <button id="ec-rename" title="Renomear ambiente"
+                class="shrink-0 p-1.5 rounded-md text-gray-500 hover:text-blue-300 hover:bg-blue-500/15 ring-1 ring-transparent hover:ring-blue-500/30 transition-colors">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z"/>
+          </svg>
+        </button>
+      </div>
       <p id="ec-subtitle" class="text-xs text-gray-400 mt-0.5 truncate">—</p>
     </div>
     <a id="ec-config-link" href="#" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">⚙ Config padrão</a>

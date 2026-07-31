@@ -136,6 +136,26 @@ def test_update_environment_atualiza_config_padrao(client, db) -> None:
     assert detail["config_padrao"]["keylock_enable"] == 2
 
 
+def test_update_environment_renomeia_sem_mudar_slug(client, db) -> None:
+    csrf = _authed(client, db)
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Loja Velha", "modelo_telefone": "HTEK UC902G"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    r = client.put(
+        "/api/extension-configurator/environments/loja-velha",
+        json={"nome": "Loja Nova"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200, r.json()
+    # slug (id) permanece; só o nome exibido muda
+    detail = client.get("/api/extension-configurator/environments/loja-velha").json()
+    assert detail["nome"] == "Loja Nova"
+    # config_padrao intacta (rename puro não mexe na config)
+    assert detail["config_padrao"]["keylock_enable"] == 2
+
+
 def test_duplicate_environment_requer_csrf(client, db) -> None:
     csrf = _authed(client, db)
     client.post(

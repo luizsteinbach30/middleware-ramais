@@ -1129,6 +1129,60 @@ async function doExportEnv() {
   }
 }
 
+// ----- Renomear ambiente -------------------------------------------------------
+// Clique no lápis troca o título por um input inline: Enter salva (PUT {nome}),
+// Esc/blur cancela. O id (slug) do ambiente NÃO muda — só o nome exibido.
+
+let _renaming = false;
+
+function startRename() {
+  if (_renaming) return;
+  _renaming = true;
+  const h1 = $('#ec-title');
+  const btn = $('#ec-rename');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = envNome;
+  input.maxLength = 120;
+  input.className = 'bg-gray-800 ring-1 ring-inset ring-blue-500 rounded-lg px-2 py-0.5 ' +
+    'text-lg font-semibold text-gray-100 w-full max-w-md focus:outline-none';
+  h1.classList.add('hidden');
+  btn.classList.add('hidden');
+  h1.parentNode.insertBefore(input, h1);
+  input.focus();
+  input.select();
+
+  const finish = () => {
+    input.remove();
+    h1.classList.remove('hidden');
+    btn.classList.remove('hidden');
+    _renaming = false;
+  };
+
+  const commit = async () => {
+    const nome = input.value.trim();
+    if (!nome || nome === envNome) { finish(); return; }
+    input.disabled = true;
+    try {
+      await api(`/api/extension-configurator/environments/${encodeURIComponent(envId)}`, {
+        method: 'PUT', body: { nome },
+      });
+      envNome = nome;
+      h1.textContent = nome;
+      toast.success('Ambiente renomeado');
+    } catch (e) {
+      toast.error('Falha ao renomear: ' + e.message);
+    }
+    finish();
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(); }
+  });
+  input.addEventListener('blur', () => { if (!input.disabled) finish(); });
+}
+
 // ----- Duplicar ambiente -------------------------------------------------------
 
 function openDupModal() {
@@ -1160,6 +1214,7 @@ async function doDuplicate() {
 // Salvar é ação na própria tela → mantém o monitor ativo (só sair da tela desliga).
 $('#ec-save').addEventListener('click', save);
 $('#ec-preview').addEventListener('click', previewActiveLine);
+$('#ec-rename').addEventListener('click', startRename);
 $('#ec-duplicate').addEventListener('click', openDupModal);
 $('#ec-dup-cancel').addEventListener('click', closeDupModal);
 $('#ec-dup-confirm').addEventListener('click', doDuplicate);
