@@ -104,22 +104,14 @@ def _status_resumo(lines: list[ExtensionLine]) -> dict[str, Any]:
     }
 
 
-def _searchable_text(
-    env: ExtensionEnvironment, lines: list[ExtensionLine],
-) -> str:
-    """Texto pre-concatenado pra busca livre client-side (lowercase)."""
-    bits: list[str] = [env.nome or "", env.modelo_telefone or ""]
-    for ln in lines:
-        bits.extend([
-            ln.numero_ramal or "",
-            ln.ip or "",
-            ln.nome_visivel or "",
-            ln.user_auth or "",
-            ln.numero_abreviado or "",
-            ln.ultimo_mac or "",
-            ln.ultimo_modelo or "",
-        ])
-    return " ".join(b for b in bits if b).lower()
+def _searchable_text(env: ExtensionEnvironment) -> str:
+    """Texto de busca client-side (lowercase) — APENAS o nome do ambiente.
+
+    Até a v2.6.0 concatenava também os dados internos da planilha (ramal, IP,
+    MAC, user auth...), então buscar "3660" trazia qualquer ambiente que
+    tivesse esse ramal — comportamento reportado como bug. O modelo do
+    telefone tem filtro dedicado (dropdown) e também fica fora."""
+    return (env.nome or "").lower()
 
 
 def _env_summary(
@@ -137,7 +129,7 @@ def _env_summary(
         "atualizado_em": iso_utc(env.updated_at),
         "ultima_execucao": _run_dict(last) if last else None,
         "status_resumo": _status_resumo(lines),
-        "searchable": _searchable_text(env, lines),
+        "searchable": _searchable_text(env),
     }
 
 

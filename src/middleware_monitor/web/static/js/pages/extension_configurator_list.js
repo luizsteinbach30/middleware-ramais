@@ -97,13 +97,14 @@ function envCard(e) {
 }
 
 // Match: termos separados por espaco viram AND; cada termo precisa aparecer
-// em searchable (que ja vem lowercase do backend).
+// em searchable (= nome do ambiente, lowercase, vindo do backend). Dados
+// internos da planilha (ramal/IP/MAC/user auth) ficam fora da busca livre.
 function matchesFilters(env) {
   if (_filters.modelo && env.modelo_telefone !== _filters.modelo) return false;
   if (_filters.status && env.status_resumo?.agregado !== _filters.status) return false;
   const q = _filters.q.trim().toLowerCase();
   if (!q) return true;
-  const haystack = env.searchable || `${env.nome} ${env.modelo_telefone}`.toLowerCase();
+  const haystack = env.searchable || String(env.nome || '').toLowerCase();
   return q.split(/\s+/).every(t => t && haystack.includes(t));
 }
 
