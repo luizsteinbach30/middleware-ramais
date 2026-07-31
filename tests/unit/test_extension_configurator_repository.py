@@ -94,6 +94,67 @@ def test_save_lines_aceita_linha_sem_id_e_gera_uuid(db: DBSession) -> None:
     assert saved[0].numero_ramal == "3699"
 
 
+def test_list_lines_preserva_ordem_da_planilha(db: DBSession) -> None:
+    """Bug v2.6.0: ordenação por (created_at, id) embaralhava as linhas em
+    saves em lote (created_at empatava e o uuid é aleatório). A ordem canônica
+    agora é a posição no payload salvo (= ordem da planilha)."""
+    env = repo.create_environment(db, nome="Ordem", modelo_telefone="HTEK UC902G")
+    # IPs propositalmente fora de ordem lexicográfica E numérica.
+    rows = [
+        repo.new_line(ip="192.168.0.20", numero_ramal="3665"),
+        repo.new_line(ip="192.168.0.2", numero_ramal="3661"),
+        repo.new_line(ip="192.168.0.100", numero_ramal="3670"),
+        repo.new_line(ip="10.0.0.5", numero_ramal="3650"),
+    ]
+    repo.save_lines(db, env, rows)  # um único _now() → created_at empatado
+    db.commit()
+    got = repo.list_lines(db, env.id)
+    assert [ln.ip for ln in got] == [
+        "192.168.0.20", "192.168.0.2", "192.168.0.100", "10.0.0.5",
+    ]
+    assert [ln.posicao for ln in got] == [0, 1, 2, 3]
+
+
+def test_save_lines_reordenar_planilha_atualiza_posicao(db: DBSession) -> None:
+    env = repo.create_environment(db, nome="Ordem2", modelo_telefone="HTEK UC902G")
+    saved = repo.save_lines(db, env, [
+        repo.new_line(ip="192.168.0.10", numero_ramal="3660"),
+        repo.new_line(ip="192.168.0.11", numero_ramal="3661"),
+        repo.new_line(ip="192.168.0.12", numero_ramal="3662"),
+    ])
+    db.commit()
+    # Usuário reordena a planilha: inverte as linhas (mesmos ids).
+    invertido = [
+        {"id": ln.id, "ip": ln.ip, "numero_ramal": ln.numero_ramal}
+        for ln in reversed(saved)
+    ]
+    repo.save_lines(db, env, invertido)
+    db.commit()
+    got = repo.list_lines(db, env.id)
+    assert [ln.ip for ln in got] == ["192.168.0.12", "192.168.0.11", "192.168.0.10"]
+    assert [ln.posicao for ln in got] == [0, 1, 2]
+
+
+def test_add_devices_as_lines_appenda_no_fim_da_planilha(db: DBSession) -> None:
+    from middleware_monitor.core.models import Device
+
+    env = repo.create_environment(db, nome="Ordem3", modelo_telefone="HTEK UC902G")
+    repo.save_lines(db, env, [
+        repo.new_line(ip="192.168.0.10", numero_ramal="3660"),
+        repo.new_line(ip="192.168.0.11", numero_ramal="3661"),
+    ])
+    now = repo._now()
+    dev = Device(name="3670", ip="192.168.0.70", created_at=now, updated_at=now)
+    db.add(dev)
+    db.flush()
+    result = repo.add_devices_as_lines(db, env, [dev.id])
+    db.commit()
+    assert result["added"] == 1
+    got = repo.list_lines(db, env.id)
+    assert [ln.ip for ln in got] == ["192.168.0.10", "192.168.0.11", "192.168.0.70"]
+    assert got[-1].posicao == 2
+
+
 def test_delete_environment_cascata_em_linhas_e_runs(db: DBSession) -> None:
     env = repo.create_environment(db, nome="Lab", modelo_telefone="HTEK UC902G")
     repo.save_lines(db, env, [repo.new_line(ip="192.168.0.10", numero_ramal="3660")])

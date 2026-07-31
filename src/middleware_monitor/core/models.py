@@ -203,6 +203,10 @@ class ExtensionLine(Base):
     servidor_sip: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     numero_abreviado: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     nome_visivel: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    # Posição da linha na planilha (ordem canônica de exibição/aplicação).
+    posicao: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
     ultimo_hash_aplicado: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ultimo_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     ultima_aplicacao: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
