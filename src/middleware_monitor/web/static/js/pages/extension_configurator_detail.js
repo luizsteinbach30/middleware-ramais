@@ -8,9 +8,24 @@ const envId = window.EC_ENV_ID;
 let sheet = null;
 let pollTimer = null;
 let currentRun = null;
+let pollInFlight = false;   // impede pollRun sobreposto quando a API demora
 let modeloTelefone = '';
 let isHtek = false;
 let envNome = '';
+
+// ----- Ciclo de vida do polling do run ----------------------------------------
+// O interval é criado a cada apply() e destruído quando o run termina/expira.
+// (Bug v2.6.0: um único setInterval era criado no load e morria no fim do 1º
+// run — o 2º apply ficava sem polling e a tela "travava" até o F5.)
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(() => { if (currentRun) pollRun(); }, 1500);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  pollInFlight = false;
+}
 
 // ----- Monitor de ping ao vivo -------------------------------------------------
 // Liga/desliga via toggle. Enquanto ligado, pinga os IPs preenchidos na planilha
@@ -750,6 +765,7 @@ async function apply({ selectedIds = null } = {}) {
     }
     toast.success(`Aplicando ${r.total} ${r.total === 1 ? 'ramal' : 'ramais'}…`);
     currentRun = r.run_id;
+    startPolling();
     pollRun();
   } catch (e) {
     toast.error('Erro: ' + e.message);
@@ -758,7 +774,8 @@ async function apply({ selectedIds = null } = {}) {
 }
 
 async function pollRun() {
-  if (!currentRun) return;
+  if (!currentRun || pollInFlight) return;
+  pollInFlight = true;
   try {
     const s = await api(`/api/extension-configurator/runs/${currentRun}/live`);
     $('#ec-run-panel').classList.remove('hidden');
@@ -792,12 +809,27 @@ async function pollRun() {
 
     if (s.finished_at) {
       currentRun = null;
-      clearInterval(pollTimer); pollTimer = null;
+      stopPolling();
       toast.info(`Aplicação finalizada · ok ${sm.done || 0} · erro ${sm.error || 0}`);
       setApplyButtonsDisabled(false);
       await reload();
     }
-  } catch (_e) { /* swallow */ }
+  } catch (e) {
+    if (e && e.status === 404) {
+      // Run expirou da memória do servidor (prune mantém só os últimos runs,
+      // ou o serviço reiniciou). O resultado por linha já está persistido —
+      // encerra o acompanhamento e recarrega a planilha.
+      currentRun = null;
+      stopPolling();
+      $('#ec-run-panel').classList.add('hidden');
+      setApplyButtonsDisabled(false);
+      toast.info('Acompanhamento encerrado — veja o resultado na coluna status.');
+      await reload().catch(() => {});
+    }
+    // Demais erros (rede intermitente): silencioso — tenta no próximo tick.
+  } finally {
+    pollInFlight = false;
+  }
 }
 
 // ----- Monitor de ping: implementação ----------------------------------------
@@ -1171,9 +1203,7 @@ $('#ec-ping-interval').addEventListener('change', () => {
   if (monitorOn) scheduleNextPing();  // aplica o novo intervalo na hora
 });
 
-// Sair da tela (navegar/fechar aba) encerra o monitor e zera o timer.
-window.addEventListener('pagehide', stopMonitor);
-
-pollTimer = setInterval(() => { if (currentRun) pollRun(); }, 1500);
+// Sair da tela (navegar/fechar aba) encerra o monitor e o polling do run.
+window.addEventListener('pagehide', () => { stopMonitor(); stopPolling(); });
 
 reload().catch((e) => toast.error('Falha ao carregar: ' + e.message));
