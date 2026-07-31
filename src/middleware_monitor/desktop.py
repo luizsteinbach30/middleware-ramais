@@ -267,17 +267,30 @@ class ServerThread:
 class UpdateChecker:
     """Polls GitHub Releases for a version greater than the current one."""
 
-    def __init__(self, current_version: str, repo: str, channel: str = "stable") -> None:
+    def __init__(
+        self,
+        current_version: str,
+        repo: str,
+        channel: str = "stable",
+        token: str | None = None,
+    ) -> None:
         self.current = current_version
         self.repo = repo
         self.channel = channel
+        self.token = token
         self.latest: dict | None = None
         self._lock = threading.Lock()
 
     def check(self) -> dict | None:
         url = f"https://api.github.com/repos/{self.repo}/releases?per_page=20"
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
         try:
-            req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+            req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=10) as resp:
                 import json as _json
 
@@ -307,17 +320,26 @@ class UpdateChecker:
                 continue
             if v <= current:
                 continue
+            assets = rel.get("assets", [])
             asset = next(
-                (a for a in rel.get("assets", []) if a.get("name", "").startswith("MiddlewareMonitor")
+                (a for a in assets if a.get("name", "").startswith("MiddlewareMonitor")
                  and a.get("name", "").endswith(".exe")),
                 None,
             )
             if asset is None:
                 continue
+            # SHA256SUMS é obrigatório: o install standalone valida o hash
+            # do .exe baixado — release sem checksum não é candidata.
+            sha = next((a for a in assets if a.get("name") == "SHA256SUMS"), None)
+            if sha is None:
+                continue
             candidates.append({
                 "version": str(v),
                 "tag": rel["tag_name"],
-                "url": asset["browser_download_url"],
+                # Repo privado: o download só funciona pela URL de API do
+                # asset (assets[].url) com Accept: application/octet-stream.
+                "url": asset.get("url") or asset.get("browser_download_url", ""),
+                "sha_url": sha.get("url") or sha.get("browser_download_url", ""),
                 "size": int(asset.get("size", 0)),
                 "notes": rel.get("body", "") or "",
                 "published_at": rel.get("published_at", ""),
@@ -336,23 +358,24 @@ def _apply_update(release: dict, data_dir: Path) -> None:
     """Apply an update from the Tk banner. Bridges to the shared
     ``updater/standalone.py`` flow and asks the UI to shut down so the
     helper batch can swap the running ``.exe``."""
+    from middleware_monitor.settings import get_settings
+
+    token = get_settings().effective_update_token
+
     if not sys.platform.startswith("win"):
         webbrowser.open(release["url"])
         return
 
     if not getattr(sys, "frozen", False):
         # Dev mode: just download the asset so the dev can swap it manually.
+        from middleware_monitor.updater.client import download_asset_sync
+
         tmp_dir = data_dir / "tmp"
         tmp_dir.mkdir(parents=True, exist_ok=True)
         new_exe = tmp_dir / release["name"]
         try:
-            with urllib.request.urlopen(release["url"], timeout=120) as r, new_exe.open("wb") as out:
-                while True:
-                    chunk = r.read(64 * 1024)
-                    if not chunk:
-                        break
-                    out.write(chunk)
-        except OSError as exc:
+            download_asset_sync(release["url"], new_exe, token=token, timeout=120.0)
+        except Exception as exc:
             messagebox.showerror("Falha ao baixar atualização", str(exc))
             return
         messagebox.showinfo(
@@ -371,6 +394,8 @@ def _apply_update(release: dict, data_dir: Path) -> None:
             asset_url=release["url"],
             asset_name=release["name"],
             data_dir=data_dir,
+            sha_url=release.get("sha_url"),
+            token=token,
         )
     except (UpdateError, OSError) as exc:
         messagebox.showerror("Falha ao atualizar", str(exc))
@@ -426,10 +451,13 @@ class DesktopApp:
         else:
             self.lan_url = None
 
+        from middleware_monitor.settings import get_settings
+
         self.update_checker = UpdateChecker(
             current_version=__version__,
             repo=os.environ.get("APP_UPDATE_REPO", "luizsteinbach30/middleware-ramais"),
             channel=os.environ.get("APP_UPDATE_CHANNEL", "stable"),
+            token=get_settings().effective_update_token,
         )
         self._update_release: dict | None = None
 

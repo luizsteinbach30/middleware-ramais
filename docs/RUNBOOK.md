@@ -67,15 +67,46 @@ ping -c 1 10.20.30.40   # do servidor, para um IP esperado
 
 | Erro | Mitigação |
 |---|---|
-| `ChecksumMismatch` | Tarball corrompido — re-tente; problema pode ser na release no GitHub |
+| `ChecksumMismatch` | Tarball/exe corrompido — re-tente; problema pode ser na release no GitHub |
 | `TarballUnsafe` | Pacote suspeito — abra issue de segurança imediatamente |
 | `alembic upgrade` falhou | Examinar erro; restaurar backup do DB se necessário; rollback automático já restaurou symlink |
 | `healthcheck_failed` | Nova versão não responde em 60s; rollback automático aplicado; investigar logs da nova versão antes de tentar de novo |
+| `update_check_failed` com 401/404 | Token de leitura de releases inválido/expirado — ver §4.1 abaixo |
 
 Restaurar manualmente uma versão anterior:
 ```bash
 ln -sfn /opt/middleware-monitor/app/2.0.0 /opt/middleware-monitor/current
 systemctl restart middleware-monitor
+```
+
+### 4.1 Token de leitura de releases (repo privado)
+
+O repositório de releases é **privado**. Todo build distribuído sai com um
+token **fine-grained somente-leitura** (Contents: Read apenas deste repo)
+embutido pelo pipeline (`scripts/inject_update_token.py`, secret
+`UPDATE_READ_TOKEN`). Sem token válido o updater recebe 404 da API do GitHub
+e nunca enxerga release nenhuma.
+
+> O token embutido fica em base64 no binário — isso **não é segurança**, é só
+> redução de exposição acidental. A proteção real é o escopo mínimo do token
+> (leitura de conteúdo de um único repositório) e a rotação periódica.
+
+**Rotação (a cada expiração ou suspeita de vazamento):**
+1. Gerar novo fine-grained PAT em github.com → Settings → Developer settings
+   → Fine-grained tokens: repositório `middleware-ramais` apenas, permissão
+   **Contents: Read-only**, validade máxima disponível.
+2. Atualizar o secret `UPDATE_READ_TOKEN` no repositório GitHub.
+3. A **próxima release** já sai com o token novo embutido.
+4. Instalações em campo com token embutido expirado: definir
+   `APP_UPDATE_TOKEN=<token novo>` no `.env`/`env.cmd` e reiniciar o serviço
+   — a env var tem precedência sobre o token embutido e destrava o
+   auto-update sem reinstalar.
+
+**Teste rápido de validade de um token:**
+```bash
+curl -H "Authorization: Bearer <TOKEN>" \
+  https://api.github.com/repos/luizsteinbach30/middleware-ramais/releases?per_page=1
+# 200 com JSON = ok · 404 = token sem acesso ao repo (ou expirado)
 ```
 
 ## 5. DB cresceu demais

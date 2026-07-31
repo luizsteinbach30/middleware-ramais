@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import sys
+
 from packaging.version import Version
 
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.settings import get_settings
-from middleware_monitor.updater.client import GithubReleasesClient, Release
+from middleware_monitor.updater.client import (
+    GithubReleasesClient,
+    Release,
+    UpdateMode,
+)
 from middleware_monitor.version import __version__
 
 log = get_logger("updater")
@@ -26,11 +32,16 @@ def get_state() -> dict[str, object]:
 
 async def run_update_check() -> Release | None:
     settings = get_settings()
-    client = GithubReleasesClient(settings.update_repo)
+    client = GithubReleasesClient(
+        settings.update_repo,
+        token=settings.effective_update_token,
+    )
+    mode: UpdateMode = "standalone" if getattr(sys, "frozen", False) else "legacy"
     try:
         release = await client.latest_for_channel(
             channel=settings.update_channel,
             current=Version(__version__),
+            mode=mode,
         )
         _state["last_check_at"] = __import__("datetime").datetime.utcnow().replace(microsecond=0)
         _state["last_check_ok"] = True
