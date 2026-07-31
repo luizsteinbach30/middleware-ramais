@@ -160,11 +160,15 @@ async def apply_update() -> dict[str, object]:
                 status_code=500,
                 detail="no_exe_asset_in_release",
             )
+        sha = getattr(release, "sha256sums", None)
+        sha_url = (getattr(sha, "api_url", "") or getattr(sha, "download_url", "")) if sha else None
         try:
             apply_standalone_update(
                 asset_url=asset["url"],
                 asset_name=asset["name"],
                 data_dir=get_data_dir(),
+                sha_url=sha_url,
+                token=get_settings().effective_update_token,
             )
         except (UpdateError, OSError) as exc:
             log.error("standalone_update_failed", error=str(exc))

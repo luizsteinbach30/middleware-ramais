@@ -13,7 +13,6 @@ installer; on dev machines it can run in dry-run mode.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import os
 import platform
 import shutil
@@ -33,7 +32,12 @@ from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import UpdateHistory
 from middleware_monitor.settings import get_settings
-from middleware_monitor.updater.client import Release
+from middleware_monitor.updater.checksums import (
+    ChecksumMismatch,
+    hash_file,
+    parse_sha256sums,
+)
+from middleware_monitor.updater.client import Release, download_asset
 from middleware_monitor.version import __version__
 
 log = get_logger("updater")
@@ -64,10 +68,6 @@ class TarballUnsafe(UpdateInstallerError):
     pass
 
 
-class ChecksumMismatch(UpdateInstallerError):
-    pass
-
-
 def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
@@ -76,34 +76,6 @@ def _is_safe_member(name: str) -> bool:
     if name.startswith("/") or "\\" in name or ".." in Path(name).parts:
         return False
     return True
-
-
-async def _download(url: str, dest: Path) -> None:
-    async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-        async with client.stream("GET", url) as resp:
-            resp.raise_for_status()
-            with dest.open("wb") as fh:
-                async for chunk in resp.aiter_bytes(64 * 1024):
-                    fh.write(chunk)
-
-
-def _hash_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(64 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def _parse_sha256sums(path: Path, target_name: str) -> str:
-    for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split()
-        if len(parts) >= 2 and parts[1].lstrip("*") == target_name:
-            return parts[0].lower()
-    raise ChecksumMismatch(f"hash for {target_name!r} not found in SHA256SUMS")
 
 
 def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:
@@ -196,12 +168,13 @@ async def install_release(
         tar_path = tmp_dir / release.tarball.name
         sha_path = tmp_dir / "SHA256SUMS"
 
+        token = settings.effective_update_token
         log.info("update_download_started", version=new_version)
-        await _download(release.tarball.download_url, tar_path)
-        await _download(release.sha256sums.download_url, sha_path)
+        await download_asset(release.tarball, tar_path, token=token)
+        await download_asset(release.sha256sums, sha_path, token=token)
 
-        expected = _parse_sha256sums(sha_path, release.tarball.name)
-        actual = _hash_file(tar_path)
+        expected = parse_sha256sums(sha_path, release.tarball.name)
+        actual = hash_file(tar_path)
         if not actual.lower() == expected.lower():
             raise ChecksumMismatch(f"expected {expected}, got {actual}")
         log.info("update_checksum_ok", version=new_version)

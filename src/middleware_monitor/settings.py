@@ -38,10 +38,13 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = False
 
-    update_repo: str = "org/middleware-monitor"
+    update_repo: str = "luizsteinbach30/middleware-ramais"
     update_channel: str = "stable"
     update_check_minutes: int = 60
     update_public_key_path: Path | None = None
+    # Token de leitura das releases (o repo é privado). Precedência:
+    # APP_UPDATE_TOKEN no .env > token embutido no build (_embedded.py).
+    update_token: str = ""
 
     metrics_enabled: bool = False
 
@@ -49,6 +52,16 @@ class Settings(BaseSettings):
     @classmethod
     def _expand_data_dir(cls, value: object) -> Path:
         return Path(str(value)).expanduser().resolve()
+
+    # Propriedade simples (NÃO computed_field): o token nunca deve aparecer
+    # em model_dump()/serialização.
+    @property
+    def effective_update_token(self) -> str | None:
+        if self.update_token:
+            return self.update_token
+        from middleware_monitor._embedded import embedded_update_token
+
+        return embedded_update_token() or None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

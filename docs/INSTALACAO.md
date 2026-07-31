@@ -82,8 +82,24 @@ Todas vivem em `env` (Linux) ou `env.cmd` (Windows):
 | `APP_COOKIE_SECURE` | `false` | `true` quando atrás de HTTPS |
 | `APP_UPDATE_REPO` | `luizsteinbach30/middleware-ramais` | Repositório GitHub onde o updater procura novas versões |
 | `APP_UPDATE_CHANNEL` | `stable` | `stable` ou `beta` |
+| `APP_UPDATE_TOKEN` | *(token embutido no build)* | Token de leitura das releases (o repo é privado). Só defina para **sobrepor** o token embutido — ex.: rotação após expiração (ver RUNBOOK §4.1) |
 
 Após editar o arquivo, reinicie o serviço para aplicar.
+
+---
+
+## Atualização manual única para a v2.7.0
+
+Instalações com versão **≤ 2.6.0** têm o auto-update quebrado (o updater não
+autenticava no repositório privado) e **não conseguem se atualizar sozinhas**.
+É preciso **uma** atualização manual; a partir da v2.7.0 o auto-update volta a
+funcionar normalmente.
+
+- **Desktop (.exe):** baixar `MiddlewareMonitor-2.7.0.exe` da release, fechar
+  o app e substituir o executável.
+- **Serviço Windows (NSSM):** rodar o `install.ps1` da release v2.7.0 (upgrade
+  in-place, preserva `APP_DATA_DIR`).
+- **Linux (systemd):** rodar o installer `.run` da release v2.7.0 (idem).
 
 ---
 
