@@ -52,9 +52,15 @@ class WebhookConfigUpdate(BaseModel):
 
 class AppConfigOut(BaseModel):
     client_code: str = ""
+    # Campos legados do modo servidor único (leitura KV). Continuam expostos
+    # até os consumidores migrarem para `uscall_servers` (PR do coletor);
+    # a UI/PUT não escrevem mais neles.
     uscall_host: str = ""
     uscall_token: Literal["set"] | None = None
     uscall_verify_ssl: bool = True
+
+    # Multi-servidor (v2.7.0): fonte da verdade é a tabela uscall_servers.
+    uscall_servers: list[UscallServerOut] = Field(default_factory=list)
 
     webhook_interval_minutes: int = 60
 
@@ -82,9 +88,8 @@ class AppConfigOut(BaseModel):
 
 class AppConfigUpdate(BaseModel):
     client_code: str | None = None
-    uscall_host: str | None = None
-    uscall_token: str | None = None
-    uscall_verify_ssl: bool | None = None
+    # uscall_host/token/verify_ssl sairam daqui na v2.7.0 — servidores USCall
+    # agora são geridos pelo CRUD /api/config/uscall-servers.
 
     webhook_interval_minutes: int | None = Field(default=None, ge=1, le=1440)
 
@@ -104,8 +109,12 @@ class AppConfigUpdate(BaseModel):
 
 
 class UscallTestRequest(BaseModel):
+    # server_id: testa um servidor salvo (credenciais do banco). Alternativa:
+    # host+token (form ainda não salvo, ex.: modal de novo servidor).
+    server_id: int | None = None
     host: str | None = None
     token: str | None = None
+    verify_ssl: bool | None = None
 
 
 class UscallTestResponse(BaseModel):
