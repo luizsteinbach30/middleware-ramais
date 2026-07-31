@@ -192,11 +192,17 @@ def new_line(
 
 
 def list_lines(db: DBSession, env_id: str) -> list[ExtensionLine]:
+    # posicao = ordem da planilha (canônica); created_at/id só como desempate
+    # para dados antigos com posicao repetida.
     return list(
         db.scalars(
             select(ExtensionLine)
             .where(ExtensionLine.environment_id == env_id)
-            .order_by(ExtensionLine.created_at, ExtensionLine.id)
+            .order_by(
+                ExtensionLine.posicao,
+                ExtensionLine.created_at,
+                ExtensionLine.id,
+            )
         ).all()
     )
 
@@ -253,7 +259,7 @@ def save_lines(
             db.delete(ln)
     # upsert
     out: list[ExtensionLine] = []
-    for r in rows:
+    for i, r in enumerate(rows):
         rid = str(r.get("id") or "") or uuid.uuid4().hex
         new_ip = str(r.get("ip", "") or "")
         fields = {
@@ -264,6 +270,8 @@ def save_lines(
             "servidor_sip": str(r.get("servidor_sip", "") or ""),
             "numero_abreviado": str(r.get("numero_abreviado", "") or ""),
             "nome_visivel": str(r.get("nome_visivel", "") or ""),
+            # ordem canônica = posição no payload (ordem da planilha na tela)
+            "posicao": i,
         }
         ln_existing = existing.get(rid)
         if ln_existing is None:
@@ -468,7 +476,10 @@ def add_devices_as_lines(
         return {"added": 0, "skipped": 0, "skipped_detail": []}
     devices = list(db.scalars(select(Device).where(Device.id.in_(device_ids))).all())
     by_id = {d.id: d for d in devices}
-    existing_ips = {ln.ip for ln in list_lines(db, env.id) if ln.ip}
+    existing_lines = list_lines(db, env.id)
+    existing_ips = {ln.ip for ln in existing_lines if ln.ip}
+    # append: continua a numeração de posicao a partir do fim da planilha
+    next_pos = max((ln.posicao for ln in existing_lines), default=-1) + 1
     already_linked = set(
         db.scalars(
             select(ExtensionLine.device_id).where(
@@ -498,9 +509,11 @@ def add_devices_as_lines(
             numero_ramal=dev.name,
             user_auth=dev.name,
             device_id=dev.id,
+            posicao=next_pos,
             created_at=now,
             updated_at=now,
         ))
+        next_pos += 1
         added += 1
         already_linked.add(dev_id)
         if dev.ip:
