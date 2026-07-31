@@ -4,6 +4,30 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
+# ---------------------------------------------------------------- device actions
+# Ações remotas nos telefones (v2.7.0). O catálogo é fechado; cada adapter
+# declara em ``capabilities()`` o subconjunto que homologou.
+#   normalize  — devolver o telefone ao estado operacional: volume no máximo +
+#                DND desligado (o problema real: operador abaixa o volume/ativa
+#                DND). Homologado ao vivo (ver docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md).
+#   set_ip     — trocar o endereço IP (ação PERIGOSA; a UI exige confirmação).
+ACTION_NORMALIZE = "normalize"
+ACTION_SET_IP = "set_ip"
+DEVICE_ACTIONS: frozenset[str] = frozenset({ACTION_NORMALIZE, ACTION_SET_IP})
+
+
+class VendorActionUnsupported(RuntimeError):
+    """O adapter não suporta (ou não homologou) a ação pedida."""
+
+
+@dataclass(slots=True)
+class ActionResult:
+    """Resultado de uma ação remota num telefone."""
+
+    ok: bool
+    detail: str = ""
+    rebooted: bool = False  # a ação reinicia o aparelho (ex.: HTEK config)
+
 
 class VendorAuthError(RuntimeError):
     """Levantada por um adapter quando o aparelho recusa as credenciais.
@@ -72,3 +96,19 @@ class VendorAdapter(ABC):
     async def backup_config(self, ip: str, creds: VendorCredentials) -> bytes | None:
         """Lê a configuração atual antes de aplicar a nova. Default: não suportado."""
         return None
+
+    # ------------------------------------------------------------ device actions
+    def capabilities(self) -> frozenset[str]:
+        """Ações remotas homologadas por este adapter (subconjunto de
+        ``DEVICE_ACTIONS``). Default: nenhuma — a UI oculta o que não está aqui."""
+        return frozenset()
+
+    async def execute_action(
+        self, ip: str, creds: VendorCredentials, action: str, params: dict[str, Any],
+    ) -> ActionResult:
+        """Executa uma ação remota. Default: não suportado.
+
+        Pode levantar :class:`VendorAuthError` (credencial recusada — o service
+        tenta a próxima da chain) ou :class:`VendorActionUnsupported`.
+        """
+        raise VendorActionUnsupported(f"{self.vendor_id}: ação {action!r} não suportada")

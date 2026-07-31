@@ -345,10 +345,35 @@ class LineReapplyEvent(Base):
     line: Mapped[ExtensionLine] = relationship(back_populates="reapply_events")
 
 
+class DeviceActionEvent(Base):
+    """Auditoria de ações remotas nos telefones (v2.7.0).
+
+    Registro flat (não acoplado ao padrão de run de aplicação): cada execução de
+    ação (``normalize``, ``set_ip``...) num telefone gera uma linha, com quem
+    disparou, o resultado e o erro.
+    """
+
+    __tablename__ = "device_action_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    environment_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    line_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    device_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ip: Mapped[str] = mapped_column(String(45), nullable=False, default="")
+    vendor: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    params_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # ok | erro
+    erro: Mapped[str | None] = mapped_column(Text, nullable=True)
+    operador: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
 __all__: list[str] = [
     "AppConfig",
     "Collection",
     "Device",
+    "DeviceActionEvent",
     "DevicePing",
     "ExtensionApplyRun",
     "ExtensionApplyRunLine",
