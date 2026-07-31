@@ -70,6 +70,7 @@ ignore = [
     "S101",     # assert — used in tests
     "PLR2004",  # magic value — acceptable in this codebase
     "PLR0913",  # too many arguments
+    "PLR0917",  # too many positional arguments — same rationale as PLR0913
     "S603",     # subprocess call — args are validated/constant
     "S607",     # partial executable path — ping/arp resolved via PATH
     "S104",     # bind 0.0.0.0 — intentional LAN-access default (v2.1.4)
