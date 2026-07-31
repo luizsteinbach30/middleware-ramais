@@ -6,7 +6,7 @@ const dirty = new Set();
 const tokenChanges = {}; // key -> new plaintext (or '' to clear)
 
 const FIELDS = [
-  'client_code', 'uscall_host', 'uscall_verify_ssl',
+  'client_code',
   'webhook_interval_minutes',
   'ping_timeout_ms', 'ping_concurrency', 'device_ping_retention_days',
   'auto_reapply_on_recovery', 'auto_reapply_debounce_minutes',
@@ -25,8 +25,7 @@ function fillForm(cfg) {
     if (el.type === 'checkbox') el.checked = !!cfg[k];
     else el.value = cfg[k] ?? '';
   }
-  // masked fields
-  renderMasked('uscall_token', cfg.uscall_token === 'set');
+  renderUscallServers(cfg.uscall_servers || []);
   renderWebhooks(cfg.webhooks);
 }
 
@@ -161,9 +160,6 @@ document.getElementById('cfg-save').addEventListener('click', async () => {
     const v = readField(k);
     if (v !== undefined) payload[k] = v;
   }
-  if (tokenChanges['uscall_token'] !== undefined) {
-    payload.uscall_token = tokenChanges['uscall_token'];
-  }
   const webhooks = {};
   ['extensions', 'devices', 'results'].forEach((k) => {
     const en = document.querySelector(`[data-wh-enabled="${k}"]`);
@@ -195,24 +191,159 @@ document.getElementById('cfg-save').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('cfg-test-uscall').addEventListener('click', async () => {
-  const out = document.getElementById('uscall-test-result');
-  out.classList.remove('hidden');
-  out.className = 'md:col-span-2 rounded-lg px-3 py-2 text-xs bg-gray-700/50 text-gray-300';
-  out.textContent = 'Testando…';
+// --- Servidores USCall (multi-servidor) ---------------------------------------
+// CRUD imediato via /api/config/uscall-servers — não passa pelo "Salvar
+// configuração" (mesmo padrão da identidade visual).
+
+const escHtml = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let _usEditingId = null;   // null = criando; number = editando
+
+function renderUscallServers(servers) {
+  const list = document.getElementById('us-list');
+  if (!list) return;
+  if (!servers.length) {
+    list.innerHTML = '<div class="text-xs text-gray-500">Nenhum servidor cadastrado — a coleta de ramais fica desativada até adicionar um.</div>';
+    return;
+  }
+  list.innerHTML = servers.map((s) => `
+    <div class="bg-gray-900/40 rounded-lg ring-1 ring-gray-700 p-4 flex items-center gap-3 flex-wrap">
+      <div class="flex-1 min-w-[200px]">
+        <div class="flex items-center gap-2">
+          <span class="text-sm font-medium text-gray-100">${escHtml(s.nome)}</span>
+          ${s.enabled ? '' : '<span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-600/30 text-gray-400 ring-1 ring-inset ring-gray-600">desligado</span>'}
+          ${s.verify_ssl ? '' : '<span class="px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/15 text-amber-300 ring-1 ring-inset ring-amber-500/30" title="verify_ssl desligado">ssl off</span>'}
+        </div>
+        <div class="text-xs text-gray-500 mt-0.5 font-mono">${escHtml(s.host)}</div>
+      </div>
+      <div data-us-result="${s.id}" class="hidden w-full order-last rounded-lg px-3 py-2 text-xs"></div>
+      <div class="flex items-center gap-2">
+        <button data-us-test="${s.id}" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Testar</button>
+        <button data-us-edit="${s.id}" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Editar</button>
+        <button data-us-del="${s.id}" data-us-nome="${escHtml(s.nome)}" class="inline-flex items-center gap-2 rounded-lg font-medium text-red-300 hover:bg-red-500/10 ring-1 ring-inset ring-red-500/30 px-2.5 py-1.5 text-xs">Remover</button>
+      </div>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('[data-us-test]').forEach((b) => b.addEventListener('click', async () => {
+    const id = +b.dataset.usTest;
+    const out = list.querySelector(`[data-us-result="${id}"]`);
+    out.classList.remove('hidden');
+    out.className = 'w-full order-last rounded-lg px-3 py-2 text-xs bg-gray-700/50 text-gray-300';
+    out.textContent = 'Testando…';
+    try {
+      const r = await api('/api/uscall/test', { method: 'POST', body: { server_id: id } });
+      if (r.success) {
+        out.className = 'w-full order-last rounded-lg px-3 py-2 text-xs bg-green-500/10 ring-1 ring-green-500/30 text-green-300';
+        out.textContent = `Conexão OK · HTTP ${r.http_status} · ${r.latency_ms} ms`;
+      } else {
+        out.className = 'w-full order-last rounded-lg px-3 py-2 text-xs bg-red-500/10 ring-1 ring-red-500/30 text-red-300';
+        out.textContent = `Falha · ${r.error || 'sem detalhe'}${r.http_status ? ' · HTTP ' + r.http_status : ''}`;
+      }
+    } catch (_e) {
+      out.className = 'w-full order-last rounded-lg px-3 py-2 text-xs bg-red-500/10 ring-1 ring-red-500/30 text-red-300';
+      out.textContent = 'Falha de rede';
+    }
+  }));
+  list.querySelectorAll('[data-us-edit]').forEach((b) => b.addEventListener('click', () => {
+    const srv = (original.uscall_servers || []).find((s) => s.id === +b.dataset.usEdit);
+    if (srv) openUsModal(srv);
+  }));
+  list.querySelectorAll('[data-us-del]').forEach((b) => b.addEventListener('click', async () => {
+    const id = +b.dataset.usDel;
+    if (!confirm(`Remover o servidor "${b.dataset.usNome}"? Os devices coletados dele são mantidos (perdem só a marca de origem).`)) return;
+    try {
+      await api(`/api/config/uscall-servers/${id}`, { method: 'DELETE' });
+      toast.success('Servidor removido');
+      await load();
+    } catch (e) {
+      toast.error('Falha ao remover: ' + e.message);
+    }
+  }));
+}
+
+function openUsModal(srv = null) {
+  _usEditingId = srv ? srv.id : null;
+  document.getElementById('us-modal-title').textContent =
+    srv ? `Editar servidor — ${srv.nome}` : 'Adicionar servidor USCall';
+  document.getElementById('us-f-nome').value = srv ? srv.nome : '';
+  document.getElementById('us-f-host').value = srv ? srv.host : '';
+  const tok = document.getElementById('us-f-token');
+  tok.value = '';
+  tok.placeholder = srv && srv.token === 'set' ? '•••••••• (deixe vazio para manter)' : '';
+  document.getElementById('us-f-verify').checked = srv ? !!srv.verify_ssl : true;
+  document.getElementById('us-f-enabled').checked = srv ? !!srv.enabled : true;
+  const out = document.getElementById('us-modal-test-result');
+  out.classList.add('hidden');
+  document.getElementById('us-modal').classList.remove('hidden');
+  document.getElementById('us-f-nome').focus();
+}
+
+function closeUsModal() { document.getElementById('us-modal').classList.add('hidden'); }
+
+async function saveUsModal() {
+  const nome = document.getElementById('us-f-nome').value.trim();
+  const host = document.getElementById('us-f-host').value.trim();
+  const token = document.getElementById('us-f-token').value;
+  if (!nome || !host) { toast.error('Nome e host são obrigatórios'); return; }
+  if (_usEditingId === null && !token) { toast.error('Token é obrigatório'); return; }
+  const body = {
+    nome, host,
+    // edição sem digitar token → mantém o atual ("set")
+    token: token || (_usEditingId !== null ? 'set' : ''),
+    verify_ssl: document.getElementById('us-f-verify').checked,
+    enabled: document.getElementById('us-f-enabled').checked,
+  };
+  const btn = document.getElementById('us-modal-save');
+  btn.disabled = true;
   try {
-    const r = await api('/api/uscall/test', { method: 'POST', body: { host: document.getElementById('f-uscall_host').value, token: tokenChanges['uscall_token'] } });
+    if (_usEditingId === null) {
+      await api('/api/config/uscall-servers', { method: 'POST', body });
+      toast.success('Servidor adicionado');
+    } else {
+      await api(`/api/config/uscall-servers/${_usEditingId}`, { method: 'PUT', body });
+      toast.success('Servidor atualizado');
+    }
+    closeUsModal();
+    await load();
+  } catch (e) {
+    toast.error(explainError(e));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function testUsModal() {
+  const out = document.getElementById('us-modal-test-result');
+  out.classList.remove('hidden');
+  out.className = 'rounded-lg px-3 py-2 text-xs bg-gray-700/50 text-gray-300';
+  out.textContent = 'Testando…';
+  const body = {
+    server_id: _usEditingId,                        // null = form novo
+    host: document.getElementById('us-f-host').value.trim() || null,
+    token: document.getElementById('us-f-token').value || null,
+    verify_ssl: document.getElementById('us-f-verify').checked,
+  };
+  try {
+    const r = await api('/api/uscall/test', { method: 'POST', body });
     if (r.success) {
-      out.className = 'md:col-span-2 rounded-lg px-3 py-2 text-xs bg-green-500/10 ring-1 ring-green-500/30 text-green-300';
+      out.className = 'rounded-lg px-3 py-2 text-xs bg-green-500/10 ring-1 ring-green-500/30 text-green-300';
       out.textContent = `Conexão OK · HTTP ${r.http_status} · ${r.latency_ms} ms`;
     } else {
-      out.className = 'md:col-span-2 rounded-lg px-3 py-2 text-xs bg-red-500/10 ring-1 ring-red-500/30 text-red-300';
+      out.className = 'rounded-lg px-3 py-2 text-xs bg-red-500/10 ring-1 ring-red-500/30 text-red-300';
       out.textContent = `Falha · ${r.error || 'sem detalhe'}${r.http_status ? ' · HTTP ' + r.http_status : ''}`;
     }
-  } catch (e) {
-    out.className = 'md:col-span-2 rounded-lg px-3 py-2 text-xs bg-red-500/10 ring-1 ring-red-500/30 text-red-300';
+  } catch (_e) {
+    out.className = 'rounded-lg px-3 py-2 text-xs bg-red-500/10 ring-1 ring-red-500/30 text-red-300';
     out.textContent = 'Falha de rede';
   }
+}
+
+document.getElementById('us-add')?.addEventListener('click', () => openUsModal());
+document.getElementById('us-modal-cancel')?.addEventListener('click', closeUsModal);
+document.getElementById('us-modal-save')?.addEventListener('click', saveUsModal);
+document.getElementById('us-modal-test')?.addEventListener('click', testUsModal);
+document.getElementById('us-modal')?.addEventListener('click', (e) => {
+  if (e.target.id === 'us-modal') closeUsModal();
 });
 
 window.addEventListener('beforeunload', (e) => {

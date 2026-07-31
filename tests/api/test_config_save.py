@@ -1,8 +1,8 @@
-"""Regression: saving only the USCall host + token must succeed.
+"""Config API — saves parciais, validação e CSRF.
 
-Reproduces the user's report where the UI failed to save config because the
-JS was posting every field (some empty → 0 → rejected by pydantic ge=1
-constraints) and the toast did not surface the real reason.
+Nota v2.7.0: os campos uscall_host/uscall_token saíram do ``AppConfigUpdate``
+— servidores USCall agora são geridos pelo CRUD ``/api/config/uscall-servers``
+(ver ``test_uscall_servers_api.py``).
 """
 
 from __future__ import annotations
@@ -19,17 +19,30 @@ def _authed(client, db):
     return client.cookies.get("mm_csrf") or ""
 
 
-def test_partial_save_only_uscall_host_token(client, db) -> None:
+def test_partial_save_client_code(client, db) -> None:
     csrf = _authed(client, db)
     r = client.put(
         "/api/config",
-        json={"uscall_host": "uscall.test", "uscall_token": "secret-token-123"},
+        json={"client_code": "cliente-x"},
         headers={"X-CSRF-Token": csrf},
     )
     assert r.status_code == 200, r.json()
-    body = r.json()
-    assert body["uscall_host"] == "uscall.test"
-    assert body["uscall_token"] == "set"
+    assert r.json()["client_code"] == "cliente-x"
+
+
+def test_uscall_kv_legado_ignorado_no_put(client, db) -> None:
+    """Compat: PUT com os campos antigos não quebra (extra=ignore), mas também
+    não escreve mais no KV — a fonte da verdade é a tabela uscall_servers."""
+    csrf = _authed(client, db)
+    r = client.put(
+        "/api/config",
+        json={"uscall_host": "nao-deve-persistir.test", "uscall_token": "x"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200, r.json()
+    cfg = client.get("/api/config").json()
+    assert cfg["uscall_host"] == ""          # KV intocado
+    assert cfg["uscall_servers"] == []
 
 
 def test_save_rejects_invalid_numeric(client, db) -> None:
@@ -46,28 +59,25 @@ def test_save_rejects_invalid_numeric(client, db) -> None:
 
 def test_save_without_csrf_returns_403(client, db) -> None:
     _authed(client, db)
-    r = client.put("/api/config", json={"uscall_host": "x"})
+    r = client.put("/api/config", json={"client_code": "x"})
     assert r.status_code == 403
     assert r.json()["detail"] == "csrf_invalid"
 
 
-def test_save_persists_and_secret_round_trip(client, db) -> None:
+def test_webhook_secret_round_trip(client, db) -> None:
     csrf = _authed(client, db)
     client.put(
         "/api/config",
-        json={"uscall_host": "uscall.test", "uscall_token": "supersecret"},
+        json={"webhooks": {"devices": {"token": "supersecret"}}},
         headers={"X-CSRF-Token": csrf},
     )
-    # Re-fetch and the masked field stays "set".
     cfg = client.get("/api/config").json()
-    assert cfg["uscall_host"] == "uscall.test"
-    assert cfg["uscall_token"] == "set"
+    assert cfg["webhooks"]["devices"]["token"] == "set"
 
-    # Clearing the secret with empty string drops it.
     client.put(
         "/api/config",
-        json={"uscall_token": ""},
+        json={"webhooks": {"devices": {"token": ""}}},
         headers={"X-CSRF-Token": csrf},
     )
     cfg = client.get("/api/config").json()
-    assert cfg["uscall_token"] is None
+    assert cfg["webhooks"]["devices"]["token"] is None

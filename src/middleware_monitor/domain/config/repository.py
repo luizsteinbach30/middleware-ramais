@@ -140,15 +140,9 @@ def update_config(db: DBSession, payload: AppConfigUpdate, *, user_id: int | Non
 
     if payload.client_code is not None:
         write("client_code", payload.client_code)
-    if payload.uscall_host is not None:
-        write("uscall_host", payload.uscall_host.strip())
-    if payload.uscall_token is not None:
-        if payload.uscall_token == "":
-            write("uscall_token", "", secret=True)
-        else:
-            write("uscall_token", box.encrypt(payload.uscall_token), secret=True)
-    if payload.uscall_verify_ssl is not None:
-        write("uscall_verify_ssl", payload.uscall_verify_ssl)
+    # uscall_host/token/verify_ssl: desde a v2.7.0 os servidores USCall são
+    # geridos pela tabela uscall_servers (domain/uscall/repository.py) — o
+    # KV legado não recebe mais escrita (a migration 0007 já o copiou).
 
     interval_changed = False
     if payload.webhook_interval_minutes is not None:
