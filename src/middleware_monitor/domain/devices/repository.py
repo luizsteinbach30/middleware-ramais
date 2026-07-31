@@ -166,7 +166,12 @@ def get_device(db: DBSession, device_id: int) -> Device | None:
     return db.get(Device, device_id)
 
 
-def upsert_from_uscall(db: DBSession, payload: list[dict[str, Any]]) -> int:
+def upsert_from_uscall(
+    db: DBSession,
+    payload: list[dict[str, Any]],
+    *,
+    server_id_by_ramal: dict[str, int] | None = None,
+) -> int:
     """Apply the upsert rules defined in REQUISITOS RF-12.
 
     Returns the number of rows touched (created or updated). Após o upsert:
@@ -176,9 +181,12 @@ def upsert_from_uscall(db: DBSession, payload: list[dict[str, Any]]) -> int:
     * Devices cujo IP mudou propagam o novo IP para as linhas vinculadas
       (mantém a planilha em sincronia automaticamente — o USCall é fonte da
       verdade do endpoint atual do telefone).
+    * ``server_id_by_ramal`` (multi-USCall): grava a origem da coleta em
+      ``device.uscall_server_id`` — observabilidade e insumo do verify.
     """
     touched = 0
     now = _now()
+    by_server = server_id_by_ramal or {}
     touched_devices: list[Device] = []
     ip_changed_devices: list[Device] = []
     for ext in payload:
@@ -188,6 +196,7 @@ def upsert_from_uscall(db: DBSession, payload: list[dict[str, Any]]) -> int:
         ip = (ext.get("ip") or "").strip() or None
         status_raw = (ext.get("status") or "").strip().lower()
         logical = "available" if status_raw == "disponivel" else "unavailable"
+        server_id = by_server.get(name)
 
         existing = db.scalar(select(Device).where(Device.name == name))
         if existing is None:
@@ -197,6 +206,7 @@ def upsert_from_uscall(db: DBSession, payload: list[dict[str, Any]]) -> int:
                     ip=ip,
                     logical_status=logical,
                     network_status="unknown",
+                    uscall_server_id=server_id,
                     last_seen_at=now,
                     created_at=now,
                     updated_at=now,
@@ -210,6 +220,8 @@ def upsert_from_uscall(db: DBSession, payload: list[dict[str, Any]]) -> int:
             existing.ip = ip
             ip_changed_devices.append(existing)
         existing.logical_status = logical
+        if server_id is not None and existing.uscall_server_id != server_id:
+            existing.uscall_server_id = server_id
         if logical == "available":
             existing.last_seen_at = now
         existing.updated_at = now

@@ -3,6 +3,18 @@
 Notas técnicas sobre como reduzir o impacto dos webhooks no servidor que
 recebe. Documento de referência, **não é roadmap** do middleware.
 
+## Contrato do payload (v2.7.0 — multi-USCall)
+
+O `data` dos webhooks `extensions` e `devices` continua o **array flat** de
+sempre. Desde a v2.7.0 cada item carrega a chave **aditiva**
+`"uscall_server"` com o nome do servidor USCall de origem (`null` quando a
+origem não é conhecida). Receptores que ignoram chaves desconhecidas — o
+comportamento correto — não precisam de nenhuma mudança; com N servidores os
+dados chegam **mesclados e unificados** num único POST por ciclo (união dos
+ramais; ver ADR-0003).
+
+---
+
 ## Por que o receptor trava
 
 Quase sempre o gargalo **não é o formato JSON** (payload típico fica em
