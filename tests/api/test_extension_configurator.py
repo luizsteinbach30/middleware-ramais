@@ -90,6 +90,33 @@ def test_save_lines_e_calcula_status(client, db) -> None:
     assert len(com_ip["hash_atual"]) == 64
 
 
+def test_searchable_contem_apenas_o_nome_do_ambiente(client, db) -> None:
+    """Bug v2.6.0: `searchable` concatenava ramal/IP/MAC/user auth das linhas,
+    então buscar um ramal trazia ambientes cujo NOME não batia."""
+    csrf = _authed(client, db)
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Unidade 07", "modelo_telefone": "HTEK UC902G"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    client.put(
+        "/api/extension-configurator/environments/unidade-07/lines",
+        json={"linhas": [
+            {"ip": "192.168.9.77", "numero_ramal": "3660", "user_auth": "authuser77"},
+        ]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    envs = client.get("/api/extension-configurator/environments").json()["environments"]
+    env = next(e for e in envs if e["id"] == "unidade-07")
+    assert env["searchable"] == "unidade 07"
+    # dados internos da planilha NÃO entram na busca livre
+    assert "3660" not in env["searchable"]
+    assert "192.168.9.77" not in env["searchable"]
+    assert "authuser77" not in env["searchable"]
+    # nem o modelo — tem filtro dedicado
+    assert "htek" not in env["searchable"]
+
+
 def test_update_environment_atualiza_config_padrao(client, db) -> None:
     csrf = _authed(client, db)
     client.post(
