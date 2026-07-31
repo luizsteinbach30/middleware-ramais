@@ -17,6 +17,7 @@ from middleware_monitor.domain.config.repository import load_config
 from middleware_monitor.domain.devices.repository import record_ping
 from middleware_monitor.domain.extension_configurator import apply as ec_apply
 from middleware_monitor.domain.extension_configurator import repository as ec_repo
+from middleware_monitor.domain.uscall import repository as uscall_repo
 from middleware_monitor.domain.webhooks.sender import WebhookSender
 from middleware_monitor.integrations.network import (
     make_arp_probe,
@@ -33,6 +34,8 @@ async def run_monitor_devices() -> None:
         devices = list(
             db.scalars(select(Device).where(Device.ip.is_not(None))).all()
         )
+        # nome do servidor USCall de origem por device (campo aditivo no webhook)
+        server_names = {s.id: s.nome for s in uscall_repo.list_servers(db)}
 
     if not devices:
         log.info("monitor_skipped", reason="no_devices")
@@ -86,6 +89,12 @@ async def run_monitor_devices() -> None:
                     "latency": d.latency_ms,
                     "last_ping": as_local_str(d.last_ping_at),
                     "mac": d.mac,
+                    # aditivo (multi-USCall): origem da coleta; receptor que
+                    # ignora chaves extras não é afetado
+                    "uscall_server": (
+                        server_names.get(d.uscall_server_id)
+                        if d.uscall_server_id is not None else None
+                    ),
                 }
             )
             if online:
