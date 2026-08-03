@@ -1287,8 +1287,14 @@ function stopActionPolling() {
 }
 
 async function normalizeAll() {
+  // Mesma semântica do "Aplicar": com linhas marcadas na coluna ✓, normaliza
+  // só as selecionadas; sem seleção, todos os telefones com IP do ambiente.
+  const selectedIds = getSelectedIds();
+  const escopo = selectedIds.length
+    ? `os ${selectedIds.length} telefone(s) SELECIONADO(S)`
+    : 'TODOS os telefones com IP deste ambiente';
   const ok = confirm(
-    'Normalizar TODOS os telefones com IP deste ambiente?\n' +
+    `Normalizar ${escopo}?\n` +
     'Volume no máximo + DND desligado em cada aparelho.' +
     (isHtek ? '\n\nAtenção: telefones HTEK reiniciam ao receber a normalização.' : '')
   );
@@ -1296,12 +1302,15 @@ async function normalizeAll() {
   const btn = $('#ec-normalize');
   btn.disabled = true;
   try {
+    const body = selectedIds.length ? { selected_ids: selectedIds } : {};
     const r = await api(
       `/api/extension-configurator/environments/${encodeURIComponent(envId)}/actions/normalize`,
-      { method: 'POST', body: {} },
+      { method: 'POST', body },
     );
     if (r.total === 0) {
-      toast.info('Nenhum telefone com IP para normalizar.');
+      toast.info(selectedIds.length
+        ? 'Nenhuma das linhas selecionadas tem IP para normalizar.'
+        : 'Nenhum telefone com IP para normalizar.');
       btn.disabled = false;
       return;
     }
