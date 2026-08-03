@@ -33,7 +33,8 @@ não são uniformes — volume relativo em passos no Yealink, absoluto 0-9 no
 FlyingVoice, P-code 0-14 no HTEK — então ações finas teriam semântica diferente
 por aparelho; (b) o operador de NOC não quer escolher entre 4 botões, quer o
 telefone tocando de novo. Cada adapter implementa o **máximo homologado** do
-seu vendor (ex.: HTEK cobre só volume — DND não tem P-code localizado).
+seu vendor (ex.: HTEK cobre volume do toque + DND via P-codes `P8503`/`P1305`;
+o mute do HTEK é runtime, sem controle HTTP).
 
 ### 3. Auditoria flat em `device_action_events` (migration 0008)
 
