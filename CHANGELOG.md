@@ -36,10 +36,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 - **Device actions — gerenciamento remoto dos telefones** (ADR-0004, migration
   `0008`): ação **"Normalizar telefone"** (volume no máximo + DND off — desfaz
   mute/DND ativado por operador) por linha (menu `⋮` na planilha) e **em massa**
-  (botão "Normalizar telefones") com progresso ao vivo
+  (botão "Normalizar telefones", que respeita a seleção da coluna `✓`: com
+  linhas marcadas normaliza só as selecionadas) com progresso ao vivo
   (`GET /action-runs/{id}/live`). Homologado ao vivo: **Yealink T31G** (Action
   URI), **FlyingVoice P10** (form-replay; reinicia ao mudar DND) e **HTEK
-  UC902G** (P-code de volume; reinicia sempre) — matriz em
+  UC902G** (P-codes de volume e DND; reinicia sempre) — matriz em
   `docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md`. Vendor sem homologação fica
   oculto por capability. Auditoria completa em `device_action_events`
   (1 evento por telefone/ação, sucesso e erro). Catálogo prevê `set_ip` com
