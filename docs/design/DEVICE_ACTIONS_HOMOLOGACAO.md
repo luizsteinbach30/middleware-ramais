@@ -21,7 +21,7 @@ O que não fechou os 5 pontos ficou como "não suportado" (fora da capability).
 | Yealink T31G       | ✅        | —      | Action URI (`GET /servlet?key=…`) | não    |
 | FlyingVoice P10    | ✅        | —      | form-replay `preference` → `/goform/setSip` | **sim, ao mudar DND** |
 | HTEK UC902G        | ✅ (volume + DND) | — | `hl_provision` parcial (P-codes) | **sim, sempre** |
-| Intelbras V3501/V5501 | ✅ (volume + DND + campainha) | — | `sysConf` parcial via `/config.htm` | **sim, sempre** |
+| Intelbras V3501/V5501 | ✅ (volume + DND + campainha) | — | Action URI `DNDOff` + `sysConf` parcial | não |
 | Intelbras S3002    | ❌        | —      | sem unidade em lab para homologar | —      |
 
 Cobertura: **4 dos 5 adapters** do sistema (HTEK, Yealink, FlyingVoice e
@@ -104,12 +104,52 @@ Campos sobrescritos:
   a dica `(0~9)`).
 - **Ganho de microfone (`*MicVol`) NÃO é tocado** de propósito: é entrada de
   áudio, e forçá-lo ao máximo tende a gerar eco/microfonia.
-- O aparelho **reinicia** ao aceitar config (comportamento normal do
-  `/config.htm`). `ActionResult.rebooted=True`.
+- O aparelho **NÃO reinicia** no upload (`rebooted=False`) — ver abaixo.
 - Achado relevante: o V5501 de lab estava com `EnableDND=1` **e**
   `MuteRinging=1` — exatamente o sintoma "o telefone não toca" que o cliente
   reporta. `MuteRinging` é um segundo jeito de silenciar o aparelho, separado
   do DND, e por isso entrou no normalize.
+
+#### ⚠️ A config sozinha NÃO desliga o DND (corrigido em 2026-08-03)
+
+Primeira versão do normalize só gravava a config — e o telefone **continuava
+com o DND ligado**. O diagnóstico:
+
+1. a config **era** aplicada: o export passou a mostrar `EnableDND=0`,
+   `MuteRinging=0` e volumes `9`;
+2. mas o aparelho **não reinicia** no upload — `UP_TIME` em `/information.htm`
+   seguia em **75 h** depois dele;
+3. o DND ligado pela tecla é **estado de runtime**: gravar a config não o
+   derruba, e o ícone continua na tela.
+
+Correção: além da config, o normalize dispara o **Action URI**
+`GET /cgi-bin/ConfigManApp.com?key=DNDOff` (Basic Auth, sem a sessão web).
+
+- `DNDOff` é **idempotente** — desliga quando ligado, não faz nada quando já
+  está desligado. `F_DND` também funciona, mas é **toggle**: ligaria o DND num
+  telefone que estava normal. Ambos verificados contra a tela do aparelho.
+- **A ordem importa**: o Action URI vem **antes** do upload. Depois de um
+  upload o firmware passa ~10 s digerindo e **engole comandos** — o `DNDOff`
+  colado no `send_config` falhava em silêncio, respondendo `HTTP 200`.
+
+#### Tela do aparelho como oráculo de homologação
+
+O V-series expõe **`GET /cgi-bin/scnShot?type=main`** (Basic Auth): um BMP
+320×240 com a tela real do telefone. Isso permite confirmar por **diff de
+pixels** se o ícone de DND (barra de status, canto direito) sumiu — sem
+depender de alguém olhar o aparelho. Foi assim que `DNDOff` foi eleito e a
+idempotência, comprovada. Recomendado para qualquer homologação futura deste
+vendor. (`cgi-bin/WebCapture` e `cgi-bin/syslog` também existem.)
+
+#### Sessão web: gargalo real
+
+Leituras (`information.htm`, `default_user_config.xml`, `scnShot`) e o Action
+URI aceitam **Basic Auth** e são estáveis. Já o **upload de config** usa a
+sessão (`GET /` → `/key==nonce` → POST) e o firmware aceita **uma sessão por
+vez**: com uma presa, `/key==nonce` volta vazio e **nenhum** upload passa até
+expirar por tempo. Não há endpoint de logout (`/key==logout`, `/logout.htm`
+etc. → 404; o `clearLogFlag` do S3002 não existe aqui). Provas manuais em
+sequência esgotam o aparelho — espere entre elas.
 - ⚠️ O firmware Rapid Logic é **flaky com sessões concorrentes**: logins em
   sequência curta derrubam o serviço HTTP temporariamente (o adapter já trata
   com retry + delay). Em probes manuais, espere alguns segundos entre logins.
