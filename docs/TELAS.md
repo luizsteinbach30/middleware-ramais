@@ -565,6 +565,26 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
     *"aplicando…"* na coluna Status (em vez de "desatualizado", que
     causava flicker incorreto).
   - Ao finalizar, recarrega a planilha pra mostrar status persistido.
+- **Device actions (v2.7.0)** — ações remotas nos telefones homologados,
+  controladas por capabilities (`GET .../capabilities`): vendor sem ação
+  homologada não mostra nada (Intelbras hoje).
+  - Coluna **`⋮`** (readonly, só em linha salva e com capability): abre menu
+    popover ancorado na célula com as ações do vendor:
+    - **🔧 Normalizar telefone** — volume no máximo + DND desligado
+      (desfaz mute/DND ativado por operador). `confirm()` → POST da ação →
+      toast com resultado (avisa quando o aparelho reinicia, ex.: HTEK).
+    - **⚠ Alterar IP…** (quando `set_ip` homologado) — abre modal perigoso
+      (ring vermelho): input de **novo IP** + confirmação **digitando o IP
+      atual**; botão só habilita com IP atual correto e novo IP diferente.
+      Backend rejeita `confirm_ip` errado com 400.
+  - Botão **🔧 Normalizar telefones** no header (verde, só com capability
+    `normalize`): confirm → `POST .../actions/normalize` devolve
+    `{run_id, total}` e o run roda em background no servidor.
+  - Painel "**Normalização em andamento**" (gêmeo do painel de aplicação):
+    summary por stage (pendente/executando/ok/erro), lista IP · ramal ·
+    stage · mensagem, polling 1.5s em `GET /action-runs/{run_id}/live`;
+    404 do live (run expirou da memória) encerra o acompanhamento com toast
+    — a auditoria fica persistida em `device_action_events`.
 
 ### 14.3 Config padrão (`/extension-configurator/environments/{id}/config`)
 - Header sticky com botão **voltar pill** que mostra o **nome do ambiente**
@@ -629,3 +649,8 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
 | Run detail (v2.2.1) | GET | `/api/extension-configurator/runs/{run_id}/detail` |
 | Run live | GET | `/api/extension-configurator/runs/{run_id}/live` |
 | Run cancel | POST | `/api/extension-configurator/runs/{run_id}/cancel` |
+| Capabilities (v2.7.0) | GET | `/api/extension-configurator/environments/{id}/capabilities` |
+| Ação por linha (v2.7.0) | POST | `/api/extension-configurator/environments/{id}/lines/{line_id}/actions/{action}` |
+| Normalizar em massa (v2.7.0) | POST | `/api/extension-configurator/environments/{id}/actions/normalize` |
+| Action run live (v2.7.0) | GET | `/api/extension-configurator/action-runs/{run_id}/live` |
+| Auditoria de ações (v2.7.0) | GET | `/api/extension-configurator/environments/{id}/action-events` |
