@@ -391,10 +391,21 @@ class IntelbrasAdapter(VendorAdapter):
     # preserva tudo que não listamos, incluindo rede):
     #   <call><port index="1">  EnableDND (0/1) · MuteRinging (0/1)
     #   <phone><volume>         volumes de alto-falante/campainha, escala 0-9
-    # O V5501 de lab estava exatamente no estado que o cliente reclama:
-    # EnableDND=1 e MuteRinging=1 (campainha silenciada).
     # Volumes de MICROFONE (*MicVol) NÃO são tocados: são ganho de entrada,
     # e forçá-los ao máximo tende a gerar eco/microfonia.
+    #
+    # ATENÇÃO — a config sozinha NÃO desliga o DND (bug pego na homologação):
+    # o upload em /config.htm grava os valores mas NÃO reinicia o aparelho
+    # (uptime confirmado em 75h após o upload), e o DND ligado pela tecla é
+    # estado de RUNTIME — o telefone continua exibindo o ícone com
+    # `EnableDND=0` já gravado. Por isso o normalize também dispara o Action
+    # URI `ConfigManApp.com?key=DNDOff`, que age no runtime.
+    # `DNDOff` foi escolhido por ser IDEMPOTENTE: desliga quando está ligado e
+    # não faz nada quando já está desligado — diferente de `F_DND`, que é
+    # toggle e ligaria o DND num telefone normal. Ambos validados contra a tela
+    # real do aparelho (`cgi-bin/scnShot`) durante a homologação.
+    _ACTION_URI = "/cgi-bin/ConfigManApp.com"
+    _DND_OFF_KEY = "DNDOff"
     _VOLUME_MAX = "9"
     _NORMALIZE_VOLUME_FIELDS: ClassVar[tuple[str, ...]] = (
         "HandsetVol",        # monofone
@@ -432,10 +443,33 @@ class IntelbrasAdapter(VendorAdapter):
             "    </phone>\n"
             "</sysConf>\n"
         ).encode()
+        # ORDEM IMPORTA (medido em lab): o Action URI vem PRIMEIRO, com o
+        # aparelho ocioso. Depois de um upload de config o firmware fica ~10s
+        # digerindo e engole comandos — mandar DNDOff logo após o upload
+        # falhava silenciosamente. Escrever a config depois é seguro porque o
+        # upload não mexe no estado de runtime (validado: gravar EnableDND=0
+        # sozinho não apaga o ícone de DND da tela).
+        # 1) runtime: derruba o DND que o operador ligou pela tecla
+        await self._action_uri(ip, creds, self._DND_OFF_KEY)
+        # 2) persistência: volumes/campainha/DND sobrevivem a um reboot
         await self.send_config(ip, creds, xml, fmt="xml")
         return ActionResult(
-            ok=True, detail="DND off + campainha ativa + volume máximo", rebooted=True,
+            ok=True, detail="DND off + campainha ativa + volume máximo",
         )
+
+    async def _action_uri(self, ip: str, creds: VendorCredentials, key: str) -> None:
+        """Dispara um Action URI (Basic Auth, sem a sessão web — que é flaky)."""
+        async with self._client() as cli:
+            resp = await cli.get(
+                f"http://{ip}{self._ACTION_URI}",
+                params={"key": key},
+                auth=httpx.BasicAuth(creds.username, creds.password),
+            )
+        if resp.status_code in (401, 403):
+            raise VendorAuthError(
+                f"Intelbras: Action URI recusado ({resp.status_code}) — credencial web"
+            )
+        resp.raise_for_status()
 
     # ------------------------------------------------------------------
     # backup_config: usa o endpoint nativo de export

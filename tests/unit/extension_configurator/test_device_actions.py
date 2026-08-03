@@ -165,18 +165,38 @@ async def test_flyingvoice_normalize_replay_sobrescreve_dnd_e_volume(monkeypatch
 # ---------------------------------------------------------------- Intelbras V
 
 
+@respx.mock
 async def test_intelbras_normalize_envia_sysconf_parcial(monkeypatch) -> None:
     ad = IntelbrasAdapter()
     enviado: dict[str, bytes] = {}
+    ordem: list[str] = []
 
     async def _fake_send(ip, creds, cfg, *, fmt="xml"):
         enviado["cfg"] = cfg
         enviado["fmt"] = fmt
+        ordem.append("config")
 
     monkeypatch.setattr(ad, "send_config", _fake_send)
 
+    def _action_resp(request):
+        ordem.append("action")
+        return httpx.Response(200, text="200 OK Request Success")
+
+    action = respx.get("http://1.2.3.4/cgi-bin/ConfigManApp.com").mock(
+        side_effect=_action_resp,
+    )
+
     res = await ad.execute_action("1.2.3.4", _CREDS, "normalize", {})
-    assert res.ok and res.rebooted
+    assert res.ok
+    # o upload de config NÃO reinicia o V-series (uptime confirmado em lab)
+    assert not res.rebooted
+    # DND é runtime: precisa do Action URI idempotente, não só da config
+    assert action.called
+    assert action.calls.last.request.url.params.get("key") == "DNDOff"
+    assert action.calls.last.request.headers.get("Authorization", "").startswith("Basic ")
+    # ORDEM: o firmware engole comandos por ~10s após um upload de config,
+    # então o Action URI tem que vir ANTES (medido em lab).
+    assert ordem == ["action", "config"]
     cfg = enviado["cfg"].decode()
     # DND off + campainha destravada (campos reais do export do aparelho)
     assert "<EnableDND>0</EnableDND>" in cfg
@@ -194,6 +214,25 @@ async def test_intelbras_normalize_envia_sysconf_parcial(monkeypatch) -> None:
 async def test_intelbras_execute_rejeita_acao_desconhecida() -> None:
     with pytest.raises(VendorActionUnsupported):
         await IntelbrasAdapter().execute_action("1.2.3.4", _CREDS, "set_ip", {})
+
+
+@respx.mock
+async def test_intelbras_action_uri_401_vira_auth_error(monkeypatch) -> None:
+    """Credencial recusada no Action URI → chain tenta a próxima."""
+    from middleware_monitor.integrations.extension_configurator.vendors.base import (
+        VendorAuthError,
+    )
+
+    ad = IntelbrasAdapter()
+
+    async def _fake_send(ip, creds, cfg, *, fmt="xml"): ...
+
+    monkeypatch.setattr(ad, "send_config", _fake_send)
+    respx.get("http://1.2.3.4/cgi-bin/ConfigManApp.com").mock(
+        return_value=httpx.Response(401),
+    )
+    with pytest.raises(VendorAuthError):
+        await ad.execute_action("1.2.3.4", _CREDS, "normalize", {})
 
 
 # ------------------------------------------------- chain de creds (service)
