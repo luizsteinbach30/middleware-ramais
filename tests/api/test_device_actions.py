@@ -37,10 +37,16 @@ def test_capabilities_por_vendor(client, db) -> None:
     caps = client.get(f"/api/extension-configurator/environments/{env_y}/capabilities").json()
     assert "normalize" in caps["actions"]
 
-    # V-series Intelbras ainda não homologado → sem ações
+    # Intelbras V-series também homologado (sysConf parcial)
     env_i = _env_with_line(client, csrf, "Intelbras V5501", ip="10.0.0.11")
     caps_i = client.get(f"/api/extension-configurator/environments/{env_i}/capabilities").json()
-    assert caps_i["actions"] == []
+    assert "normalize" in caps_i["actions"]
+
+    # S3002 (linha S, firmware GoAhead) segue sem unidade de lab para homologar
+    # → capability vazia, UI oculta as ações
+    env_s = _env_with_line(client, csrf, "Intelbras S3002", ip="10.0.0.12")
+    caps_s = client.get(f"/api/extension-configurator/environments/{env_s}/capabilities").json()
+    assert caps_s["actions"] == []
 
 
 def test_action_requer_csrf(client, db) -> None:

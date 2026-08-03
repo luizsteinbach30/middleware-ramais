@@ -47,7 +47,15 @@ from xml.sax.saxutils import escape as xml_escape
 
 import httpx
 
-from .base import DiscoveryResult, VendorAdapter, VendorAuthError, VendorCredentials
+from .base import (
+    ACTION_NORMALIZE,
+    ActionResult,
+    DiscoveryResult,
+    VendorActionUnsupported,
+    VendorAdapter,
+    VendorAuthError,
+    VendorCredentials,
+)
 
 # Aspas em campos de senha podem corromper o valor armazenado no aparelho
 # (mesmo padrao visto no HTEK). Escapamos por seguranca.
@@ -375,6 +383,59 @@ class IntelbrasAdapter(VendorAdapter):
             resp.raise_for_status()
         finally:
             await cli.aclose()
+
+    # ------------------------------------------------------------ device actions
+    # Homologado ao vivo (V5501 + V3501, 2026-08-03) a partir do export nativo
+    # `GET /default_user_config.xml` — os campos vivem no mesmo `<sysConf>` que
+    # o adapter já envia, então o normalize é uma config PARCIAL (o aparelho
+    # preserva tudo que não listamos, incluindo rede):
+    #   <call><port index="1">  EnableDND (0/1) · MuteRinging (0/1)
+    #   <phone><volume>         volumes de alto-falante/campainha, escala 0-9
+    # O V5501 de lab estava exatamente no estado que o cliente reclama:
+    # EnableDND=1 e MuteRinging=1 (campainha silenciada).
+    # Volumes de MICROFONE (*MicVol) NÃO são tocados: são ganho de entrada,
+    # e forçá-los ao máximo tende a gerar eco/microfonia.
+    _VOLUME_MAX = "9"
+    _NORMALIZE_VOLUME_FIELDS: ClassVar[tuple[str, ...]] = (
+        "HandsetVol",        # monofone
+        "HeadsetVol",        # headset
+        "HeadsetRingVol",    # campainha no headset
+        "HandFreeVol",       # viva-voz
+        "HandFreeRingVol",   # campainha no viva-voz
+    )
+
+    def capabilities(self) -> frozenset[str]:
+        return frozenset({ACTION_NORMALIZE})
+
+    async def execute_action(
+        self, ip: str, creds: VendorCredentials, action: str, params: dict[str, Any],
+    ) -> ActionResult:
+        if action != ACTION_NORMALIZE:
+            raise VendorActionUnsupported(f"intelbras: ação {action!r} não suportada")
+        vol_xml = "\n".join(
+            f"            <{f}>{self._VOLUME_MAX}</{f}>"
+            for f in self._NORMALIZE_VOLUME_FIELDS
+        )
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            "<sysConf>\n"
+            "    <call>\n"
+            '        <port index="1">\n'
+            "            <EnableDND>0</EnableDND>\n"
+            "            <MuteRinging>0</MuteRinging>\n"
+            "        </port>\n"
+            "    </call>\n"
+            "    <phone>\n"
+            "        <volume>\n"
+            f"{vol_xml}\n"
+            "        </volume>\n"
+            "    </phone>\n"
+            "</sysConf>\n"
+        ).encode()
+        await self.send_config(ip, creds, xml, fmt="xml")
+        return ActionResult(
+            ok=True, detail="DND off + campainha ativa + volume máximo", rebooted=True,
+        )
 
     # ------------------------------------------------------------------
     # backup_config: usa o endpoint nativo de export

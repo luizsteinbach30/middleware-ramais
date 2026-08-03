@@ -10,6 +10,7 @@ import respx
 
 from middleware_monitor.integrations.extension_configurator.vendors.base import (
     ACTION_NORMALIZE,
+    ActionResult,
     VendorActionUnsupported,
     VendorAdapter,
     VendorCredentials,
@@ -59,8 +60,7 @@ def test_vendors_homologados_declaram_normalize() -> None:
     assert ACTION_NORMALIZE in YealinkAdapter().capabilities()
     assert ACTION_NORMALIZE in FlyingVoiceAdapter().capabilities()
     assert ACTION_NORMALIZE in HTEKAdapter().capabilities()
-    # Intelbras ainda não homologado → capability vazia (oculto na UI)
-    assert IntelbrasAdapter().capabilities() == frozenset()
+    assert ACTION_NORMALIZE in IntelbrasAdapter().capabilities()
 
 
 # --------------------------------------------------------------------- Yealink
@@ -160,3 +160,84 @@ async def test_flyingvoice_normalize_replay_sobrescreve_dnd_e_volume(monkeypatch
     assert "DBID_DND_ENABLE=0" in body           # DND off
     assert "DBID_HF_OUT_VOL=9" in body           # volume máx
     assert "DBID_SIP_PHONE_NUM=8125" in body     # replay preserva o resto (SIP intacto)
+
+
+# ---------------------------------------------------------------- Intelbras V
+
+
+async def test_intelbras_normalize_envia_sysconf_parcial(monkeypatch) -> None:
+    ad = IntelbrasAdapter()
+    enviado: dict[str, bytes] = {}
+
+    async def _fake_send(ip, creds, cfg, *, fmt="xml"):
+        enviado["cfg"] = cfg
+        enviado["fmt"] = fmt
+
+    monkeypatch.setattr(ad, "send_config", _fake_send)
+
+    res = await ad.execute_action("1.2.3.4", _CREDS, "normalize", {})
+    assert res.ok and res.rebooted
+    cfg = enviado["cfg"].decode()
+    # DND off + campainha destravada (campos reais do export do aparelho)
+    assert "<EnableDND>0</EnableDND>" in cfg
+    assert "<MuteRinging>0</MuteRinging>" in cfg
+    # volumes de saída no máximo da escala 0-9
+    assert "<HandFreeRingVol>9</HandFreeRingVol>" in cfg
+    assert "<HandsetVol>9</HandsetVol>" in cfg
+    # ganho de microfone NÃO é tocado (evita eco/microfonia)
+    assert "MicVol" not in cfg
+    # REGRA INVIOLÁVEL: config parcial nunca carrega seção de rede
+    for proibida in ("<net>", "<vpn>", "<dot1x>", "<qos>", "<hotspot>", "WebPort"):
+        assert proibida not in cfg
+
+
+async def test_intelbras_execute_rejeita_acao_desconhecida() -> None:
+    with pytest.raises(VendorActionUnsupported):
+        await IntelbrasAdapter().execute_action("1.2.3.4", _CREDS, "set_ip", {})
+
+
+# ------------------------------------------------- chain de creds (service)
+
+
+class _ChainAdapter:
+    """Fake: recusa a 1ª credencial, aceita a 2ª (telefone já na senha nova)."""
+
+    def __init__(self) -> None:
+        self.tried: list[str] = []
+
+    async def execute_action(self, ip, creds, action, params):
+        from middleware_monitor.integrations.extension_configurator.vendors.base import (
+            VendorAuthError,
+        )
+
+        self.tried.append(creds.password)
+        if creds.password != "nova":
+            raise VendorAuthError("credencial recusada")
+        return ActionResult(ok=True, detail="ok")
+
+
+async def test_execute_with_fallback_tenta_proxima_credencial() -> None:
+    from middleware_monitor.domain.extension_configurator.actions import (
+        _execute_with_fallback,
+    )
+
+    ad = _ChainAdapter()
+    chain = [VendorCredentials("admin", "velha"), VendorCredentials("admin", "nova")]
+    res = await _execute_with_fallback(ad, "1.2.3.4", chain, "normalize", {})
+    assert res.ok
+    assert ad.tried == ["velha", "nova"]
+
+
+async def test_execute_with_fallback_todas_recusadas_levanta_auth_error() -> None:
+    from middleware_monitor.domain.extension_configurator.actions import (
+        _execute_with_fallback,
+    )
+    from middleware_monitor.integrations.extension_configurator.vendors.base import (
+        VendorAuthError,
+    )
+
+    ad = _ChainAdapter()
+    chain = [VendorCredentials("admin", "velha"), VendorCredentials("admin", "errada")]
+    with pytest.raises(VendorAuthError):
+        await _execute_with_fallback(ad, "1.2.3.4", chain, "normalize", {})
+    assert ad.tried == ["velha", "errada"]
