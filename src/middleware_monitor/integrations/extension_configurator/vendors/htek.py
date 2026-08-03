@@ -40,7 +40,15 @@ from xml.sax.saxutils import escape as xml_escape
 
 import httpx
 
-from .base import DiscoveryResult, VendorAdapter, VendorAuthError, VendorCredentials
+from .base import (
+    ACTION_NORMALIZE,
+    ActionResult,
+    DiscoveryResult,
+    VendorActionUnsupported,
+    VendorAdapter,
+    VendorAuthError,
+    VendorCredentials,
+)
 
 
 # REGRA HTEK: o firmware faz URL-decode (%XX) no conteudo de texto dos XML
@@ -500,3 +508,36 @@ class HTEKAdapter(VendorAdapter):
                     f"HTEK: login recusado (HTTP {resp.status_code})"
                 )
             resp.raise_for_status()
+
+    # ------------------------------------------------------------ device actions
+    # Homologado ao vivo (UC902G, 2026-07-31; DND em 2026-08-03): volume do
+    # toque = P-code P8503 (0-14); DND = P1305 ("DND_Enable", 0/1), localizado
+    # no export /download_xml_cfg (não aparece nas páginas web — lá só há refs
+    # cosméticas e códigos de sync XSI/FAC). Enviados via hl_provision parcial
+    # (o aparelho preserva o resto). O HTEK REINICIA ao aceitar config.
+    _RING_VOLUME_PCODE = "P8503"
+    _RING_VOLUME_MAX = "14"
+    _DND_PCODE = "P1305"
+    _DND_OFF = "0"
+
+    def capabilities(self) -> frozenset[str]:
+        return frozenset({ACTION_NORMALIZE})
+
+    async def execute_action(
+        self, ip: str, creds: VendorCredentials, action: str, params: dict[str, Any],
+    ) -> ActionResult:
+        if action != ACTION_NORMALIZE:
+            raise VendorActionUnsupported(f"htek: ação {action!r} não suportada")
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<hl_provision version="1">\n  <config version="1">\n'
+            f'    <{self._RING_VOLUME_PCODE} para="RingVolume">'
+            f'{self._RING_VOLUME_MAX}</{self._RING_VOLUME_PCODE}>\n'
+            f'    <{self._DND_PCODE} para="DND_Enable">'
+            f'{self._DND_OFF}</{self._DND_PCODE}>\n'
+            "  </config>\n</hl_provision>\n"
+        ).encode()
+        await self.send_config(ip, creds, xml, fmt="xml")
+        return ActionResult(
+            ok=True, detail="volume do toque no máximo + DND off", rebooted=True,
+        )

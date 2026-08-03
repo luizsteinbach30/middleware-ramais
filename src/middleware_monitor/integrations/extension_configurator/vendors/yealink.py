@@ -39,7 +39,15 @@ from typing import Any
 import httpx
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-from .base import DiscoveryResult, VendorAdapter, VendorAuthError, VendorCredentials
+from .base import (
+    ACTION_NORMALIZE,
+    ActionResult,
+    DiscoveryResult,
+    VendorActionUnsupported,
+    VendorAdapter,
+    VendorAuthError,
+    VendorCredentials,
+)
 
 _TEMPLATE_PATH = Path(__file__).parent / "yealink_template.cfg"
 
@@ -348,3 +356,38 @@ class YealinkAdapter(VendorAdapter):
         """Extrai `result` do _RES_INFO_: string ("success"/"noparam"/...) ou numero."""
         m = re.search(r'"result"\s*:\s*"?([A-Za-z0-9]+)"?', html)
         return m.group(1).lower() if m else None
+
+    # ------------------------------------------------------------ device actions
+    # Homologado ao vivo (T31G, 2026-07-31): Action URI GET /servlet?key=<KEY>
+    # com Basic Auth. NÃO usa a sessão web (401 sem Basic). Gate: lista de IP
+    # confiável ("Action URI Allow IP List") — em produção o middleware está na
+    # mesma sub-rede dos telefones. Volume é relativo (1 passo/req) → normalize
+    # emite VOLUME_UP N vezes para garantir o teto.
+    _VOLUME_STEPS = 10  # escala do Yealink vai a ~15; 10 presses garante o topo
+
+    def capabilities(self) -> frozenset[str]:
+        return frozenset({ACTION_NORMALIZE})
+
+    async def execute_action(
+        self, ip: str, creds: VendorCredentials, action: str, params: dict[str, Any],
+    ) -> ActionResult:
+        if action != ACTION_NORMALIZE:
+            raise VendorActionUnsupported(f"yealink: ação {action!r} não suportada")
+        auth = httpx.BasicAuth(creds.username, creds.password)
+        async with self._client() as cli:
+            # DND off + tira o mute (MUTE alterna; no idle volta ao normal)
+            await self._action_uri(cli, ip, "DNDOff", auth)
+            await self._action_uri(cli, ip, "MUTE", auth)
+            for _ in range(self._VOLUME_STEPS):
+                await self._action_uri(cli, ip, "VOLUME_UP", auth)
+        return ActionResult(ok=True, detail="DND off + unmute + volume máximo")
+
+    async def _action_uri(
+        self, cli: httpx.AsyncClient, ip: str, key: str, auth: httpx.Auth,
+    ) -> None:
+        resp = await cli.get(f"https://{ip}/servlet?key={key}", auth=auth)
+        if resp.status_code in (401, 403):
+            raise VendorAuthError(
+                f"Yealink: Action URI recusado ({resp.status_code}) — "
+                "verifique credencial e a lista de IP confiável do aparelho"
+            )

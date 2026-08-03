@@ -17,6 +17,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.api.deps import (
@@ -32,12 +33,20 @@ from middleware_monitor.core.export_crypto import (
 )
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import (
+    DeviceActionEvent,
     ExtensionApplyRun,
     ExtensionEnvironment,
     ExtensionLine,
     User,
 )
 from middleware_monitor.core.time import iso_utc
+from middleware_monitor.domain.extension_configurator import (
+    action_state,
+    run_state,
+)
+from middleware_monitor.domain.extension_configurator import (
+    actions as actions_mod,
+)
 from middleware_monitor.domain.extension_configurator import (
     apply as apply_mod,
 )
@@ -46,9 +55,6 @@ from middleware_monitor.domain.extension_configurator import (
 )
 from middleware_monitor.domain.extension_configurator import (
     repository as repo,
-)
-from middleware_monitor.domain.extension_configurator import (
-    run_state,
 )
 from middleware_monitor.domain.extension_configurator.defaults import PHONE_MODELS
 from middleware_monitor.domain.extension_configurator.service import (
@@ -60,6 +66,9 @@ from middleware_monitor.domain.extension_configurator.service import (
     line_status,
 )
 from middleware_monitor.domain.extension_configurator.softkeys import softkey_catalog_for
+from middleware_monitor.integrations.extension_configurator.vendors import (
+    VendorActionUnsupported,
+)
 from middleware_monitor.integrations.network import make_arp_probe, make_ping_probe
 from middleware_monitor.integrations.network.base import is_valid_ip
 
@@ -671,6 +680,146 @@ async def apply_environment(
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
     return {"run_id": run_id, "total": total}
+
+
+# ------------------------------------------------------------- device actions
+
+
+class DeviceActionIn(BaseModel):
+    params: dict[str, Any] = {}
+    # set_ip é perigoso (o telefone pode sair da rede): a UI exige confirmar o
+    # IP atual da linha, ecoado aqui.
+    confirm_ip: str | None = None
+
+
+@router.get("/environments/{env_id}/capabilities")
+def environment_capabilities(
+    env_id: str,
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> dict[str, Any]:
+    env = repo.get_environment(db, env_id)
+    if env is None:
+        raise HTTPException(404, "ambiente nao encontrado")
+    return {
+        "modelo_telefone": env.modelo_telefone,
+        "actions": actions_mod.capabilities_for(env.modelo_telefone),
+    }
+
+
+@router.post(
+    "/environments/{env_id}/lines/{line_id}/actions/{action}",
+    dependencies=[Depends(require_csrf), Depends(require_admin)],
+)
+async def run_line_action(
+    env_id: str,
+    line_id: str,
+    action: str,
+    payload: DeviceActionIn = Body(default_factory=DeviceActionIn),
+    user: User = Depends(require_admin),
+    db: DBSession = Depends(get_session),
+) -> dict[str, Any]:
+    line = repo.get_line(db, line_id)
+    if line is None or line.environment_id != env_id:
+        raise HTTPException(404, "linha nao encontrada")
+    # ação perigosa: exige confirmação do IP atual
+    if action == "set_ip" and (payload.confirm_ip or "").strip() != (line.ip or "").strip():
+        raise HTTPException(400, "confirm_ip_mismatch")
+    try:
+        result = await actions_mod.run_action_on_line(
+            line_id, action, params=payload.params, operador=user.username,
+        )
+    except VendorActionUnsupported as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(502, f"{type(exc).__name__}: {exc}") from exc
+    return {"ok": result.ok, "detail": result.detail, "rebooted": result.rebooted}
+
+
+@router.post(
+    "/environments/{env_id}/actions/normalize",
+    dependencies=[Depends(require_csrf), Depends(require_admin)],
+)
+async def normalize_environment_phones(
+    env_id: str,
+    payload: ApplyIn = Body(default_factory=ApplyIn),
+    user: User = Depends(require_admin),
+) -> dict[str, Any]:
+    try:
+        run_id, total = await actions_mod.normalize_environment(
+            env_id,
+            selected_ids=payload.selected_ids or None,
+            operador=user.username,
+        )
+    except VendorActionUnsupported as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"run_id": run_id, "total": total}
+
+
+@router.get("/action-runs/{run_id}/live")
+def action_run_live_status(
+    run_id: str, _user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    rs = action_state.get(run_id)
+    if rs is None:
+        raise HTTPException(404, "run nao encontrado (pode ter expirado da memoria)")
+    return {
+        "run_id": rs.run_id,
+        "env_id": rs.env_id,
+        "action": rs.action,
+        "started_at": rs.started_at,
+        "finished_at": rs.finished_at,
+        "summary": rs.summary(),
+        "rows": [
+            {
+                "line_id": r.line_id,
+                "ip": r.ip,
+                "numero_ramal": r.numero_ramal,
+                "stage": r.stage,
+                "msg": r.msg,
+                "started_at": r.started_at,
+                "finished_at": r.finished_at,
+            }
+            for r in rs.rows
+        ],
+    }
+
+
+@router.get("/environments/{env_id}/action-events")
+def list_action_events(
+    env_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> dict[str, list[dict[str, Any]]]:
+    rows = list(
+        db.scalars(
+            select(DeviceActionEvent)
+            .where(DeviceActionEvent.environment_id == env_id)
+            .order_by(DeviceActionEvent.timestamp.desc())
+            .limit(limit)
+        ).all()
+    )
+    return {
+        "events": [
+            {
+                "id": r.id,
+                "timestamp": iso_utc(r.timestamp),
+                "line_id": r.line_id,
+                "ip": r.ip,
+                "vendor": r.vendor,
+                "action": r.action,
+                "status": r.status,
+                "erro": r.erro,
+                "operador": r.operador,
+            }
+            for r in rows
+        ]
+    }
 
 
 @router.get("/environments/{env_id}/runs")

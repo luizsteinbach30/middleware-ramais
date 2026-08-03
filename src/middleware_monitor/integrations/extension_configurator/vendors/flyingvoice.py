@@ -51,12 +51,20 @@ Status de homologacao (P10 fw V0.11.6, validado em produção 2026-05-23):
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
 from . import _form_replay
-from .base import DiscoveryResult, VendorAdapter, VendorAuthError, VendorCredentials
+from .base import (
+    ACTION_NORMALIZE,
+    ActionResult,
+    DiscoveryResult,
+    VendorActionUnsupported,
+    VendorAdapter,
+    VendorAuthError,
+    VendorCredentials,
+)
 
 # Chaves que ESTE adapter pode sobrescrever no form da conta SIP. Qualquer
 # coisa fora desta lista volta com o valor atual do aparelho (replay). NENHUMA
@@ -389,6 +397,56 @@ class FlyingVoiceAdapter(VendorAdapter):
         for m in re.finditer(r'DBIDArray(\d+)\s*=\s*"([^"]*)"', html):
             out[int(m.group(1))] = m.group(2)
         return out
+
+    # ------------------------------------------------------------ device actions
+    # Homologado ao vivo (P10, 2026-07-31): a Phone_Preference posta em
+    # /goform/setSip (OnSubmit). Volume escala 0-9 (máx=9). DND = DBID_DND_ENABLE.
+    # Fazemos replay do form inteiro (parse_form_fields preserva os ~214 campos)
+    # sobrescrevendo só DND + volumes → DND off + volume máx, SIP intacto. Mudar
+    # o DND pode reiniciar o aparelho (não é ImmeEffect); volume é imediato.
+    _PREFERENCE_PAGE = "/phone/Phone_Preference.asp"
+    _PREFERENCE_SET = "/goform/setSip"
+    _PREFERENCE_FORM = "preference"
+    _VOLUME_MAX = "9"
+    _NORMALIZE_OVERRIDES: ClassVar[dict[str, str]] = {
+        "DBID_DND_ENABLE": "0",       # DND off
+        "DBID_HF_OUT_VOL": _VOLUME_MAX,       # viva-voz saída
+        "DBID_HEADSET_OUT_VOL": _VOLUME_MAX,  # headset saída (ImmeEffect)
+        "DBID_HF_IN_VOL": _VOLUME_MAX,
+        "DBID_HEADSET_IN_VOL": _VOLUME_MAX,
+        "DBID_RING_VOL": _VOLUME_MAX,
+    }
+
+    def capabilities(self) -> frozenset[str]:
+        return frozenset({ACTION_NORMALIZE})
+
+    async def execute_action(
+        self, ip: str, creds: VendorCredentials, action: str, params: dict[str, Any],
+    ) -> ActionResult:
+        if action != ACTION_NORMALIZE:
+            raise VendorActionUnsupported(f"flyingvoice: ação {action!r} não suportada")
+        from urllib.parse import quote
+
+        cli, cookie = await self._login(ip, creds)
+        try:
+            html = (await cli.get(f"http://{ip}{self._PREFERENCE_PAGE}")).text
+        finally:
+            await cli.aclose()
+        pairs, cs = self._parse_form_fields(html, self._PREFERENCE_FORM)
+        if not pairs:
+            raise RuntimeError("FlyingVoice: form de preferências não encontrado")
+        body = self._merge_body(
+            pairs, cs, dict(self._NORMALIZE_OVERRIDES), self._PREFERENCE_FORM, quote,
+        )
+        status = self._http10_post(
+            ip, self._PREFERENCE_SET, body, cookie,
+            referer=f"http://{ip}{self._PREFERENCE_PAGE}",
+        )
+        if status not in (200, 302):
+            raise RuntimeError(f"FlyingVoice: normalize HTTP {status}")
+        return ActionResult(
+            ok=True, detail="DND off + volume máximo", rebooted=True,
+        )
 
     # ----------------------------------------------------- credencial web
     _WEB_PAGE = "/adm/management.asp"
