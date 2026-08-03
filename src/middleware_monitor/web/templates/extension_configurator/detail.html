@@ -278,6 +278,81 @@
     line-height: 1;
   }
 
+  /* ---------------------------------------------------------------------
+     Barra de ferramentas: um único sistema de botões (v2.7.0).
+     Antes cada controle tinha altura/fonte/estilo próprios (text-xs vs
+     text-sm, pill vs botão) e ficavam espalhados entre o header e a faixa
+     de ajuda. Agora TODOS usam .ec-btn — mesma altura, mesma fonte — e são
+     agrupados por finalidade em .ec-group.
+     --------------------------------------------------------------------- */
+  .ec-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px 16px;
+  }
+  .ec-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .ec-group + .ec-group {
+    border-left: 1px solid #1f2937;
+    padding-left: 16px;
+  }
+  .ec-group-label {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: #6b7280;
+    user-select: none;
+  }
+  .ec-group-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .ec-btn {
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 11px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    color: #e5e7eb;
+    background: rgba(31, 41, 55, 0.6);
+    border: 1px solid #374151;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color .12s, color .12s, border-color .12s;
+  }
+  .ec-btn:hover { background: rgba(55, 65, 81, 0.85); color: #f3f4f6; }
+  .ec-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .ec-btn:disabled:hover { background: rgba(31, 41, 55, 0.6); color: #e5e7eb; }
+  /* `hidden` do Tailwind perderia para .ec-btn (mesma especificidade, folha
+     inline vem depois): reafirmamos aqui para o JS poder ocultar botões. */
+  .ec-btn.hidden { display: none; }
+  .ec-btn-primary {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+    box-shadow: 0 1px 2px rgba(59, 130, 246, .2);
+  }
+  .ec-btn-primary:hover { background: #60a5fa; border-color: #60a5fa; color: #fff; }
+  .ec-btn-primary:disabled:hover { background: #3b82f6; }
+  .ec-btn-accent { color: #6ee7b7; }
+  .ec-btn-accent:hover { color: #a7f3d0; }
+  .ec-btn-info { color: #93c5fd; }
+  .ec-btn-info:hover { color: #bfdbfe; }
+  .ec-btn-warn { color: #fcd34d; }
+  .ec-btn-warn:hover { color: #fde68a; }
+
   /* Flash sutil quando uma rodada de ping acaba de chegar */
   #ec-ping-panel.ec-ping-flash {
     animation: ec-ping-flash 0.5s ease-out;
@@ -307,87 +382,115 @@
       </div>
       <p id="ec-subtitle" class="text-xs text-gray-400 mt-0.5 truncate">—</p>
     </div>
-    <a id="ec-config-link" href="#" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">⚙ Config padrão</a>
-    <button id="ec-preview" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs" title="Pré-visualizar a config que será enviada para a linha selecionada">👁 Pré-visualizar</button>
-    <button id="ec-duplicate" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs" title="Duplicar este ambiente (copia todas as configurações, sem os ramais)">⧉ Duplicar</button>
-    <button id="ec-export" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs" title="Exportar este ambiente (config + linhas) num arquivo cifrado">⤴ Exportar</button>
-    <span id="ec-save-status" class="text-[11px] font-medium text-transparent transition-opacity min-w-[90px]"></span>
-    <button id="ec-save" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">Salvar planilha</button>
-    <button id="ec-apply-selected" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-4 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shadow-blue-500/20">Aplicar selecionados (0)</button>
-    <button id="ec-apply" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-1.5 text-xs">Aplicar tudo</button>
+    <span id="ec-save-status" class="text-[11px] font-medium text-transparent transition-opacity min-w-[90px] text-right"></span>
+    <div id="ec-status-pills" class="flex items-center gap-2 text-xs"></div>
   </div>
 </div>
 
-<div class="px-6 py-4 space-y-3">
-  <div id="ec-status-pills" class="flex items-center gap-2 text-xs"></div>
-  <div class="flex items-start justify-between gap-3 flex-wrap text-xs text-gray-400">
-    <div class="leading-relaxed max-w-3xl">
-      Planilha estilo Excel: clique e arraste para selecionar blocos ·
-      <kbd class="ec-kbd">Ctrl+C</kbd> / <kbd class="ec-kbd">Ctrl+V</kbd> (paste mantém o valor original) ·
-      arraste o canto inferior direito de uma seleção para preencher e <strong>incrementar números</strong> automaticamente ·
-      campos como Ramal/Nome são texto (preserva zeros à esquerda, ex.: <code class="text-gray-300">00001</code>) ·
-      IP tem máscara automática · alterações salvam sozinhas após 1,2&nbsp;s.
-      <br>Marque o checkbox da coluna <strong>✓</strong> para escolher quais aparelhos enviar — útil quando alguns telefones estão offline e você quer voltar só nesses depois.
-      <br>Coluna <strong>Device</strong>: 🟢/🔴/⚪ mostram status de rede do telefone vinculado (online/offline/sem ping ainda). <strong>Clique</strong> na célula para ver ou desvincular o device.
-      <br>Coluna <strong>👁</strong>: clique no olho de uma linha (já salva) para <strong>pré-visualizar</strong> a config que será enviada àquele ramal, sem aplicar.
+<!-- Barra de ferramentas: grupos por finalidade, da esquerda (preparar) para a
+     direita (executar nos telefones). Todos os controles usam .ec-btn. -->
+<div class="px-6 py-3 border-b border-gray-800/70 bg-gray-900/40">
+  <div class="ec-toolbar">
+
+    <div class="ec-group">
+      <span class="ec-group-label">Ambiente</span>
+      <div class="ec-group-items">
+        <a id="ec-config-link" href="#" class="ec-btn" title="Valores compartilhados por todos os telefones deste ambiente">⚙ Config padrão</a>
+        <button id="ec-duplicate" class="ec-btn" title="Duplicar este ambiente (copia todas as configurações, sem os ramais)">⧉ Duplicar</button>
+        <button id="ec-export" class="ec-btn" title="Exportar este ambiente (config + linhas) num arquivo cifrado">⤴ Exportar</button>
+      </div>
     </div>
 
-    <div class="flex flex-col items-end gap-2">
-      <!-- 5 controles padronizados: mesma forma/tamanho/escrita, só a cor muda -->
-      <div class="flex items-center justify-end gap-2 flex-wrap">
-        <button id="ec-sel-all" type="button"
-                class="ec-pill inline-flex items-center rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 px-3 py-1.5 text-[11px] font-medium text-blue-300 hover:bg-blue-500/15 hover:text-blue-200 transition-colors select-none">
-          Marcar todos
-        </button>
-        <button id="ec-sel-none" type="button"
-                class="ec-pill inline-flex items-center rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 px-3 py-1.5 text-[11px] font-medium text-gray-300 hover:bg-gray-700/60 hover:text-gray-100 transition-colors select-none">
-          Desmarcar
-        </button>
-        <button id="ec-sel-errors" type="button"
-                class="ec-pill inline-flex items-center rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 px-3 py-1.5 text-[11px] font-medium text-yellow-300 hover:bg-yellow-500/15 hover:text-yellow-200 transition-colors select-none">
-          Pendentes
-        </button>
-        <label class="ec-toggle ec-pill inline-flex items-center gap-2 rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 hover:bg-gray-700/60 px-3 py-1.5 cursor-pointer transition-colors select-none">
+    <div class="ec-group">
+      <span class="ec-group-label">Planilha</span>
+      <div class="ec-group-items">
+        <button id="ec-save" class="ec-btn" title="Salvar as linhas agora (a planilha também salva sozinha após 1,2s)">💾 Salvar planilha</button>
+        <button id="ec-preview" class="ec-btn ec-btn-info" title="Pré-visualizar a config que será enviada para a linha selecionada, sem aplicar">👁 Pré-visualizar</button>
+      </div>
+    </div>
+
+    <div class="ec-group">
+      <span class="ec-group-label">Seleção</span>
+      <div class="ec-group-items">
+        <button id="ec-sel-all" type="button" class="ec-btn ec-btn-info" title="Marcar todas as linhas com IP">Marcar todos</button>
+        <button id="ec-sel-none" type="button" class="ec-btn" title="Desmarcar todas as linhas">Desmarcar</button>
+        <button id="ec-sel-errors" type="button" class="ec-btn ec-btn-warn" title="Marcar só as linhas com erro, pendentes ou desatualizadas">Pendentes</button>
+      </div>
+    </div>
+
+    <div class="ec-group">
+      <span class="ec-group-label">Opções</span>
+      <div class="ec-group-items">
+        <label class="ec-btn ec-toggle" title="Reenviar a config mesmo para linhas já aplicadas e em dia">
           <span class="ec-toggle-switch" aria-hidden="true">
             <input id="ec-force" type="checkbox" class="sr-only"/>
             <span class="ec-toggle-track"></span>
             <span class="ec-toggle-thumb"></span>
           </span>
-          <span class="text-[11px] font-medium text-gray-300">Forçar reaplicação</span>
+          Forçar reaplicação
         </label>
-        <label class="ec-toggle ec-pill inline-flex items-center gap-2 rounded-lg ring-1 ring-inset ring-gray-700 bg-gray-800/60 hover:bg-gray-700/60 px-3 py-1.5 cursor-pointer transition-colors select-none">
+        <label class="ec-btn ec-toggle" title="Pingar os IPs da planilha a cada N segundos e pintar o status na coluna IP">
           <span class="ec-toggle-switch" aria-hidden="true">
             <input id="ec-ping-toggle" type="checkbox" class="sr-only"/>
             <span class="ec-toggle-track"></span>
             <span class="ec-toggle-thumb"></span>
           </span>
-          <span class="text-[11px] font-medium text-gray-300">Monitorar ping</span>
+          Monitorar ping
         </label>
       </div>
+    </div>
 
-      <!-- Painel do monitor: intervalo + mostrador "ao vivo". Aparece abaixo do
-           "Monitorar ping" só quando ligado; não desloca os controles acima. -->
-      <div id="ec-ping-panel" class="hidden items-center gap-3 rounded-lg ring-1 ring-inset ring-blue-500/40 bg-blue-500/10 px-3 py-2">
-        <label class="inline-flex items-center gap-1.5 text-[11px] font-medium text-blue-200/90 whitespace-nowrap">
-          <span>intervalo</span>
-          <input id="ec-ping-interval" type="number" min="2" max="3600" value="5"
-                 class="w-12 rounded-md bg-gray-900 ring-1 ring-inset ring-gray-700 px-1.5 py-1 text-gray-200 text-[11px] tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-          <span>s</span>
-        </label>
-        <span class="w-px h-5 bg-blue-500/30"></span>
-        <div class="flex flex-col gap-1 min-w-[170px]">
-          <div class="inline-flex items-center gap-2 text-[11px] font-medium whitespace-nowrap">
-            <span class="ec-live-dot" aria-hidden="true"></span>
-            <span class="text-blue-200">ao vivo</span>
-            <span id="ec-ping-rounds" class="text-blue-300/80 tabular-nums">#0</span>
-            <span class="text-gray-600">·</span>
-            <span id="ec-ping-tally" class="tabular-nums text-gray-300">—</span>
-          </div>
-          <div class="ec-ping-progress" aria-hidden="true"><span id="ec-ping-progress-bar"></span></div>
-        </div>
+    <!-- Executar nos telefones: fica por último e é empurrado para a direita.
+         O CTA azul é o único botão colorido de fundo da barra. -->
+    <div class="ec-group ml-auto">
+      <span class="ec-group-label">Aplicar nos telefones</span>
+      <div class="ec-group-items">
+        <button id="ec-apply-selected" class="ec-btn ec-btn-primary" title="Enviar a config apenas para as linhas marcadas">Aplicar selecionados (0)</button>
+        <button id="ec-apply" class="ec-btn" title="Enviar a config para todos os pendentes/desatualizados (ou todos, com Forçar ligado)">Aplicar tudo</button>
+        <button id="ec-normalize" class="ec-btn ec-btn-accent hidden" title="Volume no máximo + DND desligado (desfaz mute/DND ativado por operador). Com linhas marcadas, normaliza só as selecionadas; sem seleção, todos os telefones com IP.">🔧 Normalizar telefones</button>
       </div>
     </div>
   </div>
+
+  <!-- Painel do monitor de ping: aparece sob a barra quando o toggle liga. -->
+  <div id="ec-ping-panel" class="hidden items-center gap-3 rounded-lg ring-1 ring-inset ring-blue-500/40 bg-blue-500/10 px-3 py-2 mt-3 w-fit">
+    <label class="inline-flex items-center gap-1.5 text-[11px] font-medium text-blue-200/90 whitespace-nowrap">
+      <span>intervalo</span>
+      <input id="ec-ping-interval" type="number" min="2" max="3600" value="5"
+             class="w-12 rounded-md bg-gray-900 ring-1 ring-inset ring-gray-700 px-1.5 py-1 text-gray-200 text-[11px] tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+      <span>s</span>
+    </label>
+    <span class="w-px h-5 bg-blue-500/30"></span>
+    <div class="flex flex-col gap-1 min-w-[170px]">
+      <div class="inline-flex items-center gap-2 text-[11px] font-medium whitespace-nowrap">
+        <span class="ec-live-dot" aria-hidden="true"></span>
+        <span class="text-blue-200">ao vivo</span>
+        <span id="ec-ping-rounds" class="text-blue-300/80 tabular-nums">#0</span>
+        <span class="text-gray-600">·</span>
+        <span id="ec-ping-tally" class="tabular-nums text-gray-300">—</span>
+      </div>
+      <div class="ec-ping-progress" aria-hidden="true"><span id="ec-ping-progress-bar"></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="px-6 pt-4">
+  <details class="text-xs text-gray-400 group">
+    <summary class="cursor-pointer text-gray-500 hover:text-gray-300 select-none marker:text-gray-600">
+      Como usar a planilha e as colunas
+    </summary>
+    <div class="leading-relaxed max-w-4xl mt-2 space-y-1">
+      <p>Planilha estilo Excel: clique e arraste para selecionar blocos ·
+      <kbd class="ec-kbd">Ctrl+C</kbd> / <kbd class="ec-kbd">Ctrl+V</kbd> (paste mantém o valor original) ·
+      arraste o canto inferior direito de uma seleção para preencher e <strong>incrementar números</strong> automaticamente ·
+      campos como Ramal/Nome são texto (preserva zeros à esquerda, ex.: <code class="text-gray-300">00001</code>) ·
+      IP tem máscara automática · alterações salvam sozinhas após 1,2&nbsp;s.</p>
+      <p>Coluna <strong>✓</strong>: escolhe quais aparelhos as ações vão atingir — útil quando alguns telefones estão offline e você quer voltar só nesses depois.</p>
+      <p>Coluna <strong>Device</strong>: 🟢/🔴/⚪ mostram status de rede do telefone vinculado (online/offline/sem ping ainda). <strong>Clique</strong> na célula para ver ou desvincular o device.</p>
+      <p>Coluna <strong>👁</strong>: pré-visualiza a config que será enviada àquele ramal, sem aplicar (só em linha já salva).</p>
+      <p>Coluna <strong>⋮</strong>: ações remotas no telefone (ex.: <strong>normalizar</strong> = volume no máximo + DND desligado). Só aparece quando o modelo do ambiente tem ações homologadas.</p>
+    </div>
+  </details>
 </div>
 
 <div class="px-6 pb-6">
@@ -404,6 +507,15 @@
     </div>
     <p id="ec-run-summary" class="text-xs text-gray-400">—</p>
     <div id="ec-run-rows" class="max-h-64 overflow-auto text-xs"></div>
+  </div>
+</div>
+
+<!-- Painel de progresso do normalizar em massa (espelha o painel do apply) -->
+<div class="px-6 pb-6">
+  <div id="ec-action-run-panel" class="hidden bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4 space-y-2">
+    <h3 class="text-sm font-semibold text-gray-100">🔧 Normalização em andamento</h3>
+    <p id="ec-action-run-summary" class="text-xs text-gray-400">—</p>
+    <div id="ec-action-run-rows" class="max-h-64 overflow-auto text-xs"></div>
   </div>
 </div>
 
@@ -437,6 +549,28 @@
     <div class="flex justify-end gap-2 pt-2">
       <button id="ec-export-cancel" class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">Cancelar</button>
       <button id="ec-export-confirm" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed">Exportar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Alterar IP (ação perigosa: exige digitar o IP atual para confirmar) -->
+<div id="ec-setip-modal" class="hidden fixed inset-0 bg-black/60 z-30 flex items-center justify-center p-4">
+  <div class="bg-gray-900 ring-1 ring-red-500/40 rounded-xl p-5 w-full max-w-md space-y-3">
+    <h3 class="text-sm font-semibold text-red-300">⚠ Alterar IP do telefone</h3>
+    <p class="text-xs text-gray-400">O telefone <strong id="ec-setip-ramal" class="text-gray-200">—</strong> vai trocar de endereço e <strong>pode sair da rede</strong> se o novo IP estiver errado. A planilha <strong>não</strong> é atualizada automaticamente.</p>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Novo IP</span>
+      <input id="ec-setip-new" placeholder="192.168.0.50" maxlength="15" inputmode="decimal"
+             class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/>
+    </label>
+    <label class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Para confirmar, digite o IP <strong>atual</strong> (<span id="ec-setip-current" class="font-mono text-gray-400">—</span>)</span>
+      <input id="ec-setip-confirm" placeholder="IP atual do telefone" maxlength="15" inputmode="decimal" autocomplete="off"
+             class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/>
+    </label>
+    <div class="flex justify-end gap-2 pt-2">
+      <button id="ec-setip-cancel" class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">Cancelar</button>
+      <button id="ec-setip-go" disabled class="inline-flex items-center gap-2 rounded-lg font-medium bg-red-500 hover:bg-red-400 text-white px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed">Alterar IP</button>
     </div>
   </div>
 </div>

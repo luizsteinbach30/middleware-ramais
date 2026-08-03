@@ -9,14 +9,64 @@ function badge(tone, text, dot = false) {
   return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${tones[tone]}">${dot ? `<span class="w-1.5 h-1.5 rounded-full ${dots[tone]}"></span>` : ''}${text}</span>`;
 }
 
+const $ = (s) => document.getElementById(s);
+
+const DIA_LABEL = {
+  mon: 'seg', tue: 'ter', wed: 'qua', thu: 'qui', fri: 'sex', sat: 'sáb', sun: 'dom',
+};
+
+// Dias marcados vivem aqui: os chips são desenhados a cada render.
+let diasSelecionados = new Set();
+
+function renderDias(dias) {
+  const box = $('upd-days');
+  box.innerHTML = dias.map((d) => {
+    const on = diasSelecionados.has(d);
+    const cls = on
+      ? 'bg-blue-500/20 text-blue-200 ring-blue-500/50'
+      : 'bg-gray-900 text-gray-400 ring-gray-700 hover:text-gray-200';
+    return `<button type="button" data-dia="${d}" aria-pressed="${on}"
+      class="px-3 py-1.5 rounded-lg text-xs font-medium ring-1 ring-inset transition-colors ${cls}">${DIA_LABEL[d] || d}</button>`;
+  }).join('');
+  box.querySelectorAll('button[data-dia]').forEach((b) => {
+    b.addEventListener('click', () => {
+      const d = b.dataset.dia;
+      if (diasSelecionados.has(d)) diasSelecionados.delete(d); else diasSelecionados.add(d);
+      renderDias(dias);
+    });
+  });
+}
+
+function descreveAgendamento(cfg) {
+  if (!cfg.auto_check) return 'Verificação automática desligada — use "Verificar agora".';
+  const hh = String(cfg.check_hour).padStart(2, '0');
+  const mm = String(cfg.check_minute).padStart(2, '0');
+  const todos = cfg.check_days.length === 7;
+  const dias = todos ? 'todos os dias' : cfg.check_days.map((d) => DIA_LABEL[d] || d).join(', ');
+  return `Próxima verificação: ${hh}:${mm} (${cfg.timezone_offset}) · ${dias}`;
+}
+
+async function loadUpdateSettings() {
+  const cfg = await api('/api/system/update-settings');
+  $('upd-auto').checked = cfg.auto_check;
+  $('upd-auto-label').textContent = cfg.auto_check
+    ? 'Avisa quando houver versão nova' : 'Desligada';
+  $('upd-channel').value = cfg.channel;
+  $('upd-hour').value = cfg.check_hour;
+  $('upd-minute').value = cfg.check_minute;
+  $('upd-tz').textContent = `(${cfg.timezone_offset} — horário do servidor)`;
+  diasSelecionados = new Set(cfg.check_days);
+  renderDias(cfg.weekdays);
+  $('upd-next-check').textContent = descreveAgendamento(cfg);
+  return cfg;
+}
+
 async function load() {
   const ver = await api('/api/system/version');
   document.getElementById('upd-current').textContent = ver.current;
   document.getElementById('upd-channel-badge').outerHTML = `<span id="upd-channel-badge">${badge(ver.channel === 'beta' ? 'yellow' : 'green', ver.channel)}</span>`;
   document.getElementById('upd-last-check').textContent = `Último check: ${fmtTs(ver.last_check_at)}`;
-  document.getElementById('upd-channel').value = ver.channel;
-  document.getElementById('upd-auto').checked = ver.auto_update;
-  document.getElementById('upd-auto-label').textContent = ver.auto_update ? 'Ativado' : 'Desligado';
+  await loadUpdateSettings();
 
   const card = document.getElementById('upd-available-card');
   if (ver.available_version) {
@@ -41,6 +91,34 @@ async function load() {
   `).join('');
   injectIcons();
 }
+
+$('upd-cfg-save').addEventListener('click', async () => {
+  const btn = $('upd-cfg-save');
+  if (!diasSelecionados.size) {
+    toast.error('Marque ao menos um dia da semana (ou desligue a verificação).');
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const cfg = await api('/api/system/update-settings', {
+      method: 'PUT',
+      body: {
+        auto_check: $('upd-auto').checked,
+        channel: $('upd-channel').value,
+        check_hour: parseInt($('upd-hour').value || '0', 10),
+        check_minute: parseInt($('upd-minute').value || '0', 10),
+        check_days: [...diasSelecionados],
+      },
+    });
+    $('upd-next-check').textContent = descreveAgendamento(cfg);
+    toast.success('Verificação automática atualizada');
+    load();
+  } catch (e) {
+    toast.error('Falha ao salvar: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 document.getElementById('upd-check').addEventListener('click', async () => {
   try { const r = await api('/api/system/check-update', { method: 'POST' });

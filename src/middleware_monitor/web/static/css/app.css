@@ -9,3 +9,35 @@
 [data-icon] svg { width: 1em; height: 1em; }
 
 .tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------------------
+   Sidebar recolhível (v2.7.0)
+   A planilha do Configurador é larga e as últimas colunas (Erro!) ficavam
+   cortadas em telas menores. Recolher vira um trilho só de ícones, devolvendo
+   ~12rem de largura ao conteúdo. Estado em localStorage `mm.sidebar`, aplicado
+   no <html> antes do primeiro paint (script no base.html).
+   Seletor por id vence as classes utilitárias do Tailwind (w-64).
+   --------------------------------------------------------------------------- */
+#app-sidebar { transition: width .15s ease; }
+html.sidebar-collapsed #app-sidebar { width: 4rem; }
+html.sidebar-collapsed #app-sidebar .sb-label,
+html.sidebar-collapsed #app-sidebar .sb-hide-collapsed { display: none; }
+/* Ícones centralizados no trilho, sem o padding do texto */
+html.sidebar-collapsed #app-sidebar nav a,
+html.sidebar-collapsed #app-sidebar > div:last-child a,
+html.sidebar-collapsed #app-sidebar > div:last-child button {
+  justify-content: center;
+  padding-left: .5rem;
+  padding-right: .5rem;
+}
+html.sidebar-collapsed #app-sidebar #brand-default { justify-content: center; }
+/* No trilho não cabe marca + botão lado a lado: viram duas linhas centradas */
+html.sidebar-collapsed #app-sidebar .sb-brand-row {
+  flex-direction: column;
+  gap: .625rem;
+}
+html.sidebar-collapsed #app-sidebar .sb-brand { flex: none; }
+/* Logo do cliente continua visível no trilho, só que reduzida */
+html.sidebar-collapsed #app-sidebar #brand-logo { max-height: 2rem; }
+/* A seta aponta para o outro lado quando recolhido (o ícone é "recolher <|") */
+html.sidebar-collapsed #sb-toggle-icon { transform: scaleX(-1); }

@@ -2,6 +2,65 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.7.0] — 2026-08-03
+
+> Migrations `0006`, `0007` e `0008` rodam juntas no upgrade. Instalações
+> **≤ 2.6.0 não se auto-atualizam** (o updater antigo não fala com repo
+> privado): é preciso **1 update manual** para a 2.7.0 em cada um dos 3 modos
+> (.exe desktop, serviço Windows NSSM, Linux systemd) — ver `docs/INSTALACAO.md`.
+
+### Fixed
+- **Auto-update quebrado em campo** (repo GitHub privado): token fine-grained
+  read-only embutido no build (`UPDATE_READ_TOKEN`, ofuscação cosmética —
+  segurança real é escopo mínimo + rotação) com override por env
+  `APP_UPDATE_TOKEN`; download passa a usar a **API URL do asset**
+  (`assets[].url` + `Accept: application/octet-stream` + Bearer), já que
+  `browser_download_url` não funciona em repo privado; validação por modo —
+  `.exe` (frozen) exige `MiddlewareMonitor-*.exe` **com SHA256 conferido**,
+  legacy mantém tarball+SHA256SUMS; default de `update_repo` corrigido.
+- **Tela do ambiente travava após o 2º "Aplicar"**: ciclo de vida do polling
+  refeito (`startPolling`/`stopPolling` por run, guard anti-sobreposição) e
+  404 de run expirado encerra o acompanhamento com aviso em vez de poll
+  infinito.
+- **IPs/linhas fora de ordem**: a ordem canônica das linhas passa a ser a
+  **ordem da planilha** (coluna `posicao`, migration `0006`, backfill por
+  `created_at, id`). Tela, export XLSX/PDF e aplicação herdam a mesma ordem.
+
+### Added
+- **Múltiplos servidores USCall por instalação** (ADR-0003, migrations `0007`):
+  tabela `uscall_servers` (token cifrado por linha), CRUD na API e na tela
+  `/config` (cards com teste de conexão por servidor), coleta de todos os
+  servidores habilitados em paralelo com **falha parcial segura** (um servidor
+  fora não derruba os demais), verify de registro SIP consultando todos, e a
+  config KV legada migrada automaticamente para o servidor "Principal".
+- **Device actions — gerenciamento remoto dos telefones** (ADR-0004, migration
+  `0008`): ação **"Normalizar telefone"** (volume no máximo + DND off — desfaz
+  mute/DND ativado por operador) por linha (menu `⋮` na planilha) e **em massa**
+  (botão "Normalizar telefones", que respeita a seleção da coluna `✓`: com
+  linhas marcadas normaliza só as selecionadas) com progresso ao vivo
+  (`GET /action-runs/{id}/live`). Homologado ao vivo em **4 dos 5 adapters**:
+  **Yealink T31G** (Action URI), **FlyingVoice P10** (form-replay; reinicia ao
+  mudar DND), **HTEK UC902G** (P-codes de volume e DND; reinicia sempre) e
+  **Intelbras V-series** (V3001/V3101/V3501/V5501 — Action URI `DNDOff` para o
+  estado de runtime **+** `sysConf` parcial para persistir DND, `MuteRinging`
+  e volumes de saída; sem reboot). O **Intelbras S3002**
+  (adapter distinto, firmware GoAhead) ficou de fora por falta de unidade de
+  lab e segue oculto por capability. Matriz completa em
+  `docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md`. Auditoria completa em `device_action_events`
+  (1 evento por telefone/ação, sucesso e erro). Catálogo prevê `set_ip` com
+  confirmação digitada do IP atual (nenhum vendor homologado ainda).
+- **Renomear ambiente pela UI** (lápis no título; o backend já existia).
+- **Apagar ambientes selecionados** na lista: botão que aparece com a seleção
+  ativa, modal com a lista do que será apagado e confirmação digitada.
+
+### Changed
+- **Busca de ambientes restrita ao nome** — antes o campo casava também ramal,
+  IP, MAC e user auth internos da planilha, trazendo ambientes "errados".
+  O modelo do telefone segue com filtro dedicado (dropdown).
+- **Webhook**: cada item de `extensions`/`devices` ganha a chave **aditiva**
+  `"uscall_server"` (nome do servidor de origem). Receptores que ignoram
+  chaves extras não são afetados.
+
 ## [2.6.0] — 2026-06-03
 
 ### Added

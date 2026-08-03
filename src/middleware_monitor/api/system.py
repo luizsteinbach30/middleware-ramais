@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session as DBSession
 
@@ -23,9 +23,17 @@ from middleware_monitor.core.models import Collection, UpdateHistory, User
 from middleware_monitor.core.scheduler import get_scheduler
 from middleware_monitor.core.tasks import spawn
 from middleware_monitor.core.time import iso_utc
+from middleware_monitor.domain.config.update_settings import (
+    CHANNELS,
+    WEEKDAYS,
+    UpdateSettings,
+    load_update_settings,
+    save_update_settings,
+)
+from middleware_monitor.jobs import apply_update_schedule
 from middleware_monitor.settings import get_settings
 from middleware_monitor.updater.installer import install_release
-from middleware_monitor.updater.service import get_state, run_update_check
+from middleware_monitor.updater.service import get_state, run_update_check, set_auto_check
 from middleware_monitor.version import __version__
 
 log = get_logger("api.system")
@@ -101,20 +109,81 @@ def readyz(db: DBSession = Depends(get_session)) -> ReadyOut:
 
 
 @router.get("/version", response_model=VersionOut)
-def version_info(_user: User = Depends(get_current_user)) -> VersionOut:
-    settings = get_settings()
+def version_info(
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> VersionOut:
     state = get_state()
     available = state.get("available")
+    upd = load_update_settings(db)
     return VersionOut(
         current=__version__,
-        channel=settings.update_channel,
-        auto_update=bool(state.get("auto_update", True)),
+        channel=upd.channel,
+        auto_update=upd.auto_check,
         last_check_at=iso_utc(cast("datetime | None", state.get("last_check_at"))),
         last_check_ok=bool(state.get("last_check_ok")),
         available_version=str(getattr(available, "version", "")) or None,
         available_published_at=getattr(available, "published_at", None),
         available_notes=getattr(available, "notes", None),
     )
+
+
+class UpdateSettingsIn(BaseModel):
+    """Update parcial: só o que vier no body é alterado."""
+
+    auto_check: bool | None = None
+    channel: str | None = None
+    check_hour: int | None = Field(default=None, ge=0, le=23)
+    check_minute: int | None = Field(default=None, ge=0, le=59)
+    check_days: list[str] | None = None
+
+
+def _update_settings_out(upd: UpdateSettings) -> dict[str, object]:
+    agora = datetime.now().astimezone()
+    return {
+        **upd.as_dict(),
+        # A tela mostra o horário no relógio do servidor; deixamos explícito
+        # qual é esse fuso para o operador não precisar adivinhar.
+        "timezone": str(agora.tzinfo),
+        "timezone_offset": agora.strftime("%z"),
+        "weekdays": list(WEEKDAYS),
+        "channels": list(CHANNELS),
+        # Contrato explícito: o agendamento nunca instala sozinho.
+        "installs_automatically": False,
+    }
+
+
+@router.get("/update-settings")
+def get_update_settings(
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> dict[str, object]:
+    return _update_settings_out(load_update_settings(db))
+
+
+@router.put(
+    "/update-settings",
+    dependencies=[Depends(require_csrf), Depends(require_admin)],
+)
+def put_update_settings(
+    payload: UpdateSettingsIn,
+    user: User = Depends(require_admin),
+    db: DBSession = Depends(get_session),
+) -> dict[str, object]:
+    incoming = payload.model_dump(exclude_none=True)
+    try:
+        upd = save_update_settings(db, incoming, user_id=user.id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    # Vale na hora: reagenda (ou remove) o job sem reiniciar o serviço.
+    apply_update_schedule(upd)
+    set_auto_check(upd.auto_check)
+    log.info(
+        "update_settings_saved", operator=user.username, auto_check=upd.auto_check,
+        channel=upd.channel, at=f"{upd.check_hour:02d}:{upd.check_minute:02d}",
+        days=upd.day_of_week,
+    )
+    return _update_settings_out(upd)
 
 
 @router.post(

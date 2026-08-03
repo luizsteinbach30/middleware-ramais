@@ -9,6 +9,15 @@
   <script src="/static/vendor/tailwindcss.js"></script>
   <link rel="stylesheet" href="/static/css/app.css">
   <script>
+    // Aplica o estado da sidebar ANTES do primeiro paint — senão a tela abre
+    // expandida e "pula" para recolhida.
+    try {
+      if (localStorage.getItem('mm.sidebar') === 'collapsed') {
+        document.documentElement.classList.add('sidebar-collapsed');
+      }
+    } catch (_e) { /* localStorage bloqueado: segue expandida */ }
+  </script>
+  <script>
     tailwind.config = { theme: { extend: { fontFamily: { sans: ['ui-sans-serif','system-ui'] } } } };
   </script>
   <script type="module" src="/static/js/app.js"></script>

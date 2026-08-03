@@ -130,6 +130,12 @@ function updateSelInfo() {
   const n = selectedEnvs.size;
   const el = $('#ec-sel-info');
   if (el) el.textContent = n ? `${n} selecionado${n === 1 ? '' : 's'}` : 'exporta os visíveis';
+  // "Apagar selecionados" só existe com seleção ativa (ação destrutiva).
+  const del = $('#ec-del-selected');
+  if (del) {
+    del.classList.toggle('hidden', n === 0);
+    del.classList.toggle('inline-flex', n > 0);
+  }
 }
 
 function exportTargets() {
@@ -203,8 +209,10 @@ $('#ec-modal-create').addEventListener('click', async () => {
       method: 'POST', body: { nome, modelo_telefone: modelo },
     });
     closeModal();
-    // Recem-criado: vai direto pra config padrao
-    location.href = `/extension-configurator/environments/${encodeURIComponent(env.id)}/config`;
+    // Recém-criado: config padrão primeiro; `novo=1` faz o Salvar de lá seguir
+    // direto para a planilha de ramais.
+    location.href =
+      `/extension-configurator/environments/${encodeURIComponent(env.id)}/config?novo=1`;
   } catch (err) {
     toast.error('Erro: ' + err.message);
   }
@@ -258,6 +266,76 @@ delConfirmBtn.addEventListener('click', async () => {
   }
 });
 
+// --- modal: apagar selecionados (em massa) ---
+// Reusa o DELETE por ambiente (não há endpoint de bulk no backend): dispara em
+// série para não abrir N transações concorrentes no SQLite, e reporta parciais
+// — se 2 de 5 falharem, o usuário vê quais.
+const delSelModal = $('#ec-delsel-modal');
+const delSelInput = $('#ec-delsel-confirm');
+const delSelBtn = $('#ec-delsel-confirm-btn');
+const DELSEL_PALAVRA = 'APAGAR';
+
+function selectedEnvObjects() {
+  return _allEnvs.filter((e) => selectedEnvs.has(e.id));
+}
+
+function openDeleteSelectedModal() {
+  const alvos = selectedEnvObjects();
+  if (!alvos.length) return;
+  const totalRamais = alvos.reduce((acc, e) => acc + (Number(e.telefones) || 0), 0);
+  $('#ec-delsel-count').textContent =
+    `${alvos.length} ambiente${alvos.length === 1 ? '' : 's'}` +
+    (totalRamais ? ` (${totalRamais} ${totalRamais === 1 ? 'ramal' : 'ramais'})` : '');
+  $('#ec-delsel-list').innerHTML = alvos.map((e) => {
+    const n = Number(e.telefones) || 0;
+    return `<li class="flex items-center justify-between gap-2">
+      <span class="truncate">${esc(e.nome)}</span>
+      <span class="text-gray-500 shrink-0">${n} ${n === 1 ? 'ramal' : 'ramais'}</span>
+    </li>`;
+  }).join('');
+  delSelInput.value = '';
+  delSelBtn.disabled = true;
+  delSelModal.classList.remove('hidden');
+  setTimeout(() => delSelInput.focus(), 50);
+}
+
+function closeDeleteSelectedModal() { delSelModal.classList.add('hidden'); }
+
+delSelInput.addEventListener('input', () => {
+  delSelBtn.disabled = delSelInput.value.trim().toUpperCase() !== DELSEL_PALAVRA;
+});
+$('#ec-del-selected').addEventListener('click', openDeleteSelectedModal);
+$('#ec-delsel-cancel').addEventListener('click', closeDeleteSelectedModal);
+delSelModal.addEventListener('click', (e) => {
+  if (e.target === delSelModal) closeDeleteSelectedModal();
+});
+
+delSelBtn.addEventListener('click', async () => {
+  const alvos = selectedEnvObjects();
+  if (!alvos.length) return;
+  delSelBtn.disabled = true;
+  const falhas = [];
+  for (const env of alvos) {
+    try {
+      await api(`/api/extension-configurator/environments/${encodeURIComponent(env.id)}`, {
+        method: 'DELETE',
+      });
+      selectedEnvs.delete(env.id);
+    } catch (err) {
+      falhas.push(`${env.nome} (${err.message})`);
+    }
+  }
+  closeDeleteSelectedModal();
+  const apagados = alvos.length - falhas.length;
+  if (apagados) {
+    toast.success(`${apagados} ambiente${apagados === 1 ? '' : 's'} apagado${apagados === 1 ? '' : 's'}`);
+  }
+  if (falhas.length) {
+    toast.error(`Falha em ${falhas.length}: ${falhas.slice(0, 3).join(' · ')}`);
+  }
+  await load();
+});
+
 // --- modal: duplicar ---
 let pendingDup = null;  // { id, nome }
 const dupModal = $('#ec-dup-modal');
@@ -286,8 +364,10 @@ dupConfirmBtn.addEventListener('click', async () => {
       { method: 'POST', body: { nome: nome || undefined } },
     );
     closeDupModal();
-    // Recém-duplicado: vai direto pra planilha do novo ambiente p/ cadastrar os ramais.
-    location.href = `/extension-configurator/environments/${encodeURIComponent(env.id)}`;
+    // Clonar também passa pela config padrão (é onde se revisa credencial e
+    // teclas do novo ambiente); ao salvar lá, segue para a planilha.
+    location.href =
+      `/extension-configurator/environments/${encodeURIComponent(env.id)}/config?novo=1`;
   } catch (err) {
     toast.error('Falha ao duplicar: ' + err.message);
     dupConfirmBtn.disabled = false;

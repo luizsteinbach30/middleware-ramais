@@ -24,6 +24,13 @@ Cada seção descreve: rota, propósito, layout, componentes, dados consumidos, 
 - **Tabelas:** header `bg-gray-700`, linhas `divide-gray-700`, hover `bg-gray-700/40`.
 - **Datas:** exibidas no fuso do navegador, com tooltip mostrando UTC.
 - **Tokens sensíveis:** sempre exibidos como `••••••••` com botão "Alterar" que limpa e libera o input.
+- **Sidebar recolhível (v2.7.0):** botão circular na borda da sidebar (ou
+  <kbd>Ctrl+B</kbd>) alterna entre 256px e um **trilho de 64px só com ícones**.
+  Serve principalmente à planilha do Configurador, que é larga e tinha as
+  últimas colunas (incluindo **Erro**) cortadas. O estado fica em
+  `localStorage['mm.sidebar']` e é aplicado no `<html>` por script inline no
+  `base.html` **antes do primeiro paint** (evita o "pulo" ao carregar). Ao
+  alternar, dispara um `resize` para o Jspreadsheet remedir a largura.
 
 ---
 
@@ -409,24 +416,43 @@ Cada bloco repete:
 ```
 
 **Componentes:**
-- Card de status com versão atual, canal, último check, próxima versão (se houver).
+- Card de status com versão atual, canal, último check, próxima versão (se houver)
+  e a linha **"Próxima verificação: HH:MM (fuso) · dias"**.
 - Botão `Verificar agora` (rate-limit 1/min).
 - Botão `Atualizar agora` (admin only) — confirma, mostra progresso (download → verificação → migrate → restart).
-- Toggle `Auto-update`.
-- Seletor `Canal`.
+- **Card "Verificação automática" (v2.7.0)** — controles **reais** e persistidos:
+  - toggle **Verificar automaticamente** (pausa a checagem periódica; o botão
+    "Verificar agora" continua funcionando);
+  - **Canal** `stable` / `beta` — passa a valer da tela; o `.env`
+    (`APP_UPDATE_CHANNEL`) vira apenas fallback de primeira execução;
+  - **Horário** hora:minuto, no **fuso local do servidor** (exibido ao lado);
+  - **Dias da semana** em chips — permite janela de manutenção (ex.: só
+    seg–sex, para não receber aviso às vésperas do fim de semana). Salvar sem
+    nenhum dia é bloqueado na UI (para pausar existe o toggle).
+  - Salvar **reagenda o job na hora**, sem reiniciar o serviço.
 - Tabela de `update_history` com status e link para detalhes (modal com erro completo se falhou).
+
+> **Contrato explícito:** o agendamento **apenas verifica e avisa** — nunca
+> instala sozinho (decisão de 2026-08-03). A instalação continua exigindo o
+> clique em "Atualizar agora". A API devolve `installs_automatically: false`.
+> Antes da v2.7.0 o seletor de canal e o toggle existiam mas eram
+> **decorativos**: sem handler, sem persistência, e o `auto_update` exibido era
+> um literal `True` no código.
 
 **Dados:**
 - `GET /api/system/version`
+- `GET /api/system/update-settings`
+- `PUT /api/system/update-settings` (admin + CSRF)
 - `POST /api/system/check-update`
 - `POST /api/system/update` (admin)
-- `PATCH /api/system/update-settings` (canal, auto-update)
 - `GET /api/system/update-history?page=&size=`
 
 **Critérios de aceite:**
 - [ ] Durante update, a UI mostra progresso e bloqueia ações conflitantes.
 - [ ] Em rollback automático, status é claramente sinalizado.
 - [ ] Mudar canal não dispara update sozinho — o próximo check decide.
+- [x] Desligar a verificação **realmente remove o job** do scheduler (não só
+      esconde a UI) e `GET /version` passa a reportar `auto_update: false`.
 
 ---
 
@@ -527,17 +553,41 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
 
 ### 14.1 Ambientes (`/extension-configurator/environments`)
 - Grid responsivo de cards (1/2/3 colunas conforme breakpoint).
+- **Seleção múltipla** (clique no botão de seleção do card, que fica realçado):
+  alimenta a exportação XLSX/PDF (sem seleção, exporta os visíveis) e o botão
+  **Apagar selecionados** (v2.7.0).
+- **Apagar selecionados** (v2.7.0) — botão vermelho que **só aparece quando há
+  seleção** (ação destrutiva não fica a um clique no estado normal). Abre modal
+  com a contagem de ambientes/ramais, a **lista do que será apagado** e
+  confirmação digitando `APAGAR`. Apaga em série pelo `DELETE` por ambiente,
+  reporta parciais (ex.: "3 apagados" + "Falha em 1: …") e recarrega a lista.
 - Cada card: nome, modelo do telefone, contagem de ramais, timestamp atualizado.
 - Botão "+ Novo ambiente" abre modal com inputs (Nome + dropdown de modelos).
 - Empty state quando sem ambientes.
 
 ### 14.2 Detalhe do ambiente (`/extension-configurator/environments/{id}`)
-- Header sticky com botão **voltar pill** (chevron + "Ambientes"), nome do
-  ambiente (truncado), subtítulo "modelo · N ramais", link **⚙ Config padrão**
-  e botões **Salvar planilha**, **Aplicar selecionados (N)** (azul, com shadow,
-  desabilitado quando N=0) e **Aplicar tudo**.
-- Pills de status no topo: aplicado / desatualizado / pendente / erro,
-  com contadores em `tabular-nums`.
+- Header sticky enxuto: botão **voltar pill** (chevron + "Ambientes"), nome do
+  ambiente (truncado) + lápis de renomear, subtítulo "modelo · N ramais",
+  indicador de autosave e as **pills de status** (aplicado / desatualizado /
+  pendente / erro, contadores em `tabular-nums`).
+- **Barra de ferramentas agrupada (v2.7.0).** Antes os 13 controles estavam
+  espalhados entre o header e a faixa de ajuda, com alturas e fontes
+  diferentes (`text-xs` vs `text-sm`, pill vs botão). Agora **todos** usam a
+  mesma classe `.ec-btn` (30px de altura, 12px de fonte) e ficam numa única
+  barra, agrupados por finalidade — da esquerda (preparar) para a direita
+  (executar), cada grupo com rótulo em caixa alta e separador vertical:
+  - **Ambiente** — ⚙ Config padrão · ⧉ Duplicar · ⤴ Exportar
+  - **Planilha** — 💾 Salvar planilha · 👁 Pré-visualizar
+  - **Seleção** — Marcar todos · Desmarcar · Pendentes
+  - **Opções** — toggles Forçar reaplicação · Monitorar ping
+  - **Aplicar nos telefones** (empurrado para a direita) — Aplicar
+    selecionados (N) *(único botão de fundo azul da tela)* · Aplicar tudo ·
+    🔧 Normalizar telefones
+  - Cor só codifica intenção: azul = informação/seleção, amarelo = atenção,
+    verde = ação de recuperação, azul sólido = ação primária.
+  - O texto de ajuda das colunas virou um `<details>` **"Como usar a planilha
+    e as colunas"**, recolhido por padrão.
+  - Com a **sidebar recolhida** (Ctrl+B) a barra inteira cabe em uma linha.
 - Planilha Jspreadsheet CE (`dist/index.min.js`) em wrapper com card/sombra.
   Colunas (esquerda → direita):
   - `id` (hidden), `✓` (checkbox de seleção), `IP`, `Ramal`, `Nome visível`,
@@ -565,6 +615,29 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
     *"aplicando…"* na coluna Status (em vez de "desatualizado", que
     causava flicker incorreto).
   - Ao finalizar, recarrega a planilha pra mostrar status persistido.
+- **Device actions (v2.7.0)** — ações remotas nos telefones homologados,
+  controladas por capabilities (`GET .../capabilities`): vendor sem ação
+  homologada não mostra nada (Intelbras hoje).
+  - Coluna **`⋮`** (readonly, só em linha salva e com capability): abre menu
+    popover ancorado na célula com as ações do vendor:
+    - **🔧 Normalizar telefone** — volume no máximo + DND desligado
+      (desfaz mute/DND ativado por operador). `confirm()` → POST da ação →
+      toast com resultado (avisa quando o aparelho reinicia, ex.: HTEK).
+    - **⚠ Alterar IP…** (quando `set_ip` homologado) — abre modal perigoso
+      (ring vermelho): input de **novo IP** + confirmação **digitando o IP
+      atual**; botão só habilita com IP atual correto e novo IP diferente.
+      Backend rejeita `confirm_ip` errado com 400.
+  - Botão **🔧 Normalizar telefones** no header (verde, só com capability
+    `normalize`): mesma semântica de seleção do "Aplicar" — com linhas
+    marcadas na coluna ✓ normaliza **só as selecionadas** (`selected_ids`
+    no body), sem seleção normaliza todas com IP. Confirm →
+    `POST .../actions/normalize` devolve `{run_id, total}` e o run roda em
+    background no servidor.
+  - Painel "**Normalização em andamento**" (gêmeo do painel de aplicação):
+    summary por stage (pendente/executando/ok/erro), lista IP · ramal ·
+    stage · mensagem, polling 1.5s em `GET /action-runs/{run_id}/live`;
+    404 do live (run expirou da memória) encerra o acompanhamento com toast
+    — a auditoria fica persistida em `device_action_events`.
 
 ### 14.3 Config padrão (`/extension-configurator/environments/{id}/config`)
 - Header sticky com botão **voltar pill** que mostra o **nome do ambiente**
@@ -589,9 +662,15 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
     e *Valor* (`vem da planilha` selecionando uma coluna ou `fixo` com
     string livre). Botão **+ adicionar tecla** e **✕** para remover.
 - Botão "Salvar" no header → PUT em `/api/extension-configurator/environments/{id}`.
-- **UX**: após criar um ambiente novo, o usuário cai direto nesta tela
-  (em vez do detail) para configurar credencial e function keys antes da
-  planilha.
+- **Fluxo de criação (v2.7.0)** — ambiente novo **do zero ou clonado** cai
+  primeiro nesta tela (para revisar credencial, teclas etc.) e, ao salvar,
+  segue **automaticamente para a planilha de ramais**:
+  - quem cria/duplica manda o usuário para `…/config?novo=1`;
+  - com `novo=1`, o botão vira **"Salvar e cadastrar ramais →"** e o save
+    redireciona para `/extension-configurator/environments/{id}`;
+  - **sem** o marcador (entrar pela engrenagem para editar um ambiente já
+    existente) o comportamento é o de sempre: salva, mostra o toast e
+    permanece na tela.
 
 ### 14.4 Relatórios (`/extension-configurator/runs`)
 - Tabela do histórico de execuções: Ambiente, Início, Fim, Total, OK, Falha,
@@ -629,3 +708,8 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
 | Run detail (v2.2.1) | GET | `/api/extension-configurator/runs/{run_id}/detail` |
 | Run live | GET | `/api/extension-configurator/runs/{run_id}/live` |
 | Run cancel | POST | `/api/extension-configurator/runs/{run_id}/cancel` |
+| Capabilities (v2.7.0) | GET | `/api/extension-configurator/environments/{id}/capabilities` |
+| Ação por linha (v2.7.0) | POST | `/api/extension-configurator/environments/{id}/lines/{line_id}/actions/{action}` |
+| Normalizar em massa (v2.7.0) | POST | `/api/extension-configurator/environments/{id}/actions/normalize` |
+| Action run live (v2.7.0) | GET | `/api/extension-configurator/action-runs/{run_id}/live` |
+| Auditoria de ações (v2.7.0) | GET | `/api/extension-configurator/environments/{id}/action-events` |

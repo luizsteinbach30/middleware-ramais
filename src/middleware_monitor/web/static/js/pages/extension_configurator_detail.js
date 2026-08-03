@@ -12,6 +12,14 @@ let pollInFlight = false;   // impede pollRun sobreposto quando a API demora
 let modeloTelefone = '';
 let isHtek = false;
 let envNome = '';
+let envCapabilities = [];        // ações remotas homologadas p/ o vendor do ambiente
+
+// Polling do run de device actions (normalizar em massa) — ciclo de vida
+// idêntico ao do run de aplicação, mas com estado próprio para os dois
+// poderem coexistir sem se atropelar.
+let actionPollTimer = null;
+let currentActionRun = null;
+let actionPollInFlight = false;
 
 // ----- Ciclo de vida do polling do run ----------------------------------------
 // O interval é criado a cada apply() e destruído quando o run termina/expira.
@@ -66,6 +74,7 @@ const COLUMNS = [
   { type: "hidden",   name: "id" },
   { type: "checkbox", name: "_sel",              title: "✓",             width: 36 },
   { type: "text",     name: "_preview",          title: "👁",            width: 40, readOnly: true },
+  { type: "text",     name: "_actions",          title: "⋮",             width: 36, readOnly: true },
   { type: "text",     name: "ip",                title: "IP",            width: 140 },
   { type: "text",     name: "nome_visivel",      title: "Nome visível",  width: 180 },
   { type: "text",     name: "numero_ramal",      title: "Ramal",         width: 100 },
@@ -113,6 +122,7 @@ function rowToArray(l) {
     switch (c.name) {
       case "_sel":     return false;
       case "_preview": return l.id ? "👁" : "";  // ícone clicável só em linha salva
+      case "_actions": return (l.id && envCapabilities.length) ? "⋮" : "";  // kebab só com ação homologada
       case "_device":  return deviceCellLabel(l);
       case "_status":  return statusLabel(l.status || "pending");
       case "_modelo":  return l.ultimo_modelo || "";
@@ -477,6 +487,7 @@ function buildSheet(linhas) {
   attachFillPreview(container);
   attachDevicePopover(container);
   attachPreviewClick(container);
+  attachActionsMenu(container);
 }
 
 // ----- Popover de ações no device vinculado (ver / desvincular) ---------------
@@ -677,9 +688,25 @@ async function reload() {
   $('#ec-title').textContent = env.nome;
   $('#ec-subtitle').textContent = `${modeloTelefone} · ${env.linhas.length} ${env.linhas.length === 1 ? 'ramal' : 'ramais'}`;
   $('#ec-config-link').href = `/extension-configurator/environments/${encodeURIComponent(envId)}/config`;
+  await loadCapabilities();  // antes do buildSheet: a coluna ⋮ depende das capabilities
   renderStatusPills(env.linhas);
   buildSheet(env.linhas);
   refreshSelectedCount();
+}
+
+// Capabilities do vendor (device actions): controla a visibilidade do botão
+// "Normalizar telefones" e da coluna ⋮. Vendor sem ação homologada = UI oculta.
+async function loadCapabilities() {
+  try {
+    const caps = await api(`/api/extension-configurator/environments/${encodeURIComponent(envId)}/capabilities`);
+    envCapabilities = caps.actions || [];
+  } catch (_e) {
+    envCapabilities = [];  // falha na consulta: esconde as ações (estado seguro)
+  }
+  const btn = $('#ec-normalize');
+  // .ec-btn já é inline-flex; basta alternar `hidden` (o CSS da tela reafirma
+  // `.ec-btn.hidden { display: none }` para vencer a ordem das folhas).
+  if (btn) btn.classList.toggle('hidden', !envCapabilities.includes('normalize'));
 }
 
 async function save({ silent = false } = {}) {
@@ -694,6 +721,7 @@ async function save({ silent = false } = {}) {
     env.linhas.forEach((l, i) => {
       setCellSilent(i, "id", l.id);
       setCellSilent(i, "_preview", l.id ? "👁" : "");  // habilita o olho em linhas recém-salvas
+      setCellSilent(i, "_actions", (l.id && envCapabilities.length) ? "⋮" : "");
       setCellSilent(i, "_status", statusLabel(l.status || "pending"));
       setCellSilent(i, "_device", deviceCellLabel(l));
       lineDeviceMap.set(l.id, l.device_id ? {
@@ -1091,6 +1119,248 @@ async function previewActiveLine() {
   await openPreviewForLineId(lineId ? String(lineId) : '');
 }
 
+// ----- Device actions: menu ⋮ por linha + normalizar em massa ------------------
+// Só aparece o que o vendor homologou (envCapabilities). O fluxo espelha o
+// apply: POST dispara run em background, GET /action-runs/{id}/live acompanha.
+
+const ACTION_STAGE_LABEL = { pending: 'pendente', running: 'executando…', done: 'ok', error: 'erro' };
+
+let _actionsMenu = null;
+
+function hideActionsMenu() {
+  if (_actionsMenu && _actionsMenu.parentNode) {
+    _actionsMenu.parentNode.removeChild(_actionsMenu);
+  }
+  _actionsMenu = null;
+}
+
+function showActionsMenu(td, lineId, ip, ramal) {
+  hideActionsMenu();
+  const items = [];
+  if (envCapabilities.includes('normalize')) {
+    items.push({ act: 'normalize', label: '🔧 Normalizar telefone', color: '#6ee7b7',
+                 title: 'Volume no máximo + DND desligado' });
+  }
+  if (envCapabilities.includes('set_ip')) {
+    items.push({ act: 'set_ip', label: '⚠ Alterar IP…', color: '#fca5a5',
+                 title: 'Troca o IP do aparelho (exige confirmação)' });
+  }
+  if (!items.length) return;
+  const r = td.getBoundingClientRect();
+  const pop = document.createElement('div');
+  pop.className = 'ec-actions-menu';
+  pop.style.cssText = `
+    position: fixed; left: ${r.left}px; top: ${r.bottom + 4}px;
+    background: #111827; color: #e5e7eb; border: 1px solid #374151;
+    border-radius: 8px; padding: 6px; z-index: 100;
+    box-shadow: 0 8px 24px -8px rgba(0,0,0,0.6);
+    display: flex; flex-direction: column; gap: 2px; min-width: 210px;
+    font-size: 12px;
+  `;
+  pop.innerHTML = `
+    <div style="padding: 4px 8px; font-size: 11px; color: #9ca3af;">
+      Ramal <span style="color: #e5e7eb;">${esc(ramal || '—')}</span> · <span style="color: #e5e7eb;" class="font-mono">${esc(ip || 'sem IP')}</span>
+    </div>` + items.map((it) => `
+    <button data-act="${it.act}" title="${esc(it.title)}" style="text-align: left; padding: 6px 10px; border-radius: 6px; background: transparent; color: ${it.color}; border: none; cursor: pointer;">
+      ${it.label}
+    </button>`).join('');
+  document.body.appendChild(pop);
+  _actionsMenu = pop;
+  pop.querySelectorAll('button[data-act]').forEach((b) => {
+    b.addEventListener('mouseenter', (e) => e.currentTarget.style.background = '#1f2937');
+    b.addEventListener('mouseleave', (e) => e.currentTarget.style.background = 'transparent');
+    b.addEventListener('click', () => {
+      const act = b.dataset.act;
+      hideActionsMenu();
+      if (act === 'normalize') runNormalizeOnLine(lineId, ip, ramal);
+      else if (act === 'set_ip') openSetIpModal(lineId, ip, ramal);
+    });
+  });
+}
+
+function attachActionsMenu(container) {
+  container.addEventListener('click', (e) => {
+    const td = e.target.closest && e.target.closest('td');
+    if (!td || td.dataset.x == null) return;
+    if (parseInt(td.dataset.x) !== COL_INDEX._actions) return;
+    const yi = parseInt(td.dataset.y);
+    if (!Number.isFinite(yi)) return;
+    const row = sheet.getData()[yi];
+    const lineId = row && row[COL_INDEX.id];
+    if (!lineId || !envCapabilities.length) { hideActionsMenu(); return; }
+    e.stopPropagation();
+    showActionsMenu(td, String(lineId), String(row[COL_INDEX.ip] || ''), String(row[COL_INDEX.numero_ramal] || ''));
+  });
+  document.addEventListener('click', (e) => {
+    if (!_actionsMenu) return;
+    if (_actionsMenu.contains(e.target)) return;
+    hideActionsMenu();
+  }, true);
+  window.addEventListener('scroll', hideActionsMenu, true);
+}
+
+async function runNormalizeOnLine(lineId, ip, ramal) {
+  if (!ip) { toast.info('Linha sem IP — nada a normalizar.'); return; }
+  if (!confirm(`Normalizar o telefone ${ip} (ramal ${ramal || '—'})?\nVolume no máximo + DND desligado.`)) return;
+  try {
+    const r = await api(
+      `/api/extension-configurator/environments/${encodeURIComponent(envId)}/lines/${encodeURIComponent(lineId)}/actions/normalize`,
+      { method: 'POST', body: {} },
+    );
+    if (r.ok) {
+      toast.success(`Telefone ${ip} normalizado${r.rebooted ? ' — o aparelho está reiniciando' : ''}`);
+    } else {
+      toast.error(`Falha ao normalizar ${ip}: ${r.detail || 'erro no aparelho'}`);
+    }
+  } catch (e) {
+    toast.error(`Falha ao normalizar ${ip}: ${e.message}`);
+  }
+}
+
+// --- Alterar IP (set_ip): modal com confirmação digitada do IP atual ----------
+
+let _setipLineId = null;
+let _setipCurrentIp = '';
+
+function openSetIpModal(lineId, ip, ramal) {
+  if (!ip) { toast.info('Linha sem IP — salve a planilha primeiro.'); return; }
+  _setipLineId = lineId;
+  _setipCurrentIp = ip;
+  $('#ec-setip-ramal').textContent = `${ramal || '—'} (${ip})`;
+  $('#ec-setip-current').textContent = ip;
+  $('#ec-setip-new').value = '';
+  $('#ec-setip-confirm').value = '';
+  refreshSetIpButton();
+  $('#ec-setip-modal').classList.remove('hidden');
+  setTimeout(() => $('#ec-setip-new').focus(), 50);
+}
+
+function closeSetIpModal() {
+  $('#ec-setip-modal').classList.add('hidden');
+  _setipLineId = null;
+  _setipCurrentIp = '';
+}
+
+function refreshSetIpButton() {
+  const newIp = $('#ec-setip-new').value.trim();
+  const confirmIp = $('#ec-setip-confirm').value.trim();
+  // guard duplo: novo IP preenchido + IP atual digitado corretamente
+  $('#ec-setip-go').disabled = !(newIp && confirmIp === _setipCurrentIp && newIp !== _setipCurrentIp);
+}
+
+async function doSetIp() {
+  const newIp = $('#ec-setip-new').value.trim();
+  const confirmIp = $('#ec-setip-confirm').value.trim();
+  if (!_setipLineId || !newIp) return;
+  const btn = $('#ec-setip-go');
+  btn.disabled = true;
+  try {
+    const r = await api(
+      `/api/extension-configurator/environments/${encodeURIComponent(envId)}/lines/${encodeURIComponent(_setipLineId)}/actions/set_ip`,
+      { method: 'POST', body: { params: { new_ip: newIp }, confirm_ip: confirmIp } },
+    );
+    if (r.ok) {
+      toast.success(`IP alterado para ${newIp}${r.rebooted ? ' — o aparelho está reiniciando' : ''}. Atualize a planilha se necessário.`);
+      closeSetIpModal();
+    } else {
+      toast.error(`Falha ao alterar IP: ${r.detail || 'erro no aparelho'}`);
+      btn.disabled = false;
+    }
+  } catch (e) {
+    toast.error(`Falha ao alterar IP: ${e.message}`);
+    btn.disabled = false;
+  }
+}
+
+// --- Normalizar em massa: dispara run em background + acompanha ao vivo --------
+
+function startActionPolling() {
+  stopActionPolling();
+  actionPollTimer = setInterval(() => { if (currentActionRun) pollActionRun(); }, 1500);
+}
+
+function stopActionPolling() {
+  if (actionPollTimer) { clearInterval(actionPollTimer); actionPollTimer = null; }
+  actionPollInFlight = false;
+}
+
+async function normalizeAll() {
+  // Mesma semântica do "Aplicar": com linhas marcadas na coluna ✓, normaliza
+  // só as selecionadas; sem seleção, todos os telefones com IP do ambiente.
+  const selectedIds = getSelectedIds();
+  const escopo = selectedIds.length
+    ? `os ${selectedIds.length} telefone(s) SELECIONADO(S)`
+    : 'TODOS os telefones com IP deste ambiente';
+  const ok = confirm(
+    `Normalizar ${escopo}?\n` +
+    'Volume no máximo + DND desligado em cada aparelho.' +
+    (isHtek ? '\n\nAtenção: telefones HTEK reiniciam ao receber a normalização.' : '')
+  );
+  if (!ok) return;
+  const btn = $('#ec-normalize');
+  btn.disabled = true;
+  try {
+    const body = selectedIds.length ? { selected_ids: selectedIds } : {};
+    const r = await api(
+      `/api/extension-configurator/environments/${encodeURIComponent(envId)}/actions/normalize`,
+      { method: 'POST', body },
+    );
+    if (r.total === 0) {
+      toast.info(selectedIds.length
+        ? 'Nenhuma das linhas selecionadas tem IP para normalizar.'
+        : 'Nenhum telefone com IP para normalizar.');
+      btn.disabled = false;
+      return;
+    }
+    toast.success(`Normalizando ${r.total} ${r.total === 1 ? 'telefone' : 'telefones'}…`);
+    currentActionRun = r.run_id;
+    startActionPolling();
+    pollActionRun();
+  } catch (e) {
+    toast.error('Erro: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+async function pollActionRun() {
+  if (!currentActionRun || actionPollInFlight) return;
+  actionPollInFlight = true;
+  try {
+    const s = await api(`/api/extension-configurator/action-runs/${currentActionRun}/live`);
+    $('#ec-action-run-panel').classList.remove('hidden');
+    const sm = s.summary || {};
+    $('#ec-action-run-summary').textContent =
+      `executando ${sm.running || 0} · ok ${sm.done || 0} · erro ${sm.error || 0} · pend ${sm.pending || 0}`;
+    $('#ec-action-run-rows').innerHTML = (s.rows || []).map((r) => `
+      <div class="flex items-center gap-2 py-1 border-b border-gray-700/40">
+        <span class="font-mono text-gray-300 w-32 truncate">${esc(r.ip)}</span>
+        <span class="text-gray-400 w-24">${esc(r.numero_ramal)}</span>
+        <span class="${r.stage === 'error' ? 'text-red-400' : r.stage === 'done' ? 'text-green-400' : 'text-gray-200'} w-24">${esc(ACTION_STAGE_LABEL[r.stage] || r.stage)}</span>
+        <span class="text-gray-500 flex-1 truncate">${esc(r.msg)}</span>
+      </div>`).join('');
+
+    if (s.finished_at) {
+      currentActionRun = null;
+      stopActionPolling();
+      toast.info(`Normalização finalizada · ok ${sm.done || 0} · erro ${sm.error || 0}`);
+      $('#ec-normalize').disabled = false;
+    }
+  } catch (e) {
+    if (e && e.status === 404) {
+      // Run expirou da memória (prune/restart do serviço). A auditoria por
+      // telefone já está persistida em device_action_events.
+      currentActionRun = null;
+      stopActionPolling();
+      $('#ec-action-run-panel').classList.add('hidden');
+      $('#ec-normalize').disabled = false;
+      toast.info('Acompanhamento encerrado — a auditoria das ações foi gravada.');
+    }
+    // Demais erros (rede intermitente): silencioso — tenta no próximo tick.
+  } finally {
+    actionPollInFlight = false;
+  }
+}
+
 // ----- Exportar ambiente (.mwrenv cifrado) -------------------------------------
 
 function openExportModal() {
@@ -1202,8 +1472,10 @@ async function doDuplicate() {
       `/api/extension-configurator/environments/${encodeURIComponent(envId)}/duplicate`,
       { method: 'POST', body: { nome: nome || undefined } },
     );
-    // Vai direto pro novo ambiente para cadastrar os ramais.
-    location.href = `/extension-configurator/environments/${encodeURIComponent(env.id)}`;
+    // Clonado: config padrão primeiro (revisar credencial/teclas); o Salvar de
+    // lá segue para a planilha de ramais.
+    location.href =
+      `/extension-configurator/environments/${encodeURIComponent(env.id)}/config?novo=1`;
   } catch (e) {
     toast.error('Falha ao duplicar: ' + e.message);
     btn.disabled = false;
@@ -1243,6 +1515,12 @@ $('#ec-sel-errors').addEventListener('click', () => {
     return st === errLabel || st === pendLabel || st === outLabel;
   });
 });
+$('#ec-normalize').addEventListener('click', normalizeAll);
+$('#ec-setip-cancel').addEventListener('click', closeSetIpModal);
+$('#ec-setip-go').addEventListener('click', doSetIp);
+$('#ec-setip-modal').addEventListener('click', (e) => { if (e.target.id === 'ec-setip-modal') closeSetIpModal(); });
+$('#ec-setip-new').addEventListener('input', () => { maskIPv4OnInput($('#ec-setip-new')); refreshSetIpButton(); });
+$('#ec-setip-confirm').addEventListener('input', () => { maskIPv4OnInput($('#ec-setip-confirm')); refreshSetIpButton(); });
 $('#ec-run-cancel').addEventListener('click', async () => {
   if (!currentRun) return;
   try {
@@ -1258,7 +1536,7 @@ $('#ec-ping-interval').addEventListener('change', () => {
   if (monitorOn) scheduleNextPing();  // aplica o novo intervalo na hora
 });
 
-// Sair da tela (navegar/fechar aba) encerra o monitor e o polling do run.
-window.addEventListener('pagehide', () => { stopMonitor(); stopPolling(); });
+// Sair da tela (navegar/fechar aba) encerra o monitor e os pollings de run.
+window.addEventListener('pagehide', () => { stopMonitor(); stopPolling(); stopActionPolling(); });
 
 reload().catch((e) => toast.error('Falha ao carregar: ' + e.message));
