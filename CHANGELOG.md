@@ -41,14 +41,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   (`GET /action-runs/{id}/live`). Homologado ao vivo em **4 dos 5 adapters**:
   **Yealink T31G** (Action URI), **FlyingVoice P10** (form-replay; reinicia ao
   mudar DND), **HTEK UC902G** (P-codes de volume e DND; reinicia sempre) e
-  **Intelbras V-series** (V3001/V3101/V3501/V5501 — `sysConf` parcial: DND,
-  `MuteRinging` e volumes de saída; reinicia sempre). O **Intelbras S3002**
+  **Intelbras V-series** (V3001/V3101/V3501/V5501 — Action URI `DNDOff` para o
+  estado de runtime **+** `sysConf` parcial para persistir DND, `MuteRinging`
+  e volumes de saída; sem reboot). O **Intelbras S3002**
   (adapter distinto, firmware GoAhead) ficou de fora por falta de unidade de
   lab e segue oculto por capability. Matriz completa em
   `docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md`. Auditoria completa em `device_action_events`
   (1 evento por telefone/ação, sucesso e erro). Catálogo prevê `set_ip` com
   confirmação digitada do IP atual (nenhum vendor homologado ainda).
 - **Renomear ambiente pela UI** (lápis no título; o backend já existia).
+- **Apagar ambientes selecionados** na lista: botão que aparece com a seleção
+  ativa, modal com a lista do que será apagado e confirmação digitada.
 
 ### Changed
 - **Busca de ambientes restrita ao nome** — antes o campo casava também ramal,
