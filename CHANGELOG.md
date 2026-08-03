@@ -38,11 +38,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   mute/DND ativado por operador) por linha (menu `⋮` na planilha) e **em massa**
   (botão "Normalizar telefones", que respeita a seleção da coluna `✓`: com
   linhas marcadas normaliza só as selecionadas) com progresso ao vivo
-  (`GET /action-runs/{id}/live`). Homologado ao vivo: **Yealink T31G** (Action
-  URI), **FlyingVoice P10** (form-replay; reinicia ao mudar DND) e **HTEK
-  UC902G** (P-codes de volume e DND; reinicia sempre) — matriz em
-  `docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md`. Vendor sem homologação fica
-  oculto por capability. Auditoria completa em `device_action_events`
+  (`GET /action-runs/{id}/live`). Homologado ao vivo em **4 dos 5 adapters**:
+  **Yealink T31G** (Action URI), **FlyingVoice P10** (form-replay; reinicia ao
+  mudar DND), **HTEK UC902G** (P-codes de volume e DND; reinicia sempre) e
+  **Intelbras V-series** (V3001/V3101/V3501/V5501 — `sysConf` parcial: DND,
+  `MuteRinging` e volumes de saída; reinicia sempre). O **Intelbras S3002**
+  (adapter distinto, firmware GoAhead) ficou de fora por falta de unidade de
+  lab e segue oculto por capability. Matriz completa em
+  `docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md`. Auditoria completa em `device_action_events`
   (1 evento por telefone/ação, sucesso e erro). Catálogo prevê `set_ip` com
   confirmação digitada do IP atual (nenhum vendor homologado ainda).
 - **Renomear ambiente pela UI** (lápis no título; o backend já existia).
