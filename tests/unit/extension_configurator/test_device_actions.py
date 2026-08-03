@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 import httpx
 import pytest
 import respx
@@ -121,7 +123,7 @@ async def test_flyingvoice_normalize_replay_sobrescreve_dnd_e_volume(monkeypatch
     ad = FlyingVoiceAdapter()
 
     class _FakeCli:
-        cookies = {"ASPSSIONID": "abc"}
+        cookies: ClassVar[dict[str, str]] = {"ASPSSIONID": "abc"}
 
         async def get(self, url):
             html = (

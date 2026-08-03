@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import DeviceActionEvent
+from middleware_monitor.core.tasks import spawn
 from middleware_monitor.integrations.extension_configurator.vendors.base import (
     ActionResult,
     VendorActionUnsupported,
@@ -24,7 +27,9 @@ from middleware_monitor.integrations.extension_configurator.vendors.base import 
     VendorCredentials,
 )
 
+from . import action_state
 from . import repository as repo
+from .action_state import ActionRowState, ActionRunState
 from .apply import build_creds_chain
 from .service import adapter_for
 
@@ -133,9 +138,12 @@ async def run_action_on_line(
 
 async def normalize_environment(
     env_id: str, *, operador: str | None = None,
-) -> dict[str, Any]:
-    """Normaliza (volume máx + DND off) todos os telefones com IP do ambiente.
+) -> tuple[str, int]:
+    """Dispara a normalização (volume máx + DND off) de todos os telefones com
+    IP do ambiente, em background. Devolve ``(run_id, total)``.
 
+    Progresso ao vivo via ``action_state.get(run_id)`` (mesmo padrão do apply);
+    rastro persistente em ``device_action_events`` (1 evento por telefone).
     Só roda em ambientes cujo vendor homologou ``normalize``; telefones sem IP
     são pulados. Concorrência limitada.
     """
@@ -152,21 +160,50 @@ async def normalize_environment(
     if "normalize" not in adapter.capabilities():
         raise VendorActionUnsupported(f"{adapter.vendor_id}: normalize não homologado")
 
-    sem = asyncio.Semaphore(_BULK_CONCURRENCY)
-    results: list[dict[str, Any]] = []
+    run_id = uuid.uuid4().hex[:12]
+    rs = ActionRunState(run_id=run_id, env_id=env_id, action="normalize")
+    for lid, ip, ramal in lines:
+        rs.rows.append(ActionRowState(line_id=lid, ip=ip, numero_ramal=ramal))
+    action_state.register(rs)
+    action_state.prune()
 
-    async def _one(line_id: str, ip: str, ramal: str) -> None:
+    if not rs.rows:
+        rs.finished_at = time.time()
+        return run_id, 0
+
+    sem = asyncio.Semaphore(_BULK_CONCURRENCY)
+
+    async def _one(row: ActionRowState) -> None:
         async with sem:
+            row.stage = "running"
+            row.started_at = time.time()
             try:
                 res = await run_action_on_line(
-                    line_id, "normalize", operador=operador,
+                    row.line_id, "normalize", operador=operador,
                 )
-                results.append({"line_id": line_id, "ip": ip, "ramal": ramal,
-                                "ok": res.ok, "detail": res.detail})
+                row.stage = "done" if res.ok else "error"
+                row.msg = res.detail
+                if res.rebooted:
+                    row.msg = (row.msg + " " if row.msg else "") + "(telefone reiniciou)"
             except Exception as exc:
-                results.append({"line_id": line_id, "ip": ip, "ramal": ramal,
-                                "ok": False, "detail": f"{type(exc).__name__}: {exc}"})
+                row.stage = "error"
+                row.msg = f"{type(exc).__name__}: {exc}"
+            finally:
+                row.finished_at = time.time()
 
-    await asyncio.gather(*(_one(lid, ip, r) for lid, ip, r in lines))
-    ok = sum(1 for r in results if r["ok"])
-    return {"total": len(results), "ok": ok, "falha": len(results) - ok, "linhas": results}
+    async def _worker() -> None:
+        await asyncio.gather(*(_one(row) for row in rs.rows))
+        rs.finished_at = time.time()
+        ok = sum(1 for r in rs.rows if r.stage == "done")
+        log.info(
+            "normalize_finished", env_id=env_id, run_id=run_id,
+            ok=ok, falha=len(rs.rows) - ok, total=len(rs.rows),
+            duration_s=round((rs.finished_at or time.time()) - rs.started_at, 2),
+        )
+
+    spawn(_worker())
+    log.info(
+        "normalize_scheduled", env_id=env_id, run_id=run_id,
+        total=len(rs.rows), operator=operador,
+    )
+    return run_id, len(rs.rows)

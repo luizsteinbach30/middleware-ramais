@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from middleware_monitor.domain.auth.service import bootstrap_admin
 
 
@@ -92,7 +94,23 @@ def test_normalize_em_massa_registra_auditoria(client, db, monkeypatch) -> None:
     )
     assert r.status_code == 200, r.json()
     body = r.json()
-    assert body["total"] == 1 and body["ok"] == 1
+    assert body["total"] == 1
+    run_id = body["run_id"]
+
+    # roda em background: acompanha pelo endpoint live até terminar
+    deadline = time.time() + 5
+    while True:
+        live = client.get(f"/api/extension-configurator/action-runs/{run_id}/live")
+        assert live.status_code == 200, live.json()
+        data = live.json()
+        if data["finished_at"] is not None:
+            break
+        assert time.time() < deadline, "normalize não terminou a tempo"
+        time.sleep(0.05)
+
+    assert data["action"] == "normalize"
+    assert data["summary"]["done"] == 1
+    assert data["rows"][0]["stage"] == "done"
 
     # auditoria gravada
     events = client.get(
@@ -102,3 +120,9 @@ def test_normalize_em_massa_registra_auditoria(client, db, monkeypatch) -> None:
     assert events[0]["action"] == "normalize"
     assert events[0]["status"] == "ok"
     assert events[0]["vendor"] == "yealink"
+
+
+def test_action_run_live_404_para_run_desconhecido(client, db) -> None:
+    _authed(client, db)
+    r = client.get("/api/extension-configurator/action-runs/nao-existe/live")
+    assert r.status_code == 404

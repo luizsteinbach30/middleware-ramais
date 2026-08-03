@@ -41,6 +41,10 @@ from middleware_monitor.core.models import (
 )
 from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.extension_configurator import (
+    action_state,
+    run_state,
+)
+from middleware_monitor.domain.extension_configurator import (
     actions as actions_mod,
 )
 from middleware_monitor.domain.extension_configurator import (
@@ -51,9 +55,6 @@ from middleware_monitor.domain.extension_configurator import (
 )
 from middleware_monitor.domain.extension_configurator import (
     repository as repo,
-)
-from middleware_monitor.domain.extension_configurator import (
-    run_state,
 )
 from middleware_monitor.domain.extension_configurator.defaults import PHONE_MODELS
 from middleware_monitor.domain.extension_configurator.service import (
@@ -746,11 +747,43 @@ async def normalize_environment_phones(
     user: User = Depends(require_admin),
 ) -> dict[str, Any]:
     try:
-        return await actions_mod.normalize_environment(env_id, operador=user.username)
+        run_id, total = await actions_mod.normalize_environment(
+            env_id, operador=user.username,
+        )
     except VendorActionUnsupported as exc:
         raise HTTPException(422, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
+    return {"run_id": run_id, "total": total}
+
+
+@router.get("/action-runs/{run_id}/live")
+def action_run_live_status(
+    run_id: str, _user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    rs = action_state.get(run_id)
+    if rs is None:
+        raise HTTPException(404, "run nao encontrado (pode ter expirado da memoria)")
+    return {
+        "run_id": rs.run_id,
+        "env_id": rs.env_id,
+        "action": rs.action,
+        "started_at": rs.started_at,
+        "finished_at": rs.finished_at,
+        "summary": rs.summary(),
+        "rows": [
+            {
+                "line_id": r.line_id,
+                "ip": r.ip,
+                "numero_ramal": r.numero_ramal,
+                "stage": r.stage,
+                "msg": r.msg,
+                "started_at": r.started_at,
+                "finished_at": r.finished_at,
+            }
+            for r in rs.rows
+        ],
+    }
 
 
 @router.get("/environments/{env_id}/action-events")
