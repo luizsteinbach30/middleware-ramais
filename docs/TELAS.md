@@ -620,9 +620,15 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
     e *Valor* (`vem da planilha` selecionando uma coluna ou `fixo` com
     string livre). Botão **+ adicionar tecla** e **✕** para remover.
 - Botão "Salvar" no header → PUT em `/api/extension-configurator/environments/{id}`.
-- **UX**: após criar um ambiente novo, o usuário cai direto nesta tela
-  (em vez do detail) para configurar credencial e function keys antes da
-  planilha.
+- **Fluxo de criação (v2.7.0)** — ambiente novo **do zero ou clonado** cai
+  primeiro nesta tela (para revisar credencial, teclas etc.) e, ao salvar,
+  segue **automaticamente para a planilha de ramais**:
+  - quem cria/duplica manda o usuário para `…/config?novo=1`;
+  - com `novo=1`, o botão vira **"Salvar e cadastrar ramais →"** e o save
+    redireciona para `/extension-configurator/environments/{id}`;
+  - **sem** o marcador (entrar pela engrenagem para editar um ambiente já
+    existente) o comportamento é o de sempre: salva, mostra o toast e
+    permanece na tela.
 
 ### 14.4 Relatórios (`/extension-configurator/runs`)
 - Tabela do histórico de execuções: Ambiente, Início, Fim, Total, OK, Falha,

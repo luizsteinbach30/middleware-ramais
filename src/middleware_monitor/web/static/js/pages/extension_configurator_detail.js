@@ -1474,8 +1474,10 @@ async function doDuplicate() {
       `/api/extension-configurator/environments/${encodeURIComponent(envId)}/duplicate`,
       { method: 'POST', body: { nome: nome || undefined } },
     );
-    // Vai direto pro novo ambiente para cadastrar os ramais.
-    location.href = `/extension-configurator/environments/${encodeURIComponent(env.id)}`;
+    // Clonado: config padrão primeiro (revisar credencial/teclas); o Salvar de
+    // lá segue para a planilha de ramais.
+    location.href =
+      `/extension-configurator/environments/${encodeURIComponent(env.id)}/config?novo=1`;
   } catch (e) {
     toast.error('Falha ao duplicar: ' + e.message);
     btn.disabled = false;

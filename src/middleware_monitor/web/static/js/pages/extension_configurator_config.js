@@ -4,6 +4,15 @@ import { toast } from '/static/js/components/toast.js';
 const $ = (s) => document.querySelector(s);
 const envId = window.EC_ENV_ID;
 
+// Ambiente recém-criado (do zero ou clonado) cai aqui primeiro: ao salvar, o
+// fluxo natural é seguir para a planilha de ramais. Quem só veio editar a
+// config de um ambiente existente permanece na tela.
+const ambienteNovo = new URLSearchParams(location.search).get('novo') === '1';
+if (ambienteNovo) {
+  const btn = $('#ec-save');
+  if (btn) btn.textContent = 'Salvar e cadastrar ramais →';
+}
+
 const FIELDS_STR = [
   'web_user', 'web_password', 'nova_web_user', 'nova_web_password',
   'menu_password', 'keylock_password',
@@ -172,6 +181,11 @@ async function save() {
     await api(`/api/extension-configurator/environments/${encodeURIComponent(envId)}`, {
       method: 'PUT', body,
     });
+    if (ambienteNovo) {
+      toast.success('Configuração salva — vamos cadastrar os ramais');
+      location.href = `/extension-configurator/environments/${encodeURIComponent(envId)}`;
+      return;
+    }
     toast.success('Configuração salva');
   } catch (e) {
     toast.error('Erro: ' + e.message);
