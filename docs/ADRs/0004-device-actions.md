@@ -77,9 +77,15 @@ catálogo e o guard ficam prontos para quando houver homologação.
   telefones provisionados fora do middleware precisam liberar o IP.
 - MUTE não tem controle HTTP no FlyingVoice/HTEK (estado de runtime); no
   Yealink a key MUTE é um toggle — em idle o efeito líquido é destravar.
-- Intelbras (V3501/V5501) sem ação homologada; S3002 sem unidade em lab →
-  ambos ficam ocultos por capability e **não bloqueiam a release** (escopo
-  mínimo da v2.7.0 = normalize onde homologado).
+- Intelbras V-series homologado numa segunda rodada (2026-08-03) via export
+  nativo `sysConf`; o **S3002** (adapter distinto, form-replay `.asp`) segue
+  sem unidade de lab → fica oculto por capability e **não bloqueia a
+  release**. Cobertura atual: 4 dos 5 adapters.
+- **Silenciar o telefone tem mais de um caminho por vendor**: no Intelbras,
+  além do DND existe `MuteRinging`. Ampliar o normalize é sempre "achar todos
+  os jeitos de silenciar daquele firmware", não só o DND — por isso o
+  mecanismo por vendor é derivado do **export real da config**, não das
+  páginas web (que escondem campos).
 
 ## Relacionados
 
