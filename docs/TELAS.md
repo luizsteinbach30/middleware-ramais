@@ -578,8 +578,11 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
       atual**; botão só habilita com IP atual correto e novo IP diferente.
       Backend rejeita `confirm_ip` errado com 400.
   - Botão **🔧 Normalizar telefones** no header (verde, só com capability
-    `normalize`): confirm → `POST .../actions/normalize` devolve
-    `{run_id, total}` e o run roda em background no servidor.
+    `normalize`): mesma semântica de seleção do "Aplicar" — com linhas
+    marcadas na coluna ✓ normaliza **só as selecionadas** (`selected_ids`
+    no body), sem seleção normaliza todas com IP. Confirm →
+    `POST .../actions/normalize` devolve `{run_id, total}` e o run roda em
+    background no servidor.
   - Painel "**Normalização em andamento**" (gêmeo do painel de aplicação):
     summary por stage (pendente/executando/ok/erro), lista IP · ramal ·
     stage · mensagem, polling 1.5s em `GET /action-runs/{run_id}/live`;
