@@ -744,11 +744,14 @@ async def run_line_action(
 )
 async def normalize_environment_phones(
     env_id: str,
+    payload: ApplyIn = Body(default_factory=ApplyIn),
     user: User = Depends(require_admin),
 ) -> dict[str, Any]:
     try:
         run_id, total = await actions_mod.normalize_environment(
-            env_id, operador=user.username,
+            env_id,
+            selected_ids=payload.selected_ids or None,
+            operador=user.username,
         )
     except VendorActionUnsupported as exc:
         raise HTTPException(422, str(exc)) from exc

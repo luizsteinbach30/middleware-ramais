@@ -137,16 +137,20 @@ async def run_action_on_line(
 
 
 async def normalize_environment(
-    env_id: str, *, operador: str | None = None,
+    env_id: str, *, selected_ids: list[str] | None = None,
+    operador: str | None = None,
 ) -> tuple[str, int]:
-    """Dispara a normalização (volume máx + DND off) de todos os telefones com
-    IP do ambiente, em background. Devolve ``(run_id, total)``.
+    """Dispara a normalização (volume máx + DND off) dos telefones com IP do
+    ambiente, em background. Devolve ``(run_id, total)``.
 
+    ``selected_ids`` (mesma semântica do apply): quando informado, normaliza
+    **só** as linhas selecionadas; vazio/None = todas.
     Progresso ao vivo via ``action_state.get(run_id)`` (mesmo padrão do apply);
     rastro persistente em ``device_action_events`` (1 evento por telefone).
     Só roda em ambientes cujo vendor homologou ``normalize``; telefones sem IP
     são pulados. Concorrência limitada.
     """
+    selected = set(selected_ids) if selected_ids else None
     with session_factory() as db:
         env = repo.get_environment(db, env_id)
         if env is None:
@@ -154,7 +158,8 @@ async def normalize_environment(
         modelo = env.modelo_telefone
         lines = [
             (ln.id, ln.ip, ln.numero_ramal)
-            for ln in repo.list_lines(db, env_id) if ln.ip
+            for ln in repo.list_lines(db, env_id)
+            if ln.ip and (selected is None or ln.id in selected)
         ]
     adapter = adapter_for(modelo)
     if "normalize" not in adapter.capabilities():

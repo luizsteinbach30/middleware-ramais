@@ -114,6 +114,8 @@ async def test_htek_normalize_envia_pcode_volume() -> None:
     assert res.ok and res.rebooted
     body = upload.calls.last.request.content
     assert b"P8503" in body and b"14" in body
+    # DND off (P1305 = DND_Enable, localizado no export /download_xml_cfg)
+    assert b'<P1305 para="DND_Enable">0</P1305>' in body
 
 
 # ------------------------------------------------------------------ FlyingVoice

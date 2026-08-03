@@ -122,6 +122,52 @@ def test_normalize_em_massa_registra_auditoria(client, db, monkeypatch) -> None:
     assert events[0]["vendor"] == "yealink"
 
 
+def test_normalize_respeita_selected_ids(client, db, monkeypatch) -> None:
+    csrf = _authed(client, db)
+    env = _env_with_line(client, csrf, "Yealink T31G", ip="10.0.0.40")
+    # segunda linha no mesmo ambiente
+    client.put(
+        f"/api/extension-configurator/environments/{env}/lines",
+        json={"linhas": [
+            {"ip": "10.0.0.40", "numero_ramal": "3660"},
+            {"ip": "10.0.0.41", "numero_ramal": "3661"},
+        ]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    linhas = client.get(f"/api/extension-configurator/environments/{env}").json()["linhas"]
+    assert len(linhas) == 2
+
+    from middleware_monitor.integrations.extension_configurator.vendors.base import (
+        ActionResult,
+    )
+    from middleware_monitor.integrations.extension_configurator.vendors.yealink import (
+        YealinkAdapter,
+    )
+
+    async def _fake_exec(self, ip, creds, action, params):
+        return ActionResult(ok=True, detail="ok")
+
+    monkeypatch.setattr(YealinkAdapter, "execute_action", _fake_exec)
+
+    # só a 2ª linha selecionada → total == 1
+    alvo = next(ln for ln in linhas if ln["ip"] == "10.0.0.41")
+    r = client.post(
+        f"/api/extension-configurator/environments/{env}/actions/normalize",
+        json={"selected_ids": [alvo["id"]]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200, r.json()
+    assert r.json()["total"] == 1
+
+    # sem body → todas com IP
+    r2 = client.post(
+        f"/api/extension-configurator/environments/{env}/actions/normalize",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r2.status_code == 200, r2.json()
+    assert r2.json()["total"] == 2
+
+
 def test_action_run_live_404_para_run_desconhecido(client, db) -> None:
     _authed(client, db)
     r = client.get("/api/extension-configurator/action-runs/nao-existe/live")
