@@ -86,6 +86,15 @@ catálogo e o guard ficam prontos para quando houver homologação.
   os jeitos de silenciar daquele firmware", não só o DND — por isso o
   mecanismo por vendor é derivado do **export real da config**, não das
   páginas web (que escondem campos).
+- **Config persistida ≠ estado aplicado.** No Intelbras, gravar `EnableDND=0`
+  não desliga o DND: o upload não reinicia o aparelho e o DND ligado pela
+  tecla é estado de runtime. O normalize precisa das **duas** camadas —
+  comando de runtime (Action URI `DNDOff`, idempotente) **antes** do upload
+  (que persiste e sobrevive a reboot). Vale como regra geral: ao homologar um
+  vendor novo, confirmar o efeito **no aparelho**, não no arquivo de config.
+- **Comandos logo após um upload se perdem**: o firmware Intelbras fica ~10 s
+  digerindo a config e responde `HTTP 200` a comandos que ignora. Daí a ordem
+  runtime → persistência.
 
 ## Relacionados
 
