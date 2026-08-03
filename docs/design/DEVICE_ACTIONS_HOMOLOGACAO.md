@@ -20,7 +20,7 @@ O que não fechou os 5 pontos ficou como "não suportado" (fora da capability).
 |--------------------|-----------|--------|-----------------------------------|--------|
 | Yealink T31G       | ✅        | —      | Action URI (`GET /servlet?key=…`) | não    |
 | FlyingVoice P10    | ✅        | —      | form-replay `preference` → `/goform/setSip` | **sim, ao mudar DND** |
-| HTEK UC902G        | ✅ (só volume) | — | `hl_provision` parcial (P-code)   | **sim, sempre** |
+| HTEK UC902G        | ✅ (volume + DND) | — | `hl_provision` parcial (P-codes) | **sim, sempre** |
 | Intelbras V3501/V5501 | ❌     | —      | não reconhecido/não homologado    | —      |
 | Intelbras S3002    | ❌        | —      | sem unidade em lab nesta rodada   | —      |
 
@@ -55,15 +55,23 @@ API/UI, mas **nenhum vendor homologou** até agora.
 - Regra inviolável do adapter vale aqui também: **replay nunca emite valor
   próprio para chaves de rede** (whitelist).
 
-### HTEK UC902G — P-code via provisionamento parcial
+### HTEK UC902G — P-codes via provisionamento parcial
 
 - Upload de `hl_provision` XML **parcial** (o aparelho preserva o que não foi
-  listado): `P8503` (`RingVolume`, escala 0-14) = `14`.
+  listado): `P8503` (`RingVolume`, escala 0-14) = `14` e `P1305`
+  (`DND_Enable`, 0/1) = `0`.
 - O HTEK **reinicia ao aceitar qualquer config** — inclusive o normalize.
   `ActionResult.rebooted=True`.
-- **DND**: o P-code não foi localizado (a config web só tem referências
-  cosméticas). O normalize do HTEK cobre o volume do toque — que é o problema
-  operacional principal ("telefone não toca").
+- **DND (achado em 2026-08-03, na homologação da release):** o P-code
+  **não aparece em nenhuma página web** (lá só há refs cosméticas —
+  `P24877`/`P25104` — e códigos de sync XSI/FAC em `features.htm`). Foi
+  localizado no **export completo da config**: `GET /download_xml_cfg`
+  (~188 KB, ~3600 P-codes, com atributo `para="Label"` por código) →
+  `<P1305 para="DND_Enable">1</P1305>` com o DND fisicamente ligado.
+- **Credencial**: o firmware desafia com `Basic realm="IP Phone"`; se o
+  ambiente já aplicou `nova_web_password`, o admin/admin de fábrica deixa de
+  valer — a chain de credenciais do middleware cobre isso, mas probes manuais
+  precisam usar a senha atual.
 - ⚠️ **CUIDADO no recon**: `api-sys_operation?type=reboot` reinicia o aparelho
   imediatamente (aconteceu sem querer durante a exploração).
 
@@ -78,6 +86,8 @@ API/UI, mas **nenhum vendor homologou** até agora.
 
 - **MUTE é estado de runtime** no FlyingVoice e no HTEK — não há controle
   HTTP; só o Yealink destrava mute remotamente (via toggle).
+- **Volume de chamada/viva-voz do HTEK**: o normalize cobre o volume do
+  toque (`P8503`); os volumes de áudio em chamada não foram mapeados.
 - Ações não homologadas ficam **ocultas por capability** e não bloqueiam a
   release (escopo mínimo v2.7.0 = normalize onde possível).
 
