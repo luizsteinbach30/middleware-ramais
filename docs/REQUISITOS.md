@@ -646,3 +646,49 @@ Migration: `0002_extension_configurator` — reversível (up/down testados).
 
 ### ADR
 Ver [ADR-0002](ADRs/0002-extension-configurator.md).
+
+---
+
+## 14. v2.7.0 — Multi-USCall e Device Actions
+
+### Requisitos funcionais — múltiplos servidores USCall (RF-US)
+
+- **RF-US-01** Cadastro de N servidores USCall por instalação (tabela
+  `uscall_servers`, migration `0007`): nome, host, token (cifrado SecretBox
+  por linha), verify_ssl, enabled. CRUD na API e na tela `/config` com teste
+  de conexão por servidor.
+- **RF-US-02** Migração automática da config KV legada (`uscall_host/token`)
+  para o servidor "Principal", copiando o ciphertext verbatim.
+- **RF-US-03** Coleta consulta todos os servidores habilitados **em paralelo**;
+  falha de um servidor não derruba os demais (coleta parcial). Todos fora →
+  sem snapshot/webhook.
+- **RF-US-04** Premissa de negócio: ramais **não se repetem** entre servidores;
+  merge = união simples, duplicata gera warning e o primeiro servidor vence.
+- **RF-US-05** Webhook: cada item ganha a chave aditiva `"uscall_server"`;
+  contrato do receptor preservado.
+- **RF-US-06** Verify de registro SIP consulta todos os servidores e mescla.
+
+### Requisitos funcionais — device actions (RF-DA)
+
+- **RF-DA-01** Catálogo fechado de ações remotas (`normalize`, `set_ip`);
+  cada adapter declara em `capabilities()` só o que foi **homologado ao vivo**
+  (critério em `docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md`). A UI oculta o que
+  não está na capability; a API rejeita com 422.
+- **RF-DA-02** Ação **normalize** = volume no máximo + DND off (+ unmute onde
+  possível): por linha (menu `⋮`) e em massa (botão "Normalizar telefones",
+  semáforo 5, run em background com progresso ao vivo em
+  `GET /action-runs/{run_id}/live`).
+- **RF-DA-03** Auditoria persistente em `device_action_events` (migration
+  `0008`): 1 evento por telefone/ação, gravado sempre (sucesso e erro), com
+  operador.
+- **RF-DA-04** Credenciais: mesma chain do apply (atual → nova), com fallback
+  automático em recusa de auth.
+- **RF-DA-05** `set_ip` (quando homologado) exige `confirm_ip` idêntico ao IP
+  atual da linha (400 `confirm_ip_mismatch`); a UI força a confirmação
+  digitada em modal destrutivo.
+- **RF-DA-06** Vendors homologados na v2.7.0: Yealink T31G, FlyingVoice P10,
+  HTEK UC902G (reboots documentados). Intelbras V-series e S3002: sem
+  capability (não homologados).
+
+### ADRs
+Ver [ADR-0003](ADRs/0003-multi-uscall.md) e [ADR-0004](ADRs/0004-device-actions.md).
