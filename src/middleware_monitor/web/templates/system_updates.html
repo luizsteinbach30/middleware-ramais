@@ -17,25 +17,7 @@
           <span id="upd-channel-badge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset bg-green-500/15 text-green-400 ring-green-500/30">stable</span>
           <span id="upd-last-check" class="text-xs text-gray-500">—</span>
         </div>
-        <div class="grid grid-cols-2 gap-3 mt-5">
-          <div>
-            <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Canal</div>
-            <select id="upd-channel" class="mt-1.5 w-full bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100">
-              <option value="stable">stable</option><option value="beta">beta</option>
-            </select>
-          </div>
-          <div>
-            <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Auto-update</div>
-            <div class="mt-2 flex items-center gap-3">
-              <label class="relative inline-block w-11 h-6 cursor-pointer">
-                <input type="checkbox" id="upd-auto" class="sr-only peer">
-                <span class="absolute inset-0 rounded-full bg-gray-700 peer-checked:bg-blue-500 transition"></span>
-                <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
-              </label>
-              <span id="upd-auto-label" class="text-sm text-gray-200">—</span>
-            </div>
-          </div>
-        </div>
+        <div id="upd-next-check" class="text-xs text-gray-500 mt-4">—</div>
       </div>
       <div id="upd-available-card" class="bg-gray-900/60 rounded-lg ring-1 ring-blue-500/30 p-4 hidden">
         <div class="flex items-center gap-2 text-xs text-blue-300 font-semibold uppercase tracking-wider"><span data-icon="package"></span> Nova versão disponível</div>
@@ -57,6 +39,70 @@
         <div id="upd-bar" class="h-full bg-blue-500 transition-all" style="width:0%"></div>
       </div>
       <div class="text-[11px] text-gray-500 mt-2">Em caso de falha o serviço fará rollback automático.</div>
+    </div>
+  </div>
+
+  <!-- Verificação automática: até a v2.6.0 estes controles existiam na tela
+       mas não faziam nada (sem handler, sem persistência). Agora são reais. -->
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-4">
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-100">Verificação automática</h3>
+        <p class="text-xs text-gray-500 mt-1 max-w-2xl">
+          O middleware <strong class="text-gray-300">apenas verifica e avisa</strong> quando
+          existe versão nova — a instalação nunca acontece sozinha, continua sendo
+          o botão <em>Atualizar agora</em>. Assim nenhum serviço reinicia sem
+          alguém decidir.
+        </p>
+      </div>
+      <button id="upd-cfg-save" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs disabled:opacity-40 disabled:cursor-not-allowed">Salvar</button>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-4">
+      <div class="flex items-center gap-3">
+        <label class="relative inline-block w-11 h-6 cursor-pointer shrink-0">
+          <input type="checkbox" id="upd-auto" class="sr-only peer">
+          <span class="absolute inset-0 rounded-full bg-gray-700 peer-checked:bg-blue-500 transition"></span>
+          <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
+        </label>
+        <div>
+          <div class="text-sm text-gray-200">Verificar automaticamente</div>
+          <div id="upd-auto-label" class="text-[11px] text-gray-500">—</div>
+        </div>
+      </div>
+
+      <label class="flex flex-col gap-1.5">
+        <span class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Canal</span>
+        <select id="upd-channel" class="w-full bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100">
+          <option value="stable">stable — só versões finais</option>
+          <option value="beta">beta — inclui pré-releases</option>
+        </select>
+      </label>
+
+      <div class="flex flex-col gap-1.5">
+        <span class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
+          Horário <span id="upd-tz" class="normal-case tracking-normal text-gray-600">—</span>
+        </span>
+        <div class="flex items-center gap-1.5">
+          <input id="upd-hour" type="number" min="0" max="23" value="0"
+                 class="w-16 bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-2 text-sm text-gray-100 tabular-nums text-center"/>
+          <span class="text-gray-500">:</span>
+          <input id="upd-minute" type="number" min="0" max="59" value="0"
+                 class="w-16 bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-2 text-sm text-gray-100 tabular-nums text-center"/>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-2">
+        Dias da semana
+      </div>
+      <div id="upd-days" class="flex flex-wrap gap-1.5"></div>
+      <p class="text-[11px] text-gray-500 mt-2">
+        Útil para não receber aviso de versão nova às vésperas do fim de semana.
+        Sem nenhum dia marcado a verificação nunca rodaria — para pausar, use o
+        botão acima.
+      </p>
     </div>
   </div>
   <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">

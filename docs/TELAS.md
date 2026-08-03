@@ -416,24 +416,43 @@ Cada bloco repete:
 ```
 
 **Componentes:**
-- Card de status com versão atual, canal, último check, próxima versão (se houver).
+- Card de status com versão atual, canal, último check, próxima versão (se houver)
+  e a linha **"Próxima verificação: HH:MM (fuso) · dias"**.
 - Botão `Verificar agora` (rate-limit 1/min).
 - Botão `Atualizar agora` (admin only) — confirma, mostra progresso (download → verificação → migrate → restart).
-- Toggle `Auto-update`.
-- Seletor `Canal`.
+- **Card "Verificação automática" (v2.7.0)** — controles **reais** e persistidos:
+  - toggle **Verificar automaticamente** (pausa a checagem periódica; o botão
+    "Verificar agora" continua funcionando);
+  - **Canal** `stable` / `beta` — passa a valer da tela; o `.env`
+    (`APP_UPDATE_CHANNEL`) vira apenas fallback de primeira execução;
+  - **Horário** hora:minuto, no **fuso local do servidor** (exibido ao lado);
+  - **Dias da semana** em chips — permite janela de manutenção (ex.: só
+    seg–sex, para não receber aviso às vésperas do fim de semana). Salvar sem
+    nenhum dia é bloqueado na UI (para pausar existe o toggle).
+  - Salvar **reagenda o job na hora**, sem reiniciar o serviço.
 - Tabela de `update_history` com status e link para detalhes (modal com erro completo se falhou).
+
+> **Contrato explícito:** o agendamento **apenas verifica e avisa** — nunca
+> instala sozinho (decisão de 2026-08-03). A instalação continua exigindo o
+> clique em "Atualizar agora". A API devolve `installs_automatically: false`.
+> Antes da v2.7.0 o seletor de canal e o toggle existiam mas eram
+> **decorativos**: sem handler, sem persistência, e o `auto_update` exibido era
+> um literal `True` no código.
 
 **Dados:**
 - `GET /api/system/version`
+- `GET /api/system/update-settings`
+- `PUT /api/system/update-settings` (admin + CSRF)
 - `POST /api/system/check-update`
 - `POST /api/system/update` (admin)
-- `PATCH /api/system/update-settings` (canal, auto-update)
 - `GET /api/system/update-history?page=&size=`
 
 **Critérios de aceite:**
 - [ ] Durante update, a UI mostra progresso e bloqueia ações conflitantes.
 - [ ] Em rollback automático, status é claramente sinalizado.
 - [ ] Mudar canal não dispara update sozinho — o próximo check decide.
+- [x] Desligar a verificação **realmente remove o job** do scheduler (não só
+      esconde a UI) e `GET /version` passa a reportar `auto_update: false`.
 
 ---
 
