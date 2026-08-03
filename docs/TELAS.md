@@ -527,6 +527,14 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
 
 ### 14.1 Ambientes (`/extension-configurator/environments`)
 - Grid responsivo de cards (1/2/3 colunas conforme breakpoint).
+- **Seleção múltipla** (clique no botão de seleção do card, que fica realçado):
+  alimenta a exportação XLSX/PDF (sem seleção, exporta os visíveis) e o botão
+  **Apagar selecionados** (v2.7.0).
+- **Apagar selecionados** (v2.7.0) — botão vermelho que **só aparece quando há
+  seleção** (ação destrutiva não fica a um clique no estado normal). Abre modal
+  com a contagem de ambientes/ramais, a **lista do que será apagado** e
+  confirmação digitando `APAGAR`. Apaga em série pelo `DELETE` por ambiente,
+  reporta parciais (ex.: "3 apagados" + "Falha em 1: …") e recarrega a lista.
 - Cada card: nome, modelo do telefone, contagem de ramais, timestamp atualizado.
 - Botão "+ Novo ambiente" abre modal com inputs (Nome + dropdown de modelos).
 - Empty state quando sem ambientes.
