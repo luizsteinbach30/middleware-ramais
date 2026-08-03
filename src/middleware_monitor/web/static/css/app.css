@@ -31,5 +31,13 @@ html.sidebar-collapsed #app-sidebar > div:last-child button {
   padding-right: .5rem;
 }
 html.sidebar-collapsed #app-sidebar #brand-default { justify-content: center; }
-/* A seta do botão aponta para o outro lado quando recolhido */
-html.sidebar-collapsed #sb-toggle-icon { transform: rotate(180deg); }
+/* No trilho não cabe marca + botão lado a lado: viram duas linhas centradas */
+html.sidebar-collapsed #app-sidebar .sb-brand-row {
+  flex-direction: column;
+  gap: .625rem;
+}
+html.sidebar-collapsed #app-sidebar .sb-brand { flex: none; }
+/* Logo do cliente continua visível no trilho, só que reduzida */
+html.sidebar-collapsed #app-sidebar #brand-logo { max-height: 2rem; }
+/* A seta aponta para o outro lado quando recolhido (o ícone é "recolher <|") */
+html.sidebar-collapsed #sb-toggle-icon { transform: scaleX(-1); }

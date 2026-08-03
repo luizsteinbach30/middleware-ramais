@@ -15,8 +15,9 @@ function setSidebarCollapsed(collapsed) {
   const btn = document.getElementById('sb-toggle');
   if (btn) {
     const label = collapsed ? 'Expandir menu (Ctrl+B)' : 'Recolher menu (Ctrl+B)';
-    btn.title = collapsed ? `${label} — a planilha ganha espaço quando recolhido` : label;
+    btn.title = label;
     btn.setAttribute('aria-label', label);
+    btn.setAttribute('aria-expanded', String(!collapsed));
   }
   // O Jspreadsheet mede a largura do container no render: sem avisar, a
   // planilha continua com a largura antiga depois de recolher o menu.
