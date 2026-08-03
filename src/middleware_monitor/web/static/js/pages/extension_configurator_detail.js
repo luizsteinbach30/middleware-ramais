@@ -704,11 +704,9 @@ async function loadCapabilities() {
     envCapabilities = [];  // falha na consulta: esconde as ações (estado seguro)
   }
   const btn = $('#ec-normalize');
-  if (btn) {
-    const has = envCapabilities.includes('normalize');
-    btn.classList.toggle('hidden', !has);
-    btn.classList.toggle('inline-flex', has);
-  }
+  // .ec-btn já é inline-flex; basta alternar `hidden` (o CSS da tela reafirma
+  // `.ec-btn.hidden { display: none }` para vencer a ordem das folhas).
+  if (btn) btn.classList.toggle('hidden', !envCapabilities.includes('normalize'));
 }
 
 async function save({ silent = false } = {}) {

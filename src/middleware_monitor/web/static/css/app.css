@@ -9,3 +9,27 @@
 [data-icon] svg { width: 1em; height: 1em; }
 
 .tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------------------
+   Sidebar recolhível (v2.7.0)
+   A planilha do Configurador é larga e as últimas colunas (Erro!) ficavam
+   cortadas em telas menores. Recolher vira um trilho só de ícones, devolvendo
+   ~12rem de largura ao conteúdo. Estado em localStorage `mm.sidebar`, aplicado
+   no <html> antes do primeiro paint (script no base.html).
+   Seletor por id vence as classes utilitárias do Tailwind (w-64).
+   --------------------------------------------------------------------------- */
+#app-sidebar { transition: width .15s ease; }
+html.sidebar-collapsed #app-sidebar { width: 4rem; }
+html.sidebar-collapsed #app-sidebar .sb-label,
+html.sidebar-collapsed #app-sidebar .sb-hide-collapsed { display: none; }
+/* Ícones centralizados no trilho, sem o padding do texto */
+html.sidebar-collapsed #app-sidebar nav a,
+html.sidebar-collapsed #app-sidebar > div:last-child a,
+html.sidebar-collapsed #app-sidebar > div:last-child button {
+  justify-content: center;
+  padding-left: .5rem;
+  padding-right: .5rem;
+}
+html.sidebar-collapsed #app-sidebar #brand-default { justify-content: center; }
+/* A seta do botão aponta para o outro lado quando recolhido */
+html.sidebar-collapsed #sb-toggle-icon { transform: rotate(180deg); }

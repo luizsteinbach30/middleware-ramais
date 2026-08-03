@@ -24,6 +24,13 @@ Cada seção descreve: rota, propósito, layout, componentes, dados consumidos, 
 - **Tabelas:** header `bg-gray-700`, linhas `divide-gray-700`, hover `bg-gray-700/40`.
 - **Datas:** exibidas no fuso do navegador, com tooltip mostrando UTC.
 - **Tokens sensíveis:** sempre exibidos como `••••••••` com botão "Alterar" que limpa e libera o input.
+- **Sidebar recolhível (v2.7.0):** botão circular na borda da sidebar (ou
+  <kbd>Ctrl+B</kbd>) alterna entre 256px e um **trilho de 64px só com ícones**.
+  Serve principalmente à planilha do Configurador, que é larga e tinha as
+  últimas colunas (incluindo **Erro**) cortadas. O estado fica em
+  `localStorage['mm.sidebar']` e é aplicado no `<html>` por script inline no
+  `base.html` **antes do primeiro paint** (evita o "pulo" ao carregar). Ao
+  alternar, dispara um `resize` para o Jspreadsheet remedir a largura.
 
 ---
 
@@ -540,12 +547,28 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
 - Empty state quando sem ambientes.
 
 ### 14.2 Detalhe do ambiente (`/extension-configurator/environments/{id}`)
-- Header sticky com botão **voltar pill** (chevron + "Ambientes"), nome do
-  ambiente (truncado), subtítulo "modelo · N ramais", link **⚙ Config padrão**
-  e botões **Salvar planilha**, **Aplicar selecionados (N)** (azul, com shadow,
-  desabilitado quando N=0) e **Aplicar tudo**.
-- Pills de status no topo: aplicado / desatualizado / pendente / erro,
-  com contadores em `tabular-nums`.
+- Header sticky enxuto: botão **voltar pill** (chevron + "Ambientes"), nome do
+  ambiente (truncado) + lápis de renomear, subtítulo "modelo · N ramais",
+  indicador de autosave e as **pills de status** (aplicado / desatualizado /
+  pendente / erro, contadores em `tabular-nums`).
+- **Barra de ferramentas agrupada (v2.7.0).** Antes os 13 controles estavam
+  espalhados entre o header e a faixa de ajuda, com alturas e fontes
+  diferentes (`text-xs` vs `text-sm`, pill vs botão). Agora **todos** usam a
+  mesma classe `.ec-btn` (30px de altura, 12px de fonte) e ficam numa única
+  barra, agrupados por finalidade — da esquerda (preparar) para a direita
+  (executar), cada grupo com rótulo em caixa alta e separador vertical:
+  - **Ambiente** — ⚙ Config padrão · ⧉ Duplicar · ⤴ Exportar
+  - **Planilha** — 💾 Salvar planilha · 👁 Pré-visualizar
+  - **Seleção** — Marcar todos · Desmarcar · Pendentes
+  - **Opções** — toggles Forçar reaplicação · Monitorar ping
+  - **Aplicar nos telefones** (empurrado para a direita) — Aplicar
+    selecionados (N) *(único botão de fundo azul da tela)* · Aplicar tudo ·
+    🔧 Normalizar telefones
+  - Cor só codifica intenção: azul = informação/seleção, amarelo = atenção,
+    verde = ação de recuperação, azul sólido = ação primária.
+  - O texto de ajuda das colunas virou um `<details>` **"Como usar a planilha
+    e as colunas"**, recolhido por padrão.
+  - Com a **sidebar recolhida** (Ctrl+B) a barra inteira cabe em uma linha.
 - Planilha Jspreadsheet CE (`dist/index.min.js`) em wrapper com card/sombra.
   Colunas (esquerda → direita):
   - `id` (hidden), `✓` (checkbox de seleção), `IP`, `Ramal`, `Nome visível`,
