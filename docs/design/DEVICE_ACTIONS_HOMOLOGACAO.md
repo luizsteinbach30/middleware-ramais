@@ -21,8 +21,11 @@ O que não fechou os 5 pontos ficou como "não suportado" (fora da capability).
 | Yealink T31G       | ✅        | —      | Action URI (`GET /servlet?key=…`) | não    |
 | FlyingVoice P10    | ✅        | —      | form-replay `preference` → `/goform/setSip` | **sim, ao mudar DND** |
 | HTEK UC902G        | ✅ (volume + DND) | — | `hl_provision` parcial (P-codes) | **sim, sempre** |
-| Intelbras V3501/V5501 | ❌     | —      | não reconhecido/não homologado    | —      |
-| Intelbras S3002    | ❌        | —      | sem unidade em lab nesta rodada   | —      |
+| Intelbras V3501/V5501 | ✅ (volume + DND + campainha) | — | `sysConf` parcial via `/config.htm` | **sim, sempre** |
+| Intelbras S3002    | ❌        | —      | sem unidade em lab para homologar | —      |
+
+Cobertura: **4 dos 5 adapters** do sistema (HTEK, Yealink, FlyingVoice e
+Intelbras V-series). Só o S3002 segue pendente, por falta de hardware.
 
 `set_ip` está no catálogo (`vendors/base.py`) com guard de confirmação na
 API/UI, mas **nenhum vendor homologou** até agora.
@@ -75,12 +78,50 @@ API/UI, mas **nenhum vendor homologou** até agora.
 - ⚠️ **CUIDADO no recon**: `api-sys_operation?type=reboot` reinicia o aparelho
   imediatamente (aconteceu sem querer durante a exploração).
 
-### Intelbras (V3501 / V5501 / S3002)
+### Intelbras V-series (V3001 / V3101 / V3501 / V5501) — sysConf parcial
 
-- V-series: mecanismo de ação remota não reconhecido nesta rodada → sem
-  capability (a UI não mostra nada).
-- S3002: **sem unidade em lab** nesta rodada → entra como "não homologado";
-  pendência registrada para quando houver aparelho disponível.
+Homologado em **2026-08-03** (segunda rodada, durante a homologação da
+release). Na primeira rodada o mecanismo não tinha sido reconhecido; o
+caminho foi o **export nativo da config**:
+`GET /default_user_config.xml` (autenticado, ~80 KB no V5501) — os campos
+vivem no **mesmo `<sysConf>`** que o adapter já envia no provisionamento,
+então o normalize é uma **config parcial** pelo `POST /config.htm` de sempre
+(o aparelho preserva tudo que não foi listado, rede inclusive).
+
+Campos sobrescritos:
+
+| Caminho no `sysConf`             | Valor | Efeito                       |
+|----------------------------------|-------|------------------------------|
+| `call/port[1]/EnableDND`         | `0`   | desliga o DND                |
+| `call/port[1]/MuteRinging`       | `0`   | destrava a campainha         |
+| `phone/volume/HandsetVol`        | `9`   | volume do monofone           |
+| `phone/volume/HeadsetVol`        | `9`   | volume do headset            |
+| `phone/volume/HeadsetRingVol`    | `9`   | campainha no headset         |
+| `phone/volume/HandFreeVol`       | `9`   | volume do viva-voz           |
+| `phone/volume/HandFreeRingVol`   | `9`   | campainha no viva-voz        |
+
+- Escala de volume **0-9** (confirmada em `/media.htm`: `maxlength="1"` com
+  a dica `(0~9)`).
+- **Ganho de microfone (`*MicVol`) NÃO é tocado** de propósito: é entrada de
+  áudio, e forçá-lo ao máximo tende a gerar eco/microfonia.
+- O aparelho **reinicia** ao aceitar config (comportamento normal do
+  `/config.htm`). `ActionResult.rebooted=True`.
+- Achado relevante: o V5501 de lab estava com `EnableDND=1` **e**
+  `MuteRinging=1` — exatamente o sintoma "o telefone não toca" que o cliente
+  reporta. `MuteRinging` é um segundo jeito de silenciar o aparelho, separado
+  do DND, e por isso entrou no normalize.
+- ⚠️ O firmware Rapid Logic é **flaky com sessões concorrentes**: logins em
+  sequência curta derrubam o serviço HTTP temporariamente (o adapter já trata
+  com retry + delay). Em probes manuais, espere alguns segundos entre logins.
+
+### Intelbras S3002 (linha S / firmware GoAhead)
+
+- **Sem unidade em lab acessível** (o IP conhecido `192.168.0.48` não
+  responde). O adapter é **outro** (form-replay em páginas `.asp`, não
+  `sysConf`), então o mecanismo do V-series **não se aplica**.
+- Fica sem capability (ações ocultas na UI). Para homologar é preciso um
+  aparelho na rede: o caminho provável é achar o form de preferências/áudio
+  e replicar o padrão `/goform/Save*` já usado no adapter.
 
 ## Limitações gerais
 
@@ -100,6 +141,11 @@ API/UI, mas **nenhum vendor homologou** até agora.
 | HTEK UC902G        | 172.16.250.131   |
 | Intelbras V3501    | 192.168.0.179    |
 | Yealink T31G       | 172.16.250.133   |
+
+Senhas web: os ambientes que já aplicaram `nova_web_password` deixam de
+aceitar `admin/admin` (ex.: o UC902G de lab está em `w0rk151234`). O
+middleware resolve sozinho pela chain de credenciais; probes manuais
+precisam da senha atual.
 
 ## Relacionados
 
