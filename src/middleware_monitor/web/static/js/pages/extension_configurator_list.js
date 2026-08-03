@@ -209,8 +209,10 @@ $('#ec-modal-create').addEventListener('click', async () => {
       method: 'POST', body: { nome, modelo_telefone: modelo },
     });
     closeModal();
-    // Recem-criado: vai direto pra config padrao
-    location.href = `/extension-configurator/environments/${encodeURIComponent(env.id)}/config`;
+    // Recém-criado: config padrão primeiro; `novo=1` faz o Salvar de lá seguir
+    // direto para a planilha de ramais.
+    location.href =
+      `/extension-configurator/environments/${encodeURIComponent(env.id)}/config?novo=1`;
   } catch (err) {
     toast.error('Erro: ' + err.message);
   }
@@ -362,8 +364,10 @@ dupConfirmBtn.addEventListener('click', async () => {
       { method: 'POST', body: { nome: nome || undefined } },
     );
     closeDupModal();
-    // Recém-duplicado: vai direto pra planilha do novo ambiente p/ cadastrar os ramais.
-    location.href = `/extension-configurator/environments/${encodeURIComponent(env.id)}`;
+    // Clonar também passa pela config padrão (é onde se revisa credencial e
+    // teclas do novo ambiente); ao salvar lá, segue para a planilha.
+    location.href =
+      `/extension-configurator/environments/${encodeURIComponent(env.id)}/config?novo=1`;
   } catch (err) {
     toast.error('Falha ao duplicar: ' + err.message);
     dupConfirmBtn.disabled = false;
