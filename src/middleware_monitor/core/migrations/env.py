@@ -6,6 +6,7 @@ and override ``sqlalchemy.url`` from settings/env at runtime.
 
 from __future__ import annotations
 
+import logging
 from logging.config import fileConfig
 
 from alembic import context
@@ -17,8 +18,12 @@ from middleware_monitor.settings import get_settings
 
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# fileConfig REMOVE os handlers já instalados (disable_existing_loggers) — no
+# modo desktop isso matava o app.log e a aba de Log no meio do boot, deixando
+# qualquer falha posterior invisível. Só configura logging quando rodando via
+# CLI do alembic (nenhum handler instalado ainda).
+if config.config_file_name is not None and not logging.getLogger().hasHandlers():
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.effective_db_url)

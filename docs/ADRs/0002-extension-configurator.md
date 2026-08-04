@@ -85,8 +85,10 @@ src/middleware_monitor/
 - O modelo de DSS Speed Dial (`@N/f`) está validado só pra Intelbras V-series;
   BLF e outros subtipos ainda dependem de novos backups reais para descobrir
   os sufixos certos.
-- Jspreadsheet CE entra via CDN nesta release — vendoring offline fica para
-  release subsequente (importante para deploys air-gapped).
+- ~~Jspreadsheet CE entra via CDN nesta release — vendoring offline fica para
+  release subsequente (importante para deploys air-gapped).~~ Resolvido na
+  v2.7.2: JS + CSS vendorados em `/static/vendor/jspreadsheet/` depois de a
+  planilha quebrar em cliente air-gapped (`jspreadsheet is not defined`).
 
 ## Alternativas consideradas
 

@@ -2,6 +2,45 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.7.2] — 2026-08-04
+
+### Fixed
+- **O `.exe` v2.7.0/v2.7.1 não iniciava em máquina nenhuma** — janela presa em
+  "Iniciando...", porta 8080 nunca abria, zero mensagens (não era a porta
+  ocupada; a v2.7.1 corrigiu um problema real, mas havia um segundo). Cadeia
+  da falha:
+  - O pipeline de release instalava dependências **sem versão pinada** e o
+    build de 2026-08-03 levou o **structlog 26.1.0**, que quebra quando
+    `sys.stdout` é `None` (`TypeError: cannot create weak reference to
+    'NoneType'`) — exatamente o estado do exe `console=False` do PyInstaller.
+  - O primeiro log do structlog acontece no **lifespan do uvicorn**
+    (`app_starting`); o uvicorn trata a falha do lifespan com `sys.exit(3)` —
+    e `SystemExit` **não é** `Exception`, então escapava do `except` da
+    thread do servidor, que morria sem setar `error`.
+  - Bônus: o `fileConfig` do `env.py` do Alembic **desligava os handlers de
+    log do app no meio do boot**, então nem o `app.log` nem a aba de Log
+    mostravam qualquer vestígio.
+
+  Correções (defesa em camadas):
+  - `desktop.py` garante `sys.stdout`/`sys.stderr` utilizáveis antes de
+    importar a aplicação (imune à classe inteira de bugs "stream é None").
+  - `ServerThread` agora envolve **todo** o boot (create_app + uvicorn.Config
+    inclusos) em `try/except BaseException`, grava `logs/boot-crash.log` e a
+    janela mostra o erro real em diálogo — nunca mais um "Erro" mudo.
+  - `env.py` só chama `fileConfig` quando não há handlers instalados (CLI do
+    alembic), com `disable_existing_loggers=False`.
+  - Release passa a instalar com `-c packaging/constraints-build.txt`
+    (dependências congeladas no conjunto validado) — atualizar dependência
+    vira mudança deliberada e testada, não efeito colateral do calendário.
+- **Planilha não abria em cliente sem internet** ("falha ao carregar:
+  jspreadsheet is not defined"). O Jspreadsheet CE 4.15.0 e o jSuites 4.17.7
+  eram carregados do CDN (jsdelivr) — dívida registrada no ADR 0002 — e em
+  rede isolada os scripts nunca chegavam. As quatro dependências (JS + CSS)
+  agora são **vendoradas em `/static/vendor/jspreadsheet/`**, como o Tailwind
+  já era, e entram no `.exe`/tarball pelo empacotamento normal de `web/static`.
+  Todos os `url()` dos CSS são `data:` URIs — o app não faz nenhuma
+  requisição externa para renderizar a UI.
+
 ## [2.7.1] — 2026-08-03
 
 ### Fixed

@@ -120,7 +120,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip wheel setuptools
           python -m pip install --upgrade pyinstaller==6.10.0
-          python -m pip install -e ".[metrics]"
+          # Constraints: build reprodutível. Sem isso cada release empacotava
+          # o que estivesse mais novo no PyPI — foi assim que o structlog 26
+          # entrou no .exe da v2.7.0/2.7.1 e quebrou o boot (janela congelada
+          # em "Iniciando..."). Atualização de dependência agora é mudança
+          # deliberada em packaging/constraints-build.txt, testada antes.
+          python -m pip install -e ".[metrics]" -c packaging/constraints-build.txt
 
       - name: Inject update token
         shell: pwsh

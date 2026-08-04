@@ -36,6 +36,17 @@ from tkinter import font as tkfont
 from tkinter import messagebox, ttk
 from typing import Any, cast
 
+# Empacotado com console=False, o PyInstaller deixa sys.stdout/sys.stderr como
+# None — e dependência razoável espera um stream de verdade (structlog >= 26
+# morre com "cannot create weak reference to 'NoneType'" no primeiro log, que
+# acontece DENTRO do lifespan do uvicorn e vira um sys.exit(3) mudo; foi o
+# ".exe não inicializa em máquina nenhuma" da v2.7.0/v2.7.1). Streams
+# utilizáveis precisam existir antes de qualquer import da aplicação.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
 # Cross-thread shutdown signal. Set this from any thread (e.g. the uvicorn
 # worker running the FastAPI app) to ask the Tk main loop to close the
 # window and exit. The DesktopApp polls it in the UI thread.
@@ -194,41 +205,65 @@ class ServerThread:
         self.port = port
         self.thread: threading.Thread | None = None
         self._server: Any = None
-        self.error: Exception | None = None
+        self.error: BaseException | None = None
 
     def start(self) -> None:
-        from middleware_monitor.app import create_app
-
+        # TUDO dentro do try: na v2.7.1 o create_app()/uvicorn.Config ficavam
+        # fora e uma exceção ali matava a thread sem setar self.error — a UI
+        # mostrava "Iniciando..." para sempre, sem log nenhum.
         try:
+            from middleware_monitor.app import create_app
+
             self._bootstrap_database()
-        except Exception as exc:
-            self.error = exc
-            logging.getLogger("desktop").error("db_bootstrap_failed: %s", exc, exc_info=True)
+
+            import uvicorn
+
+            app = create_app()
+            config = uvicorn.Config(
+                app,
+                host=self.host,
+                port=self.port,
+                log_level="info",
+                access_log=False,
+                log_config=None,
+                workers=1,
+            )
+            self._server = uvicorn.Server(config)
+        except BaseException as exc:
+            self._fail("boot_failed", exc)
             return
-
-        import uvicorn
-
-        app = create_app()
-        config = uvicorn.Config(
-            app,
-            host=self.host,
-            port=self.port,
-            log_level="info",
-            access_log=False,
-            log_config=None,
-            workers=1,
-        )
-        self._server = uvicorn.Server(config)
 
         def runner() -> None:
             try:
                 self._server.run()
-            except Exception as exc:
-                self.error = exc
-                logging.getLogger("desktop").error("server_crashed: %s", exc, exc_info=True)
+            except BaseException as exc:
+                # uvicorn responde a falha de startup (ex.: lifespan quebrado)
+                # com sys.exit(3). SystemExit NÃO é Exception: com um "except
+                # Exception" a thread morria muda e o app nunca saía de
+                # "Iniciando...".
+                self._fail("server_crashed", exc)
 
         self.thread = threading.Thread(target=runner, name="uvicorn", daemon=True)
         self.thread.start()
+
+    def _fail(self, event: str, exc: BaseException) -> None:
+        """Registra a falha onde ela SEMPRE fica visível.
+
+        O logging pode já ter sido desligado (fileConfig do Alembic) e o
+        stderr não existe no exe windowed — então além do logger, grava um
+        boot-crash.log em disco, que é o que a janela mostra ao operador.
+        """
+        self.error = exc
+        logging.getLogger("desktop").error("%s: %s", event, exc, exc_info=True)
+        try:
+            crash = _user_data_dir() / "logs" / "boot-crash.log"
+            crash.parent.mkdir(parents=True, exist_ok=True)
+            crash.write_text(
+                f"{event}: {type(exc).__name__}: {exc}\n\n{traceback.format_exc()}",
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
 
     @staticmethod
     def _bootstrap_database() -> None:
@@ -461,6 +496,7 @@ class DesktopApp:
             token=get_settings().effective_update_token,
         )
         self._update_release: dict | None = None
+        self._boot_error_shown = False
 
         self._build_ui()
         self._start_server()
@@ -742,6 +778,7 @@ class DesktopApp:
     def _poll_status(self) -> None:
         if self.server.error is not None:
             self._set_status("Erro", PALETTE["err"])
+            self._show_boot_error_once()
         elif self.server.is_running():
             self._set_status("Rodando", PALETTE["ok"])
         else:
@@ -752,6 +789,21 @@ class DesktopApp:
         self.status_label.configure(text=text)
         self.status_label.configure(foreground=color)
         self.status_dot.itemconfigure(self._dot, fill=color)
+
+    def _show_boot_error_once(self) -> None:
+        """Um "Erro" vermelho sem explicação é o mesmo que nada — o operador
+        precisa do motivo e de onde está o log, uma única vez."""
+        if self._boot_error_shown:
+            return
+        self._boot_error_shown = True
+        err = self.server.error
+        crash = self.data_dir / "logs" / "boot-crash.log"
+        messagebox.showerror(
+            "Falha ao iniciar o servidor",
+            "O servidor interno do Middleware USCall Monitor falhou ao "
+            f"iniciar.\n\n{type(err).__name__}: {err}\n\n"
+            f"Detalhes: {crash}",
+        )
 
     # --------- actions ----------
 
