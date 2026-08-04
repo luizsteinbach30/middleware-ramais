@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ ambiente_id }} — Ambiente{% endblock %}
 {% block body %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.15.0/dist/jspreadsheet.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsuites@4.17.7/dist/jsuites.css">
+<link rel="stylesheet" href="/static/vendor/jspreadsheet/jspreadsheet.css">
+<link rel="stylesheet" href="/static/vendor/jspreadsheet/jsuites.css">
 <style>
   /* Wrapper com mesma vibe visual dos cards do middleware */
   .ec-spreadsheet-wrap {
@@ -576,7 +576,7 @@
 </div>
 
 <script>window.EC_ENV_ID = {{ ambiente_id | tojson }};</script>
-<script src="https://cdn.jsdelivr.net/npm/jsuites@4.17.7/dist/jsuites.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspreadsheet-ce@4.15.0/dist/index.min.js"></script>
+<script src="/static/vendor/jspreadsheet/jsuites.js"></script>
+<script src="/static/vendor/jspreadsheet/index.min.js"></script>
 <script type="module" src="/static/js/pages/extension_configurator_detail.js"></script>
 {% endblock %}
