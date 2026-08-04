@@ -25,6 +25,7 @@ import queue
 import socket
 import sys
 import threading
+import time
 import tkinter as tk
 import traceback
 import urllib.request
@@ -829,9 +830,92 @@ class DesktopApp:
         threading.Thread(target=runner, daemon=True, name="update-apply").start()
 
 
+# --- guarda de instância única -----------------------------------------------
+# O .exe é empacotado com `console=False`: se o uvicorn não consegue subir, o
+# erro ("[Errno 10048] ... apenas uma utilização de cada endereço de soquete")
+# vai para um stderr que ninguém vê e a janela simplesmente não abre. Foi o que
+# aconteceu em campo na v2.7.0: a instância anterior (processo órfão, ou o
+# serviço NSSM) continuava segurando a 8080 e o app novo "não iniciava", sem
+# nenhuma mensagem. Aqui detectamos isso ANTES de subir e explicamos.
+
+
+def _port_ocupada(port: int, *, timeout: float = 1.0) -> bool:
+    """Alguém já está escutando nessa porta em localhost?"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(timeout)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _ocupante_e_o_middleware(port: int, *, timeout: float = 2.0) -> bool:
+    """Distingue "já tem um middleware rodando" de "outro programa na porta".
+
+    Sem isso a mensagem seria ambígua — e as duas situações têm solução
+    diferente (abrir a instância existente vs. liberar a porta).
+    """
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/api/system/healthz", timeout=timeout,
+        ) as resp:
+            corpo = resp.read(200).decode("utf-8", "replace")
+    except Exception:
+        return False
+    return '"status"' in corpo and "ok" in corpo
+
+
+def _instancia_ja_rodando(port: int) -> bool:
+    """Devolve True quando NÃO se deve subir. Avisa o usuário em janela."""
+    if not _porta_ocupada_com_retry(port):
+        return False
+    url = f"http://localhost:{port}/"
+    if _ocupante_e_o_middleware(port):
+        abrir = messagebox.askyesno(
+            "Middleware já está em execução",
+            "O Middleware USCall Monitor já está rodando nesta máquina "
+            f"(porta {port}).\n\n"
+            "Pode ser a janela do aplicativo, um processo que ficou aberto ou "
+            "o serviço do Windows.\n\nAbrir o painel no navegador?",
+        )
+        if abrir:
+            webbrowser.open(url)
+    else:
+        messagebox.showerror(
+            "Porta em uso",
+            f"A porta {port} está ocupada por outro programa, então o "
+            "Middleware USCall Monitor não pode iniciar.\n\n"
+            "Libere a porta (ou ajuste APP_PORT no .env) e abra novamente.\n\n"
+            "Para descobrir quem está usando, rode no PowerShell:\n"
+            f"  Get-NetTCPConnection -LocalPort {port} -State Listen | "
+            "ForEach-Object {{ Get-Process -Id $_.OwningProcess }}",
+        )
+    return True
+
+
+def _porta_ocupada_com_retry(port: int, *, tentativas: int = 3) -> bool:
+    """Confirma a ocupação da porta antes de recusar a subir.
+
+    Logo após um update o processo antigo pode estar no meio do encerramento;
+    recusar na primeira leitura transformaria uma corrida de 1s em "o app não
+    abre". Só desiste se a porta seguir ocupada nas tentativas seguintes.
+    """
+    for tentativa in range(tentativas):
+        if not _port_ocupada(port):
+            return False
+        if tentativa < tentativas - 1:
+            time.sleep(1.0)
+    return True
+
+
 def main() -> int:
     _bootstrap_env()
+    port = int(os.environ.get("APP_PORT", str(DEFAULT_PORT)))
     root = tk.Tk()
+    # A janela de aviso precisa de um root Tk, mas a principal ainda não existe:
+    # esconde este root, usa só para os diálogos, e sai sem abrir a interface.
+    root.withdraw()
+    if _instancia_ja_rodando(port):
+        root.destroy()
+        return 0
+    root.deiconify()
     try:
         DesktopApp(root)
         root.mainloop()
@@ -852,4 +936,12 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    _code = main()
+    # Encerramento à força DEPOIS do shutdown limpo (o servidor já foi parado
+    # em _on_close/_poll_shutdown). No empacotamento onefile, qualquer thread
+    # não-daemon sobrevivente mantém o processo vivo segurando a 8080 — e a
+    # próxima abertura do app falha calada, que é justamente o bug que esta
+    # guarda existe para evitar. Não dá para depender de todo mundo encerrar.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(_code)

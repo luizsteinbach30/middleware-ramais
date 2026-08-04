@@ -2,6 +2,26 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.7.1] — 2026-08-03
+
+### Fixed
+- **O `.exe` não abria quando já havia uma instância na porta 8080.** Reportado
+  em campo logo após a v2.7.0: o app "não iniciava" em servidor nenhum, sem
+  mensagem alguma. O binário é empacotado com `console=False`, então o erro do
+  uvicorn (`[Errno 10048] … apenas uma utilização de cada endereço de soquete`)
+  ia para um stderr invisível e a janela simplesmente não aparecia. Acontecia
+  quando a instância anterior seguia viva — processo órfão ou o serviço do
+  Windows — disputando a mesma porta.
+  - Agora o app **verifica a porta antes de subir** e mostra uma janela
+    explicando: se quem está lá é o próprio middleware, oferece abrir o painel
+    no navegador; se é outro programa, diz como descobrir qual.
+  - A checagem **tenta de novo por alguns segundos** antes de desistir: logo
+    após uma atualização o processo antigo pode estar encerrando, e uma corrida
+    de 1 s não pode virar "o app não abre".
+  - No encerramento o processo passa a sair **à força depois do shutdown
+    limpo** — no empacotamento onefile, qualquer thread não-daemon sobrevivente
+    mantinha o `.exe` vivo segurando a porta, que era a origem do órfão.
+
 ## [2.7.0] — 2026-08-03
 
 > Migrations `0006`, `0007` e `0008` rodam juntas no upgrade. Instalações
