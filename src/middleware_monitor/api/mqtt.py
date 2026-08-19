@@ -457,7 +457,8 @@ def list_messages(
     ramal: str | None = Query(default=None, max_length=64),
     contains: str | None = Query(default=None, max_length=200),
     pinned: bool = False,
-    after_id: int | None = Query(default=None, ge=0),
+    after_id: int | None = Query(default=None, ge=0, description="modo ao vivo: o que chegou depois"),
+    before_id: int | None = Query(default=None, ge=1, description="paginação: mais antigas que"),
     limit: int = Query(default=100, ge=1, le=1000),
     _user: User = Depends(get_current_user),
     db: DBSession = Depends(get_session),
@@ -466,7 +467,7 @@ def list_messages(
     filtro = normalize_topic_filter(topic) if topic else None
     if filtro and (erro := validate_topic_filter(filtro)):
         raise HTTPException(status_code=422, detail=f"topic_invalid:{erro}")
-    itens, total = repo.search_messages(
+    resultado = repo.search_messages(
         db,
         since=ini,
         until=fim,
@@ -475,14 +476,17 @@ def list_messages(
         contains=contains,
         pinned_only=pinned,
         after_id=after_id,
+        before_id=before_id,
         limit=limit,
+        # No modo ao vivo a página sai em ordem cronológica: são as novas.
         newest_first=after_id is None,
     )
     return MessagesPage(
-        items=[_message_out(m) for m in itens],
-        total=total,
+        items=[_message_out(m) for m in resultado.items],
+        total=resultado.total,
         limit=limit,
-        truncated=total > len(itens),
+        truncated=resultado.total > len(resultado.items),
+        exact_total=resultado.exact_total,
     )
 
 

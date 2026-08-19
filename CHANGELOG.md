@@ -34,6 +34,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
     como não comprovado, em vez de assumir cobertura.
   - **Comprovante em texto** por mensagem (`/api/mqtt/messages/{id}/comprovante`)
     com hora local e UTC, tópico, QoS, broker e o payload como recebido.
+  - **Tela "Mensagens" (menu Coletor MQTT, abaixo do Configurador de Ramais)** —
+    consulta por período (atalhos de 15 min a 7 dias ou intervalo à mão),
+    tópico com curingas, ramal, texto no conteúdo e "só evidências"; modo ao
+    vivo; detalhe com o payload cru e o formatado lado a lado; fixar evidência
+    e baixar comprovante. A faixa de cobertura acompanha todo resultado, para
+    que lista vazia signifique alguma coisa.
   - API `/api/mqtt/*` (brokers, discover, sniff, status, messages, coverage) e
     seção "Coletor de mensagens MQTT" na tela de Configuração.
   - Migration `0009_mqtt_ingest`; nova dependência `paho-mqtt`.

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import secrets
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -230,6 +231,18 @@ def insert_connection_events(db: DBSession, rows: list[dict[str, Any]]) -> int:
     return len(rows)
 
 
+@dataclass(slots=True)
+class SearchResult:
+    """Página do ledger + o que a tela precisa dizer sobre a contagem."""
+
+    items: list[MqttMessage]
+    total: int
+    exact_total: bool = True  # False = varredura interrompida no teto
+
+
+SCAN_CAP = 50_000
+
+
 def search_messages(
     db: DBSession,
     *,
@@ -240,14 +253,19 @@ def search_messages(
     contains: str | None = None,
     pinned_only: bool = False,
     after_id: int | None = None,
+    before_id: int | None = None,
     limit: int = 100,
     newest_first: bool = True,
-) -> tuple[list[MqttMessage], int]:
-    """Busca no ledger. Devolve (página, total que casou com o filtro).
+) -> SearchResult:
+    """Busca no ledger.
 
-    ``topic_filter`` aceita curingas MQTT; a parte fixa antes do primeiro
-    curinga vira ``LIKE`` no banco (usa o índice) e o casamento exato é
-    conferido em Python — evita varredura total quando o filtro é específico.
+    ``after_id`` pega o que chegou depois de um ponto (modo ao vivo);
+    ``before_id`` continua para trás (botão "carregar mais antigas").
+
+    O filtro de tópico vira SQL sempre que possível — ``a/b/#`` e ``a/b/+`` são
+    prefixo (e, no ``+``, "exatamente mais um nível"). Curinga no meio do
+    caminho não tem tradução, aí o casamento é em Python com teto de varredura:
+    numa base de milhões de linhas, contar tudo travaria a tela.
     """
     from middleware_monitor.domain.mqtt.address import match_topic_any
 
@@ -268,45 +286,94 @@ def search_messages(
     if pinned_only:
         apply(MqttMessage.pinned.is_(True))
     if contains:
-        apply(MqttMessage.payload.ilike(f"%{contains.strip()}%"))
+        apply(MqttMessage.payload.icontains(contains.strip()))
     if after_id is not None:
         apply(MqttMessage.id > after_id)
+    if before_id is not None:
+        apply(MqttMessage.id < before_id)
 
-    exact_filter: str | None = None
+    resto: str | None = None
     if topic_filter and topic_filter.strip() not in ("", "#"):
-        exact_filter = topic_filter.strip()
-        prefixo = _literal_prefix(exact_filter)
-        if prefixo:
-            apply(MqttMessage.topic.like(f"{prefixo}%"))
+        filtro = topic_filter.strip()
+        condicoes = _topic_sql(filtro)
+        if condicoes is None:
+            prefixo = _literal_prefix(filtro)
+            if prefixo:
+                apply(MqttMessage.topic.startswith(prefixo))
+            resto = filtro  # corte fino em Python
+        else:
+            for cond in condicoes:
+                apply(cond)
 
-    total = int(db.scalar(count_stmt) or 0)
-    stmt = stmt.order_by(
-        MqttMessage.received_at.desc() if newest_first else MqttMessage.received_at.asc(),
-        MqttMessage.id.desc() if newest_first else MqttMessage.id.asc(),
-    )
-    if exact_filter is None:
-        return list(db.scalars(stmt.limit(limit)).all()), total
+    # Cursor de chegada ordena por id, não por hora: id é sequencial na
+    # gravação, enquanto `received_at` pode andar para trás num ajuste de
+    # relógio (NTP) — e aí o modo ao vivo pularia mensagens.
+    if after_id is not None:
+        stmt = stmt.order_by(MqttMessage.id.asc())
+    elif before_id is not None:
+        stmt = stmt.order_by(MqttMessage.id.desc())
+    else:
+        stmt = stmt.order_by(
+            MqttMessage.received_at.desc() if newest_first else MqttMessage.received_at.asc(),
+            MqttMessage.id.desc() if newest_first else MqttMessage.id.asc(),
+        )
+    if resto is None:
+        total = int(db.scalar(count_stmt) or 0)
+        return SearchResult(items=list(db.scalars(stmt.limit(limit)).all()), total=total)
 
-    # Com curinga o corte fino é em Python; lê em blocos até completar a página.
     itens: list[MqttMessage] = []
     casaram = 0
+    lidas = 0
+    exato = True
     for row in db.scalars(stmt.execution_options(yield_per=500)):
-        if not match_topic_any(exact_filter, row.topic):
+        lidas += 1
+        if lidas > SCAN_CAP:
+            exato = False
+            break
+        if not match_topic_any(resto, row.topic):
             continue
         casaram += 1
         if len(itens) < limit:
             itens.append(row)
-    return itens, casaram
+    return SearchResult(items=itens, total=casaram, exact_total=exato)
 
 
 def _literal_prefix(topic_filter: str) -> str:
-    """Parte do filtro antes do primeiro curinga — serve de ``LIKE`` no índice."""
+    """Parte fixa antes do primeiro curinga — estreita a varredura no índice."""
     partes: list[str] = []
     for nivel in topic_filter.split("/"):
         if nivel in ("+", "#"):
             break
         partes.append(nivel)
     return "/".join(partes)
+
+
+def _like_escape(text: str) -> str:
+    """Escapa os curingas do LIKE — tópico pode conter ``%`` e ``_``."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _topic_sql(topic_filter: str) -> list[Any] | None:
+    """Traduz o filtro para SQL quando o curinga está só no último nível.
+
+    ``a/b/#`` → começa com ``a/b/``; ``a/b/+`` → começa com ``a/b/`` **e** não
+    tem outra barra depois (exatamente um nível a mais). Devolve ``None`` para
+    curinga no meio, que não tem tradução direta e cai no casamento em Python.
+    """
+    niveis = topic_filter.split("/")
+    curingas = [i for i, n in enumerate(niveis) if n in ("+", "#")]
+    if not curingas:
+        return [MqttMessage.topic == topic_filter]
+    if len(curingas) > 1 or curingas[0] != len(niveis) - 1:
+        return None
+    prefixo = "/".join(niveis[:-1])
+    if not prefixo:
+        return None
+    escapado = _like_escape(prefixo)
+    comeca_com = MqttMessage.topic.like(f"{escapado}/%", escape="\\")
+    if niveis[-1] == "#":
+        return [comeca_com]
+    return [comeca_com, ~MqttMessage.topic.like(f"{escapado}/%/%", escape="\\")]
 
 
 def set_pinned(db: DBSession, message_id: int, pinned: bool) -> bool:

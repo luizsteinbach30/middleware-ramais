@@ -103,13 +103,17 @@ def compute_coverage(
         novo = state in UP_STATES
         if novo and not up:
             if gap_inicio is not None:
-                cov.gaps.append(
-                    CoverageGapItem(
-                        started_at=gap_inicio, ended_at=momento,
-                        seconds=int((momento - gap_inicio).total_seconds()),
-                        detail=gap_motivo or "coletor fora do ar",
+                duracao = int((momento - gap_inicio).total_seconds())
+                # Reconexão instantânea não é lacuna: nada foi perdido e a lista
+                # de lacunas precisa mostrar só o que o operador deve olhar.
+                if duracao > 0:
+                    cov.gaps.append(
+                        CoverageGapItem(
+                            started_at=gap_inicio, ended_at=momento,
+                            seconds=duracao,
+                            detail=gap_motivo or "coletor fora do ar",
+                        )
                     )
-                )
                 gap_inicio = None
                 gap_motivo = ""
         elif state in DOWN_STATES and up:

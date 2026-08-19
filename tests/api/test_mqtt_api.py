@@ -45,7 +45,8 @@ def _gravar_mensagens(db, quantas: int = 3) -> None:
         [
             {
                 "broker_id": None,
-                "received_at": AGORA - timedelta(minutes=i),
+                # Cronológica, como na vida real: id e hora crescem juntos.
+                "received_at": AGORA - timedelta(minutes=quantas - i),
                 "topic": f"v1/data/extenStatus/{100 + i}",
                 "ramal": str(100 + i),
                 "payload": (
@@ -248,3 +249,48 @@ def test_tela_de_configuracao_traz_a_secao_do_coletor(client, db) -> None:
     assert "/static/js/pages/config_mqtt.js" in html
     # Retenção do ledger é editada junto com as demais, no mesmo formulário.
     assert 'id="f-mqtt_message_retention_days"' in html
+
+
+def test_tela_de_mensagens_renderiza_com_filtros_e_cobertura(client, db) -> None:
+    _authed(client, db)
+    html = client.get("/mqtt-messages").text
+    assert "Mensagens MQTT" in html
+    assert 'id="mm-topic"' in html and 'id="mm-presets"' in html
+    assert 'id="mm-coverage"' in html  # a faixa de cobertura acompanha o resultado
+    assert "/static/js/pages/mqtt_messages.js" in html
+
+
+def test_menu_lateral_tem_a_entrada_do_coletor(client, db) -> None:
+    _authed(client, db)
+    html = client.get("/mqtt-messages").text
+    assert "Coletor MQTT" in html
+    assert 'href="/mqtt-messages"' in html
+    # Fica depois do Configurador de Ramais, como pedido.
+    assert html.index("Configurador de Ramais") < html.index("Coletor MQTT")
+
+
+def test_paginacao_para_tras_pelo_before_id(client, db) -> None:
+    _authed(client, db)
+    _gravar_mensagens(db, 5)
+
+    pagina = client.get("/api/mqtt/messages", params={"limit": 2}).json()
+    assert len(pagina["items"]) == 2
+    assert pagina["total"] == 5
+    assert pagina["truncated"] is True
+    assert pagina["exact_total"] is True
+
+    ultimo = pagina["items"][-1]["id"]
+    mais = client.get("/api/mqtt/messages", params={"limit": 2, "before_id": ultimo}).json()
+    assert [m["id"] for m in mais["items"]] == [ultimo - 1, ultimo - 2]
+
+
+def test_modo_ao_vivo_traz_so_o_que_chegou_depois(client, db) -> None:
+    _authed(client, db)
+    _gravar_mensagens(db, 2)
+    ultimo = client.get("/api/mqtt/messages").json()["items"][0]["id"]
+
+    assert client.get("/api/mqtt/messages", params={"after_id": ultimo}).json()["items"] == []
+
+    _gravar_mensagens(db, 1)
+    novas = client.get("/api/mqtt/messages", params={"after_id": ultimo}).json()["items"]
+    assert len(novas) == 1 and novas[0]["id"] > ultimo

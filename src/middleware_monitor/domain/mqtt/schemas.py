@@ -240,6 +240,10 @@ class MessagesPage(BaseModel):
     total: int = 0
     limit: int = 100
     truncated: bool = False
+    # False quando a contagem parou no teto de varredura (filtro com curinga no
+    # meio, que não vira SQL): a tela mostra "mais de N" em vez de um número
+    # exato que seria mentira.
+    exact_total: bool = True
 
 
 class PinRequest(BaseModel):

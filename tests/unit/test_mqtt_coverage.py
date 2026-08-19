@@ -70,3 +70,15 @@ def test_janela_vazia_nao_quebra() -> None:
     cov = compute_coverage([], INICIO, INICIO, state_before="connected")
     assert cov.total_seconds == 0
     assert cov.coverage_pct == 0.0
+
+
+def test_reconexao_instantanea_nao_vira_lacuna() -> None:
+    # Queda e volta no mesmo segundo: nada foi perdido, então não polui a lista.
+    momento = INICIO + timedelta(minutes=10)
+    eventos = [
+        (momento, "disconnected", "conexão perdida"),
+        (momento, "connected", "conectado"),
+    ]
+    cov = compute_coverage(eventos, INICIO, FIM, state_before="connected")
+    assert cov.gaps == []
+    assert cov.coverage_pct == 100.0

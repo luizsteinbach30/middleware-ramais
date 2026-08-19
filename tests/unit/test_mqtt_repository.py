@@ -75,18 +75,63 @@ def test_busca_por_janela_topico_e_texto(db: Session) -> None:
     )
     db.commit()
 
-    itens, total = repo.search_messages(db, since=BASE, until=BASE + timedelta(hours=1))
-    assert total == 2
+    assert repo.search_messages(db, since=BASE, until=BASE + timedelta(hours=1)).total == 2
 
-    itens, total = repo.search_messages(db, topic_filter="v1/data/extenStatus/+")
-    assert total == 2
-    assert all(i.topic.startswith("v1/data/extenStatus/") for i in itens)
+    r = repo.search_messages(db, topic_filter="v1/data/extenStatus/+")
+    assert r.total == 2
+    assert all(i.topic.startswith("v1/data/extenStatus/") for i in r.items)
 
-    itens, total = repo.search_messages(db, ramal="0307")
-    assert total == 1 and itens[0].ramal == "0307"
+    r = repo.search_messages(db, ramal="0307")
+    assert r.total == 1 and r.items[0].ramal == "0307"
 
-    itens, total = repo.search_messages(db, contains="ocupado")  # sem diferenciar caixa
-    assert total == 1
+    r = repo.search_messages(db, contains="ocupado")  # sem diferenciar caixa
+    assert r.total == 1
+
+
+def test_filtro_de_topico_vira_sql_quando_o_curinga_esta_no_fim(db: Session) -> None:
+    # "+" casa exatamente um nível — "#" leva o resto da árvore junto.
+    repo.insert_messages(
+        db,
+        [
+            _msg(db, topic="v1/data/extenStatus/0119"),
+            _msg(db, topic="v1/data/extenStatus/0119/detalhe"),
+            _msg(db, topic="v1/data/cdr"),
+        ],
+    )
+    db.commit()
+
+    r = repo.search_messages(db, topic_filter="v1/data/extenStatus/+")
+    assert [i.topic for i in r.items] == ["v1/data/extenStatus/0119"]
+    assert r.exact_total is True
+
+    r = repo.search_messages(db, topic_filter="v1/data/extenStatus/#")
+    assert r.total == 2
+
+    r = repo.search_messages(db, topic_filter="v1/data/cdr")
+    assert r.total == 1
+
+    # Curinga no meio não vira SQL: casa em Python, mas o resultado é o mesmo.
+    r = repo.search_messages(db, topic_filter="v1/+/extenStatus/0119")
+    assert [i.topic for i in r.items] == ["v1/data/extenStatus/0119"]
+
+
+def test_paginacao_para_tras_e_modo_ao_vivo(db: Session) -> None:
+    repo.insert_messages(
+        db, [_msg(db, received_at=BASE + timedelta(seconds=i), payload=f"m{i}") for i in range(5)],
+    )
+    db.commit()
+    todas = repo.search_messages(db, limit=10).items  # mais recentes primeiro
+    assert [m.payload for m in todas] == ["m4", "m3", "m2", "m1", "m0"]
+
+    pagina = repo.search_messages(db, limit=2)
+    assert [m.payload for m in pagina.items] == ["m4", "m3"]
+
+    mais_antigas = repo.search_messages(db, limit=2, before_id=pagina.items[-1].id)
+    assert [m.payload for m in mais_antigas.items] == ["m2", "m1"]
+
+    # Ao vivo: o que chegou depois, em ordem cronológica.
+    novas = repo.search_messages(db, after_id=todas[-1].id, newest_first=False, limit=10)
+    assert [m.payload for m in novas.items] == ["m1", "m2", "m3", "m4"]
 
 
 def test_retencao_por_idade_preserva_o_que_esta_fixado(db: Session) -> None:
