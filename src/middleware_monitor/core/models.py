@@ -369,6 +369,95 @@ class DeviceActionEvent(Base):
     operador: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+class MqttBroker(Base):
+    """Broker MQTT/EMQX assinado pelo coletor de mensagens.
+
+    Segue o padrão de ``uscall_servers``: a senha guarda o ciphertext da
+    ``SecretBox`` (mesma cifra da ``app_config``) e nunca sai em texto claro
+    para a API/UI. ``address_input`` preserva o que o operador digitou — o
+    host/porta/transporte ao lado são o resultado da descoberta automática.
+    """
+
+    __tablename__ = "mqtt_brokers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    nome: Mapped[str] = mapped_column(String(64), nullable=False)
+    address_input: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    host: Mapped[str] = mapped_column(String(255), nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False)
+    transport: Mapped[str] = mapped_column(String(16), nullable=False, default="tcp")  # tcp | websockets
+    tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ws_path: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    username: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    password: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    tls_verify: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Impressão digital SHA-256 do certificado aceito pelo operador. Quando
+    # preenchida, substitui a validação por CA: aceita aquele certificado e
+    # nenhum outro (melhor que o "tls_insecure" genérico).
+    tls_fingerprint: Mapped[str | None] = mapped_column(String(95), nullable=True)
+    topics: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON: filtros MQTT
+    qos: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    clean_session: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    client_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    max_payload_kb: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class MqttMessage(Base):
+    """Mensagem recebida do broker, gravada como veio — é o comprovante.
+
+    ``payload`` é o corpo verbatim (base64 quando binário, ``b64=True``). Os
+    campos derivados (``ramal``, ``event_at``) existem só para a busca; a prova
+    é o par ``received_at`` + ``topic`` + ``payload``.
+    """
+
+    __tablename__ = "mqtt_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    broker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mqtt_brokers.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
+    received_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    topic: Mapped[str] = mapped_column(String(512), nullable=False)
+    ramal: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    payload_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    qos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    retained: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    b64: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    event_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Evidência fixada pelo operador: imune à retenção.
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    __table_args__ = (
+        Index("ix_mqtt_messages_topic_ts", "topic", "received_at"),
+        Index("ix_mqtt_messages_ramal_ts", "ramal", "received_at"),
+        Index("ix_mqtt_messages_pinned", "pinned"),
+    )
+
+
+class MqttConnectionEvent(Base):
+    """Histórico de conexão do coletor — a prova de cobertura.
+
+    Sem ele, a ausência de uma mensagem no período não prova nada: pode ter
+    sido o coletor que estava fora do ar.
+    """
+
+    __tablename__ = "mqtt_connection_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    broker_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    # startup | connected | subscribed | disconnected | error | stopped
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    client_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    endpoint: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+
+
 __all__: list[str] = [
     "AppConfig",
     "Collection",
@@ -381,6 +470,9 @@ __all__: list[str] = [
     "ExtensionLine",
     "LineReapplyEvent",
     "LoginAttempt",
+    "MqttBroker",
+    "MqttConnectionEvent",
+    "MqttMessage",
     "Session",
     "SystemLog",
     "UpdateHistory",

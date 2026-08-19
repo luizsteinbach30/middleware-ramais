@@ -2,6 +2,43 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [Não publicado]
+
+### Added
+- **Coletor de mensagens MQTT (EMQX) — registro auditável dos envios.** O
+  serviço que publica o status dos ramais não registra os próprios envios; o
+  middleware passa a assinar o broker e a guardar cada mensagem como ela
+  chegou, com a hora exata de recebimento. É de onde sai o comprovante de que
+  a mensagem foi publicada, no tópico certo, na hora certa. Sem árvore de
+  arquivos: tudo em SQLite, com retenção configurável (padrão 7 dias) e teto
+  opcional por espaço — e **mensagem fixada como evidência nunca é apagada**.
+  - **Configuração assistida:** o operador digita só o endereço
+    (`emqx.exemplo.com`, `host:8883`, `ssl://`, `ws://`, `https://` ou até a
+    URL do painel do EMQX). Porta, transporte e TLS são **descobertos testando
+    a rede** — só vale endpoint que responde CONNACK de MQTT. Colar a URL do
+    painel (`:18083`) é reconhecido e o sistema aponta a porta correta.
+  - **Certificado auto-assinado** deixa de ser um "ignorar TLS": a tela mostra
+    emissor, validade e impressão digital SHA-256, e o operador confia naquele
+    certificado — que passa a ser conferido a cada conexão.
+  - **Tópicos são escolhidos, não digitados:** o teste escuta o broker por
+    alguns segundos e lista os ramos existentes com contagem. Quando a ACL do
+    broker nega `#`, tenta ramos mais específicos e diz na tela o que foi
+    recusado e onde escutou. O reconhecimento de status de ramal é pelo
+    formato do payload, não pelo nome do tópico.
+  - **Sessão durável** (`clean_session=False`, QoS 1, `client_id` estável): o
+    broker guarda as mensagens enquanto o serviço está parado e as entrega na
+    volta — reinício não vira buraco no registro.
+  - **Prova de cobertura:** o histórico de conexão do coletor fica registrado,
+    então "não há mensagem no período" passa a distinguir "ninguém publicou" de
+    "não estávamos ouvindo". Reinício sem encerramento limpo marca o período
+    como não comprovado, em vez de assumir cobertura.
+  - **Comprovante em texto** por mensagem (`/api/mqtt/messages/{id}/comprovante`)
+    com hora local e UTC, tópico, QoS, broker e o payload como recebido.
+  - API `/api/mqtt/*` (brokers, discover, sniff, status, messages, coverage) e
+    seção "Coletor de mensagens MQTT" na tela de Configuração.
+  - Migration `0009_mqtt_ingest`; nova dependência `paho-mqtt`.
+  - Ver `docs/ADRs/0005-mqtt-ledger.md`.
+
 ## [2.7.2] — 2026-08-04
 
 ### Fixed

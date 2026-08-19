@@ -25,6 +25,7 @@ dependencies = [
     "itsdangerous>=2.1",
     "cryptography>=42.0",
     "apscheduler>=3.10",
+    "paho-mqtt>=2.1",
     "python-multipart>=0.0.7",
     "packaging>=23.0",
     "openpyxl>=3.1",
