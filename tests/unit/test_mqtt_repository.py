@@ -184,3 +184,70 @@ def test_fixar_e_desfixar_evidencia(db: Session) -> None:
     db.commit()
     assert db.get(MqttMessage, msg.id).pinned is True
     assert repo.set_pinned(db, 999_999, True) is False
+
+
+def test_ramal_casa_por_trecho_em_qualquer_posicao(db: Session) -> None:
+    """Quem procura um comprovante lembra de um pedaço do número, não do ramal
+    inteiro. Digitar "99" tem de trazer a família toda."""
+    repo.insert_messages(
+        db,
+        [
+            _msg(db, ramal="9950", topic="v1/data/extenStatus/9950"),
+            _msg(db, ramal="9951", topic="v1/data/extenStatus/9951"),
+            _msg(db, ramal="9997", topic="v1/data/extenStatus/9997"),
+            _msg(db, ramal="1099", topic="v1/data/extenStatus/1099"),
+            _msg(db, ramal="0203", topic="v1/data/extenStatus/0203"),
+        ],
+    )
+    db.commit()
+
+    r = repo.search_messages(db, ramal="99")
+    assert sorted(i.ramal or "" for i in r.items) == ["1099", "9950", "9951", "9997"]
+    assert r.total == 4
+
+    # O ramal inteiro continua funcionando — trecho não perde o caso exato.
+    r = repo.search_messages(db, ramal="9950")
+    assert [i.ramal for i in r.items] == ["9950"]
+
+    r = repo.search_messages(db, ramal="7777")
+    assert r.total == 0
+
+
+def test_topico_sem_curinga_casa_por_trecho(db: Session) -> None:
+    """Ninguém digita `v1/data/extenStatus/+` de cabeça — digita `extenStatus`."""
+    repo.insert_messages(
+        db,
+        [
+            _msg(db, topic="v1/data/extenStatus/0119"),
+            _msg(db, topic="v1/data/extenStatus/0203"),
+            _msg(db, topic="v1/data/cdr"),
+        ],
+    )
+    db.commit()
+
+    r = repo.search_messages(db, topic_filter="extenStatus")
+    assert r.total == 2
+    r = repo.search_messages(db, topic_filter="data/exten")  # caminho parcial
+    assert r.total == 2
+    r = repo.search_messages(db, topic_filter="cdr")
+    assert r.total == 1
+    assert r.exact_total is True  # trecho vira SQL, não varredura em Python
+
+
+def test_curinga_mantem_a_semantica_mqtt(db: Session) -> None:
+    """`+` e `#` continuam casando por nível — quem escreve curinga fala MQTT."""
+    repo.insert_messages(
+        db,
+        [
+            _msg(db, topic="v1/data/extenStatus/0119"),
+            _msg(db, topic="v1/data/extenStatus/0119/detalhe"),
+        ],
+    )
+    db.commit()
+
+    # `+` é exatamente um nível: o sub-tópico fica de fora.
+    r = repo.search_messages(db, topic_filter="v1/data/extenStatus/+")
+    assert [i.topic for i in r.items] == ["v1/data/extenStatus/0119"]
+    # Como trecho, o mesmo texto sem curinga pegaria os dois.
+    r = repo.search_messages(db, topic_filter="v1/data/extenStatus/0119")
+    assert r.total == 2

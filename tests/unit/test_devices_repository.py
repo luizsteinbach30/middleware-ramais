@@ -114,3 +114,28 @@ def test_delete_devices_desvincula_linha_e_apaga_pings(db) -> None:
 
 def test_delete_devices_lista_vazia(db) -> None:
     assert delete_devices(db, []) == 0
+
+
+def test_ramal_em_conversa_nao_e_marcado_como_registro_perdido(db) -> None:
+    """Coletar um ramal no meio de uma ligação não pode virar "config perdida".
+
+    `jobs/monitor_devices._reapply_candidate_ids` usa exatamente
+    `logical_status='unavailable'` + ping respondendo como sinal de que a
+    configuração do telefone sumiu. Como a coleta REST pega o ramal em qualquer
+    instante, um ramal em conversa marcado indisponível dispararia reaplicação
+    de configuração durante a chamada. Mesma regra do caminho MQTT
+    (`domain/mqtt/parser.logical_from_status`).
+    """
+    upsert_from_uscall(db, [{"ramal": "3660", "status": "disponivel", "ip": "10.0.0.1"}])
+    db.commit()
+    for status in ("Ocupado", "Tocando", "Discando"):
+        upsert_from_uscall(db, [{"ramal": "3660", "status": status, "ip": "10.0.0.1"}])
+        db.commit()
+        rows, _ = list_devices(db)
+        assert rows[0].logical_status == "available", status
+        assert rows[0].status_source == "uscall"
+
+    upsert_from_uscall(db, [{"ramal": "3660", "status": "Indisponivel", "ip": "10.0.0.1"}])
+    db.commit()
+    rows, _ = list_devices(db)
+    assert rows[0].logical_status == "unavailable"

@@ -16,10 +16,16 @@ const LIVE_MS = 3000;
 const el = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// A tela também é destino de link: o painel ao vivo manda para cá com o ramal
+// já preenchido ("quero ver as mensagens cruas deste ramal"), e nesse caso a
+// janela padrão é maior — quem chega assim está investigando, não vigiando.
+const parametros = new URLSearchParams(window.location.search);
+const ramalInicial = (parametros.get('ramal') || '').trim().slice(0, 64);
+
 const state = {
-  last: '15m',       // atalho de período; '' = intervalo escolhido à mão
+  last: parametros.get('last') || (ramalInicial ? '1h' : '15m'),
   since: '', until: '',
-  topic: '', ramal: '', contains: '', pinned: false,
+  topic: '', ramal: ramalInicial, contains: '', pinned: false,
   live: false,
 };
 
@@ -280,7 +286,9 @@ function debounce(fn, ms) {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 
-const buscarComAtraso = debounce(buscar, 400);
+// 250 ms: rápido o bastante para parecer que filtra enquanto se digita,
+// longo o bastante para não disparar uma consulta por tecla.
+const buscarComAtraso = debounce(buscar, 250);
 
 if (el('mm-tbody')) {
   document.querySelectorAll('#mm-presets [data-last]').forEach((b) => b.addEventListener('click', () => {
@@ -332,6 +340,7 @@ if (el('mm-tbody')) {
     if (detalhe) window.location.href = `/api/mqtt/messages/${detalhe.id}/comprovante`;
   });
 
+  el('mm-ramal').value = state.ramal;
   marcarPreset();
   buscar();
   atualizarColetor();

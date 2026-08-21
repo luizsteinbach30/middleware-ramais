@@ -25,13 +25,69 @@ from datetime import UTC, datetime
 from typing import Any
 
 __all__ = [
+    "STATUS_ORDER",
     "ExtensionStatus",
+    "logical_from_status",
+    "normalize_status",
     "parse_extension_payload",
     "parse_pbx_datetime",
     "ramal_from_topic",
 ]
 
 _STATUS_KEYS = ("status", "ramal")
+
+# Status canônicos, na ordem em que o painel os agrupa (do mais "livre" ao mais
+# "preso"). O publicador manda com acento e caixa variável; o canônico é sem
+# acento e minúsculo, para não depender de como o PBX escreveu.
+STATUS_ORDER = ("disponivel", "tocando", "discando", "ocupado", "indisponivel")
+
+_ACENTOS = str.maketrans("áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ",
+                         "aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC")
+
+# Sinônimos vistos no campo. Mantido explícito (e não por "startswith") porque
+# um status novo do publicador tem de aparecer como desconhecido na tela, não
+# ser silenciosamente confundido com um conhecido.
+_SINONIMOS = {
+    "disponivel": "disponivel",
+    "livre": "disponivel",
+    "indisponivel": "indisponivel",
+    "offline": "indisponivel",
+    "tocando": "tocando",
+    "ringing": "tocando",
+    "chamando": "tocando",
+    "ocupado": "ocupado",
+    "em chamada": "ocupado",
+    "falando": "ocupado",
+    "discando": "discando",
+    "dialing": "discando",
+}
+
+
+def normalize_status(raw: str | None) -> str:
+    """``'Indisponível'`` → ``'indisponivel'``. Não reconhecido → ``'desconhecido'``."""
+    texto = (raw or "").translate(_ACENTOS).strip().lower()
+    if not texto:
+        return "desconhecido"
+    return _SINONIMOS.get(texto, "desconhecido")
+
+
+def logical_from_status(status: str) -> str | None:
+    """Status canônico → ``logical_status`` do Device, ou ``None`` se não dá para dizer.
+
+    **Tocando, Ocupado e Discando querem dizer que o ramal ESTÁ registrado** no
+    PBX — só quem está registrado toca ou conversa. Marcá-los ``unavailable``
+    faria ``jobs/monitor_devices.py`` reaplicar configuração no telefone no meio
+    da ligação, porque lá o critério de "config perdida" é responder ping e
+    estar ``unavailable``. Só ``Indisponivel`` significa registro caído.
+
+    ``desconhecido`` devolve ``None``: status que o publicador inventou não
+    derruba nem levanta o estado do ramal — fica como estava.
+    """
+    if status == "indisponivel":
+        return "unavailable"
+    if status in STATUS_ORDER:
+        return "available"
+    return None
 
 
 @dataclass(slots=True)

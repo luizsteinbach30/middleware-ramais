@@ -216,12 +216,21 @@ def broker_topics(broker: MqttBroker) -> list[str]:
 # ── ledger ───────────────────────────────────────────────────────────────────
 
 
-def insert_messages(db: DBSession, rows: list[dict[str, Any]]) -> int:
-    """Gravação em lote (executemany). Chamado pelo coletor a cada janela."""
+def insert_messages(db: DBSession, rows: list[dict[str, Any]]) -> list[int]:
+    """Gravação em lote. Devolve os ids na **mesma ordem** das linhas recebidas.
+
+    Os ids servem para a normalização (fase 3) apontar cada transição de estado
+    para a mensagem crua que a originou — o comprovante. ``RETURNING`` custa
+    ~0,4 ms a mais por lote de 500 (medido), o que cabe folgado na janela de 1 s
+    do coletor; ``sort_by_parameter_order`` é o que garante a correspondência
+    posicional, e não a ordem em que o banco resolveu devolver.
+    """
     if not rows:
-        return 0
-    db.execute(insert(MqttMessage), rows)
-    return len(rows)
+        return []
+    stmt = insert(MqttMessage).returning(
+        MqttMessage.id, sort_by_parameter_order=True,
+    )
+    return [int(x) for x in db.scalars(stmt, rows).all()]
 
 
 def insert_connection_events(db: DBSession, rows: list[dict[str, Any]]) -> int:
@@ -262,10 +271,18 @@ def search_messages(
     ``after_id`` pega o que chegou depois de um ponto (modo ao vivo);
     ``before_id`` continua para trás (botão "carregar mais antigas").
 
-    O filtro de tópico vira SQL sempre que possível — ``a/b/#`` e ``a/b/+`` são
-    prefixo (e, no ``+``, "exatamente mais um nível"). Curinga no meio do
-    caminho não tem tradução, aí o casamento é em Python com teto de varredura:
-    numa base de milhões de linhas, contar tudo travaria a tela.
+    ``ramal`` e ``contains`` casam por **trecho**, em qualquer posição: quem
+    procura um comprovante costuma lembrar de um pedaço do número, não do ramal
+    inteiro — digitar ``99`` tem de trazer 9950, 9951, 9997. Custo assumido: o
+    ``LIKE %…%`` não usa o índice ``ix_mqtt_messages_ramal_ts``, mas a tela
+    sempre manda um período e o ``received_at`` estreita a varredura antes.
+
+    O filtro de tópico atende aos dois jeitos de procurar. Texto solto (sem
+    ``/``, ``+`` nem ``#``) é trecho, como o ramal. Com qualquer um deles vale a
+    semântica MQTT: ``a/b/#`` e ``a/b/+`` viram prefixo em SQL (e, no ``+``,
+    "exatamente mais um nível"); curinga no meio do caminho não tem tradução, aí
+    o casamento é em Python com teto de varredura — numa base de milhões de
+    linhas, contar tudo travaria a tela.
     """
     from middleware_monitor.domain.mqtt.address import match_topic_any
 
@@ -282,7 +299,7 @@ def search_messages(
     if until is not None:
         apply(MqttMessage.received_at <= until)
     if ramal:
-        apply(MqttMessage.ramal == ramal.strip())
+        apply(MqttMessage.ramal.icontains(ramal.strip()))
     if pinned_only:
         apply(MqttMessage.pinned.is_(True))
     if contains:
@@ -295,7 +312,14 @@ def search_messages(
     resto: str | None = None
     if topic_filter and topic_filter.strip() not in ("", "#"):
         filtro = topic_filter.strip()
-        condicoes = _topic_sql(filtro)
+        condicoes: list[Any] | None
+        if not _parece_filtro_mqtt(filtro):
+            # Texto solto: o operador quer "tópico que contenha isto", não um
+            # filtro MQTT. Sem isto, digitar `extenStatus` não casaria nada —
+            # só `v1/data/extenStatus/+` casaria, e ninguém digita isso de cabeça.
+            condicoes = [MqttMessage.topic.icontains(filtro)]
+        else:
+            condicoes = _topic_sql(filtro)
         if condicoes is None:
             prefixo = _literal_prefix(filtro)
             if prefixo:
@@ -336,6 +360,21 @@ def search_messages(
         if len(itens) < limit:
             itens.append(row)
     return SearchResult(items=itens, total=casaram, exact_total=exato)
+
+
+def _parece_filtro_mqtt(topic_filter: str) -> bool:
+    """O texto é um filtro MQTT, ou um trecho que o operador digitou?
+
+    O que distingue é o **curinga**: quem escreve ``+`` ou ``#`` está falando
+    MQTT e espera casamento por nível. Todo o resto — palavra solta
+    (``extenStatus``) ou caminho parcial (``data/extenStatus``) — é trecho.
+
+    Repare que caminho **sem** curinga cai no trecho de propósito: casar só o
+    tópico inteiro e exato faria ``data/extenStatus`` não devolver nada, quando
+    o que a pessoa quer é justamente esse ramo. Buscar por trecho não perde o
+    caso exato, porque um tópico contém a si mesmo.
+    """
+    return "+" in topic_filter or "#" in topic_filter
 
 
 def _literal_prefix(topic_filter: str) -> str:

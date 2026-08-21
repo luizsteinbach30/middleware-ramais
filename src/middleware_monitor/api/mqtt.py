@@ -12,6 +12,7 @@ import re
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.api.deps import (
@@ -21,9 +22,10 @@ from middleware_monitor.api.deps import (
     require_csrf,
 )
 from middleware_monitor.core.logging import get_logger
-from middleware_monitor.core.models import MqttBroker, MqttMessage, User
+from middleware_monitor.core.models import Device, MqttBroker, MqttMessage, User
 from middleware_monitor.core.time import as_local_str, iso_utc
 from middleware_monitor.domain.config.repository import load_config
+from middleware_monitor.domain.mqtt import realtime
 from middleware_monitor.domain.mqtt import repository as repo
 from middleware_monitor.domain.mqtt.address import (
     normalize_topic_filter,
@@ -44,6 +46,9 @@ from middleware_monitor.domain.mqtt.schemas import (
     CoverageOut,
     DiscoverRequest,
     DiscoverResponse,
+    LiveExtension,
+    LiveOut,
+    LiveTransition,
     MessageDetail,
     MessageOut,
     MessagesPage,
@@ -391,10 +396,82 @@ def status(
         last_message_at=snap["last_message_at"] or repo.last_message_at(db),
         avg_lag_seconds=snap["avg_lag_seconds"],
         clock_outliers=int(snap["clock_outliers"]),
+        transitions=int(snap["transitions"]),
+        devices_touched=int(snap["devices_touched"]),
+        tracked_ramais=int(snap["tracked_ramais"]),
         stored_messages=repo.count_messages(db),
         stored_payload_bytes=repo.payload_bytes_total(db),
         retention_days=cfg.mqtt_message_retention_days,
         retention_max_mb=cfg.mqtt_message_max_mb,
+    )
+
+
+@router.get("/live", response_model=LiveOut)
+def live(
+    transicoes: int = Query(default=40, ge=0, le=200),
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> LiveOut:
+    """Estado de cada ramal agora + as últimas transições.
+
+    A grade sai da memória do coletor (a tela recarrega a cada 2 a 3 s e varrer
+    tabela nesse ritmo custaria mais que a ingestão); o banco só é consultado
+    para a fita de transições e para casar cada ramal com o device — é dele que
+    vêm IP e estado de rede, que o payload MQTT não tem.
+    """
+    ing = get_ingestor()
+    snap = ing.status()
+    dados = ing.live()
+
+    ramais = [str(e["ramal"]) for e in dados["extensions"]]
+    devices: dict[str, tuple[int, str | None, str]] = {}
+    if ramais:
+        devices = {
+            nome: (dev_id, ip, net)
+            for dev_id, nome, ip, net in db.execute(
+                select(Device.id, Device.name, Device.ip, Device.network_status).where(
+                    Device.name.in_(ramais)
+                )
+            ).all()
+        }
+
+    extensoes = []
+    for e in dados["extensions"]:
+        dev = devices.get(str(e["ramal"]))
+        extensoes.append(
+            LiveExtension(
+                **e,
+                device_id=dev[0] if dev else None,
+                ip=dev[1] if dev else None,
+                network_status=dev[2] if dev else "unknown",
+            )
+        )
+
+    fita = [
+        LiveTransition(
+            id=ev.id,
+            ramal=ev.ramal,
+            status=ev.status,
+            numero=ev.numero,
+            received_at=ev.received_at,
+            event_at=ev.event_at,
+            message_id=ev.message_id,
+        )
+        for ev in (realtime.live_events(db, limit=transicoes) if transicoes else [])
+    ]
+
+    return LiveOut(
+        generated_at=dados["generated_at"],
+        running=bool(snap["running"]),
+        configured=bool(repo.list_brokers(db)),
+        counts=dados["counts"],
+        extensions=extensoes,
+        transitions=fita,
+        per_minute=int(snap["per_minute"]),
+        queue_depth=int(snap["queue_depth"]),
+        dropped=int(snap["dropped"]),
+        avg_lag_seconds=snap["avg_lag_seconds"],
+        last_message_at=snap["last_message_at"],
     )
 
 

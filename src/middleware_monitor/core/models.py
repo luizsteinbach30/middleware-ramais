@@ -90,6 +90,20 @@ class Device(Base):
     mac: Mapped[str | None] = mapped_column(String(32), nullable=True)
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)
     logical_status: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
+    # Estado de telefonia detalhado (v2.8.0), vindo do MQTT em tempo real:
+    # disponivel | tocando | discando | ocupado | indisponivel | desconhecido.
+    # Vive separado de `logical_status` porque este último responde uma pergunta
+    # diferente — "o ramal está registrado no PBX?" — e é ele que decide se a
+    # configuração do telefone precisa ser reaplicada. Um ramal em conversa está
+    # registrado; misturar as duas coisas reaplicaria config no meio da ligação.
+    telephony_status: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
+    telephony_status_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # A outra ponta da chamada em curso (vazio quando o ramal está livre).
+    telephony_numero: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Quem escreveu o último estado lógico: "mqtt" (instantâneo) ou "uscall"
+    # (ciclo de coleta REST). A tela mostra a origem para não deixar dúvida
+    # sobre a idade do dado.
+    status_source: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
     network_status: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
     network_status_prev: Mapped[str] = mapped_column(String(16), default="unknown", nullable=False)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -458,6 +472,41 @@ class MqttConnectionEvent(Base):
     endpoint: Mapped[str] = mapped_column(String(255), nullable=False, default="")
 
 
+class ExtensionStatusEvent(Base):
+    """Transição de estado de um ramal, normalizada a partir do MQTT.
+
+    Só **transições** entram aqui: repetição do mesmo estado não acrescenta
+    informação. A mensagem crua continua inteira no ledger — ``message_id``
+    aponta para ela, que é o comprovante. Quanto o filtro corta depende do
+    publicador: o do cliente já fala só na mudança (~99% viram linha), mas a
+    reentrega da sessão durável e um publicador que varra periodicamente
+    repetiriam estado — é para esses que o filtro existe.
+
+    ``call_started_at`` é o campo ``duracao`` do payload (horário de início da
+    chamada em curso, não uma duração); é o que permite reconstruir a chamada
+    quando o ``uniqueid`` não vem.
+    """
+
+    __tablename__ = "extension_status_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ramal: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # canônico
+    status_raw: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    numero: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    uniqueid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    event_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    call_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("mqtt_messages.id", ondelete="SET NULL"), nullable=True,
+    )
+
+    __table_args__ = (
+        Index("ix_extension_status_events_ramal_ts", "ramal", "received_at"),
+    )
+
+
 __all__: list[str] = [
     "AppConfig",
     "Collection",
@@ -468,6 +517,7 @@ __all__: list[str] = [
     "ExtensionApplyRunLine",
     "ExtensionEnvironment",
     "ExtensionLine",
+    "ExtensionStatusEvent",
     "LineReapplyEvent",
     "LoginAttempt",
     "MqttBroker",

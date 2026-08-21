@@ -11,7 +11,7 @@ const FIELDS = [
   'ping_timeout_ms', 'ping_concurrency', 'device_ping_retention_days',
   'auto_reapply_on_recovery', 'auto_reapply_debounce_minutes',
   'webhook_log_retention_days', 'collection_retention_days', 'system_log_retention_days',
-  'mqtt_message_retention_days', 'mqtt_message_max_mb',
+  'mqtt_message_retention_days', 'mqtt_message_max_mb', 'extension_event_retention_days',
 ];
 
 function setDirty(on) {

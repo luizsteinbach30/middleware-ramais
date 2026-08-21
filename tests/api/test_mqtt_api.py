@@ -7,7 +7,17 @@ from datetime import UTC, datetime, timedelta
 from middleware_monitor.domain.auth.service import bootstrap_admin
 from middleware_monitor.domain.mqtt import repository as repo
 
-AGORA = datetime.now(UTC).replace(tzinfo=None)
+
+def _agora() -> datetime:
+    """Hora de **agora**, avaliada dentro do teste.
+
+    Era uma constante de módulo, calculada no import. Como a janela (`last=1h`)
+    é resolvida no servidor no instante da requisição, a diferença entre import
+    e execução entrava direto no cálculo de cobertura — e crescia com a duração
+    da suíte, deixando `test_cobertura_conta_o_tempo_conectado` intermitente
+    (falhou com 44,83% onde se esperava ~50%). Chamar aqui zera essa deriva.
+    """
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _authed(client, db) -> str:
@@ -40,13 +50,14 @@ def _broker_body(**over):
 
 
 def _gravar_mensagens(db, quantas: int = 3) -> None:
+    agora = _agora()
     repo.insert_messages(
         db,
         [
             {
                 "broker_id": None,
                 # Cronológica, como na vida real: id e hora crescem juntos.
-                "received_at": AGORA - timedelta(minutes=quantas - i),
+                "received_at": agora - timedelta(minutes=quantas - i),
                 "topic": f"v1/data/extenStatus/{100 + i}",
                 "ramal": str(100 + i),
                 "payload": (
@@ -167,7 +178,7 @@ def test_fixar_evidencia_protege_da_retencao(client, db) -> None:
     )
     assert r.status_code == 200 and r.json() == {"pinned": True}
 
-    apagadas = repo.purge_messages_by_age(db, AGORA + timedelta(days=1))
+    apagadas = repo.purge_messages_by_age(db, _agora() + timedelta(days=1))
     db.commit()
     assert apagadas == 0
     assert client.get("/api/mqtt/messages", params={"pinned": True}).json()["total"] == 1
@@ -198,12 +209,13 @@ def test_cobertura_sem_historico_e_desconhecida(client, db) -> None:
 
 def test_cobertura_conta_o_tempo_conectado(client, db) -> None:
     _authed(client, db)
+    agora = _agora()
     repo.insert_connection_events(
         db,
         [
             {
                 "broker_id": None,
-                "timestamp": AGORA - timedelta(hours=3),
+                "timestamp": agora - timedelta(hours=3),
                 "state": "connected",
                 "detail": "conectado",
                 "client_id": "c1",
@@ -211,7 +223,7 @@ def test_cobertura_conta_o_tempo_conectado(client, db) -> None:
             },
             {
                 "broker_id": None,
-                "timestamp": AGORA - timedelta(minutes=30),
+                "timestamp": agora - timedelta(minutes=30),
                 "state": "disconnected",
                 "detail": "conexão perdida",
                 "client_id": "c1",

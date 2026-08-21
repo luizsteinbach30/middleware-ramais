@@ -216,13 +216,16 @@
       <button id="mq-add" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">+ Configurar broker</button>
     </div>
 
-    <div class="mt-5 pt-4 border-t border-gray-700/60 grid md:grid-cols-2 gap-4">
+    <div class="mt-5 pt-4 border-t border-gray-700/60 grid md:grid-cols-3 gap-4">
       <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Guardar mensagens por <span class="font-normal text-gray-500">dias</span></span>
         <input id="f-mqtt_message_retention_days" type="number" min="1" max="365" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/>
         <span class="text-[11px] text-gray-500">Define até quando dá para provar um envio. Mensagens fixadas como evidência nunca são apagadas.</span></label>
       <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Limite de espaço <span class="font-normal text-gray-500">MB — 0 = sem limite</span></span>
         <input id="f-mqtt_message_max_mb" type="number" min="0" max="1000000" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/>
         <span id="mq-usage" class="text-[11px] text-gray-500">—</span></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Guardar transições por <span class="font-normal text-gray-500">dias</span></span>
+        <input id="f-extension_event_retention_days" type="number" min="1" max="365" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/>
+        <span class="text-[11px] text-gray-500">Só as mudanças de estado de cada ramal — é o que alimenta o <a class="underline" href="/mqtt-painel">painel ao vivo</a> e a linha do tempo. Cada linha é pequena (sem o corpo da mensagem), mas o número delas acompanha o movimento do PBX.</span></label>
     </div>
   </div>
 

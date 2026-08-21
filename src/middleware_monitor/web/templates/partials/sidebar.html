@@ -68,9 +68,15 @@
 
     <div class="pt-4 mt-2 border-t border-gray-800/80">
       <div class="sb-hide-collapsed px-3 pb-1.5 text-[10px] tracking-wider uppercase text-gray-500">Coletor MQTT</div>
-      <a href="/mqtt-messages" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if page == 'mqtt_messages' %}bg-blue-500/10 text-blue-300 ring-1 ring-blue-500/30{% else %}text-gray-400 hover:text-gray-100 hover:bg-gray-800/60{% endif %}">
-        <span data-icon="activity"></span><span class="sb-label">Mensagens</span>
+      {% set MQTT_NAV = [
+        ('mqtt_live',     'Painel ao vivo', '/mqtt-painel',  'phone'),
+        ('mqtt_messages', 'Mensagens',      '/mqtt-messages', 'activity'),
+      ] %}
+      {% for id, label, href, icon in MQTT_NAV %}
+      <a href="{{ href }}" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if page == id %}bg-blue-500/10 text-blue-300 ring-1 ring-blue-500/30{% else %}text-gray-400 hover:text-gray-100 hover:bg-gray-800/60{% endif %}">
+        <span data-icon="{{ icon }}"></span><span class="sb-label">{{ label }}</span>
       </a>
+      {% endfor %}
     </div>
   </nav>
   <div class="px-3 py-3 border-t border-gray-800 space-y-1">

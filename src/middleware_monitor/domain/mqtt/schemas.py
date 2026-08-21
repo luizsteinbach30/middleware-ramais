@@ -20,6 +20,9 @@ __all__ = [
     "CoverageOut",
     "DiscoverRequest",
     "DiscoverResponse",
+    "LiveExtension",
+    "LiveOut",
+    "LiveTransition",
     "MessageDetail",
     "MessageOut",
     "MessagesPage",
@@ -200,6 +203,10 @@ class StatusOut(BaseModel):
     avg_lag_seconds: float | None = None
     # Mensagens com a hora do PBX a mais de 1h do relógio do servidor.
     clock_outliers: int = 0
+    # Fase 3: quanto do fluxo virou informação, não só linha no ledger.
+    transitions: int = 0
+    devices_touched: int = 0
+    tracked_ramais: int = 0
     stored_messages: int = 0
     stored_payload_bytes: int = 0
     retention_days: int = 7
@@ -278,4 +285,63 @@ class CoverageOut(BaseModel):
 
     @field_serializer("since", "until")
     def _ser_dt(self, value: datetime) -> str | None:
+        return iso_utc(value)
+
+
+class LiveExtension(BaseModel):
+    """Um ramal como ele está agora, na visão do coletor.
+
+    ``device_id`` só vem preenchido quando a coleta REST já criou o telefone —
+    o payload MQTT não traz IP nem MAC, então um ramal pode aparecer aqui antes
+    de existir como device. Mostrar mesmo assim é proposital: é sinal de ramal
+    novo no PBX que a coleta ainda não pegou.
+    """
+
+    ramal: str
+    status: str
+    numero: str | None = None
+    uniqueid: str | None = None
+    since: datetime | None = None
+    seconds_in_status: int = 0
+    last_seen_at: datetime | None = None
+    seconds_since_message: int = 0
+    device_id: int | None = None
+    ip: str | None = None
+    network_status: str = "unknown"
+
+    @field_serializer("since", "last_seen_at")
+    def _ser_dt(self, value: datetime | None) -> str | None:
+        return iso_utc(value)
+
+
+class LiveTransition(BaseModel):
+    id: int
+    ramal: str
+    status: str
+    numero: str | None = None
+    received_at: datetime
+    event_at: datetime | None = None
+    message_id: int | None = None
+
+    @field_serializer("received_at", "event_at")
+    def _ser_dt(self, value: datetime | None) -> str | None:
+        return iso_utc(value)
+
+
+class LiveOut(BaseModel):
+    generated_at: datetime
+    running: bool = False
+    configured: bool = False
+    counts: dict[str, int] = Field(default_factory=dict)
+    extensions: list[LiveExtension] = Field(default_factory=list)
+    transitions: list[LiveTransition] = Field(default_factory=list)
+    # Saúde da ingestão, repetida aqui para a tela não precisar de dois fetches.
+    per_minute: int = 0
+    queue_depth: int = 0
+    dropped: int = 0
+    avg_lag_seconds: float | None = None
+    last_message_at: datetime | None = None
+
+    @field_serializer("generated_at", "last_message_at")
+    def _ser_dt(self, value: datetime | None) -> str | None:
         return iso_utc(value)

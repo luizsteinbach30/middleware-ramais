@@ -48,6 +48,7 @@ Autenticado:
   /collections                 — Histórico de coletas
   /webhook-logs                — Log de webhooks
   /logs                        — Logs do sistema
+  /mqtt-painel                 — Painel ao vivo dos ramais (MQTT)
   /mqtt-messages               — Mensagens MQTT (consulta do ledger)
   /config                      — Configuração
   /system/updates              — Updates / versão
@@ -717,7 +718,7 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
 
 ---
 
-## 15. Mensagens MQTT (v2.8.0)
+## 15. Coletor MQTT (v2.8.0)
 
 ### 15.1 Consulta do ledger — `/mqtt-messages`
 
@@ -765,7 +766,45 @@ MQTT**, abaixo do Configurador de Ramais.
 - Fixar uma mensagem e rodar a retenção com corte no futuro mantém a mensagem.
 - O comprovante baixado traz hora local e UTC, tópico e o payload como recebido.
 
-### 15.2 Configuração do coletor — `/config`
+### 15.2 Painel ao vivo — `/mqtt-painel`
+
+**Propósito.** Responder *"o que está acontecendo agora"*. É a primeira entrada
+do menu **Coletor MQTT**, acima de Mensagens. Onde a tela de Mensagens serve à
+prova (passado), esta serve à operação (presente): o estado vem do instante em
+que a mensagem chegou do broker, não do ciclo de coleta REST.
+
+**Layout.**
+
+1. **Cabeçalho** — estado do coletor (`coletando · N msg/min`, `sem tráfego` ou
+   `não configurado`, com link para `/config`) e botão *Pausar/Retomar*
+   (atualização a cada 2,5 s).
+2. **Contadores por estado** — Todos, Disponível, Tocando, Discando, Em conversa,
+   Indisponível. Clicar filtra a grade; clicar de novo desliga o filtro. O card
+   "Não reconhecido" só aparece quando existe algum — card zerado permanente vira
+   ruído.
+3. **Saúde da ingestão** — mensagens/min, ramais acompanhados, fila de gravação,
+   descartadas (em vermelho enquanto for > 0: descarte é prova perdida), atraso
+   médio do PBX e hora da última mensagem. Quando não há broker cadastrado ou o
+   coletor não está rodando, uma faixa âmbar diz que a grade abaixo é o último
+   estado conhecido, **não** o de agora.
+4. **Grade dos ramais** — um cartão por ramal, colorido pelo estado, com o número
+   da outra ponta, há quanto tempo está nesse estado e o estado de rede vindo do
+   device. Ramal cujo publicador parou de falar (mais de 2 min) aparece apagado
+   com "sem msg há X". O número do ramal é link para as mensagens cruas dele
+   (`/mqtt-messages?ramal=…`, janela de 1 h). Campo de busca por ramal ou número.
+5. **Últimas transições** — a fita do que mudou (ramal, estado, número, hora),
+   mais recente primeiro. Só transições: repetição do mesmo estado não entra.
+
+**Regras de exibição.**
+
+- Ramal sem device correspondente aparece na grade assinalado como "sem device":
+  o payload MQTT não traz IP nem MAC, então quem cria o telefone continua sendo a
+  coleta REST — ramal novo no PBX aparece aqui antes de existir como device, e
+  isso é informação, não erro.
+- `Tocando`, `Ocupado` e `Discando` significam ramal **registrado**; só
+  `Indisponivel` é vermelho, porque só ele indica problema.
+
+### 15.3 Configuração do coletor — `/config`
 
 Seção **Coletor de mensagens MQTT** (permanece na tela de Configuração): campo
 único de endereço com *Descobrir conexão*, credenciais opcionais, relatório da
@@ -773,11 +812,12 @@ sonda passo a passo, confirmação da impressão digital do certificado quando e
 não é assinado por CA conhecida, escolha dos tópicos a partir do que existe no
 broker, e retenção do ledger (dias + teto opcional em MB, com o volume atual).
 
-### 15.3 Endpoints API consumidos
+### 15.4 Endpoints API consumidos
 
 | Recurso | Método | Path |
 |---|---|---|
 | Estado do coletor | GET | `/api/mqtt/status` |
+| Estado ao vivo dos ramais | GET | `/api/mqtt/live` |
 | Brokers (CRUD) | GET/POST/PUT/DELETE | `/api/mqtt/brokers[/{id}]` |
 | Descoberta do endpoint | POST | `/api/mqtt/discover` |
 | Amostragem de tópicos | POST | `/api/mqtt/sniff` |

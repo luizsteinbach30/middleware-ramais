@@ -30,6 +30,21 @@ def isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def reset_mqtt_ingestor() -> Iterator[None]:
+    """O coletor MQTT é instância única no processo (``workers=1``, ADR-0001).
+
+    Sem zerar entre os testes, o estado ao vivo dos ramais de um teste
+    reapareceria no seguinte — e o painel passaria a ser verificado contra
+    dado de outro cenário.
+    """
+    from middleware_monitor.domain.mqtt import service as mqtt_service
+
+    mqtt_service._ingestor = None
+    yield
+    mqtt_service._ingestor = None
+
+
 @pytest.fixture
 def db(isolated_data_dir: Path) -> Iterator[Session]:
     from middleware_monitor.core.db import Base, init_engine, session_factory

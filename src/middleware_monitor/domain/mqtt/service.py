@@ -24,8 +24,13 @@ from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
+from middleware_monitor.domain.mqtt import realtime
 from middleware_monitor.domain.mqtt import repository as repo
-from middleware_monitor.domain.mqtt.parser import parse_extension_payload, ramal_from_topic
+from middleware_monitor.domain.mqtt.parser import (
+    ExtensionStatus,
+    parse_extension_payload,
+    ramal_from_topic,
+)
 from middleware_monitor.integrations.mqtt_client import MqttAuth, MqttConnection, MqttEndpoint
 
 __all__ = ["MqttIngestor", "get_ingestor"]
@@ -91,7 +96,10 @@ class MqttIngestor:
     def __init__(self, db_factory: Callable[[], DBSession] = session_factory) -> None:
         self._db_factory = db_factory
         self._runtimes: dict[int, _BrokerRuntime] = {}
-        self._buffer: deque[dict[str, Any]] = deque()
+        # Cada item é (linha do ledger, status já extraídos do payload). O
+        # parse acontece uma vez só, na thread do paho, e viaja junto — refazê-lo
+        # na gravação seria decodificar o mesmo JSON duas vezes por mensagem.
+        self._buffer: deque[tuple[dict[str, Any], list[ExtensionStatus]]] = deque()
         self._conn_buffer: deque[dict[str, Any]] = deque()
         self._rate = _RateWindow()
         self._task: asyncio.Task[None] | None = None
@@ -112,6 +120,12 @@ class MqttIngestor:
         # ficam fora da media (senao um relogio torto envenena a metrica), mas
         # sao contadas — media vazia sem explicacao esconde o problema.
         self.clock_outliers = 0
+        # Estado ao vivo por ramal (fase 3): alimenta o painel e impede que
+        # estado repetido — reentrega da sessão durável, ou publicador que varre
+        # periodicamente — vire transição nova.
+        self.state = realtime.RealtimeState()
+        self.transitions = 0
+        self.devices_touched = 0
 
     # ── ciclo de vida ────────────────────────────────────────────────────────
 
@@ -125,6 +139,13 @@ class MqttIngestor:
         # "connected" (sem "stopped" entre eles) denuncia que o processo morreu
         # sem encerrar — e o periodo anterior deixa de ser comprovavel.
         self._conn_buffer.append(_conn_row("startup", "coletor iniciado"))
+        # Reidrata o estado dos ramais antes do primeiro lote: sem isso, a volta
+        # do serviço gravaria uma transição falsa para cada ramal do broker.
+        try:
+            with self._db_factory() as db:
+                self.state.prime(db)
+        except Exception as exc:  # banco indisponível não impede coletar
+            log.warning("mqtt_realtime_prime_failed", error=type(exc).__name__, message=str(exc))
         self._task = asyncio.create_task(self._writer_loop())
         await self._connect_all()
 
@@ -215,7 +236,9 @@ class MqttIngestor:
     ) -> Callable[[str, bytes, int, bool], None]:
         def handler(topic: str, payload: bytes, qos: int, retained: bool) -> None:
             now = _now()
-            row = _build_row(broker_id, topic, payload, qos, retained, max_payload_kb, now)
+            row, statuses = _build_row(
+                broker_id, topic, payload, qos, retained, max_payload_kb, now,
+            )
             self.received += 1
             self.last_message_at = now
             self._rate.add(time.time())
@@ -234,7 +257,7 @@ class MqttIngestor:
                 self.dropped += 1
                 if self.dropped % 100 == 1:
                     log.error("mqtt_queue_overflow", dropped=self.dropped, queue=len(self._buffer))
-            self._buffer.append(row)
+            self._buffer.append((row, statuses))
 
         return handler
 
@@ -293,13 +316,37 @@ class MqttIngestor:
                 self._conn_buffer.extendleft(reversed(conns))
                 return
 
-    def _persist(self, msgs: list[dict[str, Any]], conns: list[dict[str, Any]]) -> bool:
+    def _persist(
+        self,
+        msgs: list[tuple[dict[str, Any], list[ExtensionStatus]]],
+        conns: list[dict[str, Any]],
+    ) -> bool:
+        """Uma transação por lote: ledger, transições e estado dos ramais.
+
+        Tudo junto de propósito — se a transição fosse gravada fora da mesma
+        transação do ledger, um comprovante poderia existir sem o estado que ele
+        originou (ou o contrário) depois de uma queda no meio do caminho.
+        """
+        transicoes: list[realtime.Sample] = []
         try:
             with self._db_factory() as db:
-                repo.insert_messages(db, msgs)
+                self.state.prime(db)  # no-op depois da primeira vez
+                ids = repo.insert_messages(db, [row for row, _ in msgs])
+                amostras: list[realtime.Sample] = []
+                for (row, statuses), msg_id in zip(msgs, ids, strict=True):
+                    if statuses:
+                        amostras.extend(
+                            realtime.samples_from(statuses, row["received_at"], msg_id)
+                        )
+                transicoes, toques = self.state.classify(amostras)
+                realtime.insert_transitions(db, transicoes)
+                tocados = realtime.touch_devices(db, toques)
                 repo.insert_connection_events(db, conns)
                 db.commit()
         except Exception as exc:
+            # O cache já anotou as transições como conhecidas; sem desfazer,
+            # elas nunca mais seriam gravadas e o ramal congelaria no painel.
+            self.state.rollback(transicoes)
             self.persist_failures += 1
             log.error(
                 "mqtt_persist_failed",
@@ -307,6 +354,8 @@ class MqttIngestor:
             )
             return False
         self.persisted += len(msgs)
+        self.transitions += len(transicoes)
+        self.devices_touched += tocados
         return True
 
     # ── estado para a tela ───────────────────────────────────────────────────
@@ -340,6 +389,22 @@ class MqttIngestor:
             "last_message_at": self.last_message_at,
             "avg_lag_seconds": round(self._lag_sum / self._lag_count, 2) if self._lag_count else None,
             "clock_outliers": self.clock_outliers,
+            "transitions": self.transitions,
+            "devices_touched": self.devices_touched,
+            "tracked_ramais": len(self.state),
+        }
+
+    def live(self) -> dict[str, Any]:
+        """Estado de cada ramal agora, direto da memória.
+
+        Não consulta o banco de propósito: a tela recarrega a cada 2 a 3 s e uma
+        varredura de tabela nesse ritmo custaria mais que a própria ingestão.
+        """
+        agora = _now()
+        return {
+            "generated_at": agora,
+            "extensions": self.state.snapshot(agora),
+            "counts": self.state.counts(),
         }
 
 
@@ -357,31 +422,39 @@ def _conn_row(state: str, detail: str) -> dict[str, Any]:
 def _build_row(
     broker_id: int, topic: str, payload: bytes, qos: int, retained: bool,
     max_payload_kb: int, now: datetime,
-) -> dict[str, Any]:
-    """Monta a linha do ledger preservando o corpo como ele chegou."""
+) -> tuple[dict[str, Any], list[ExtensionStatus]]:
+    """Linha do ledger (corpo verbatim) + os status reconhecidos no payload.
+
+    O parse sai daqui junto com a linha para não decodificar o mesmo JSON duas
+    vezes: uma para achar o ramal do índice, outra para normalizar o estado.
+    """
     tamanho = len(payload)
-    truncated = False
-    if max_payload_kb > 0 and tamanho > max_payload_kb * 1024:
-        payload = payload[: max_payload_kb * 1024]
-        truncated = True
     try:
         texto = payload.decode("utf-8")
         b64 = False
     except UnicodeDecodeError:
-        texto = base64.b64encode(payload).decode("ascii")
+        texto = ""
         b64 = True
 
-    ramal: str | None = None
-    event_at: datetime | None = None
-    if not b64:
-        for status in parse_extension_payload(texto):
-            ramal = status.ramal
-            event_at = status.event_at
-            break
+    # O reconhecimento roda sobre o corpo **inteiro**: truncar antes cortaria o
+    # JSON no meio e o ramal do payload se perderia justamente nas mensagens
+    # grandes. O corte só vale para o que vai ao disco.
+    statuses: list[ExtensionStatus] = [] if b64 else parse_extension_payload(texto)
+    ramal: str | None = statuses[0].ramal if statuses else None
+    event_at: datetime | None = statuses[0].event_at if statuses else None
     if ramal is None:
         ramal = ramal_from_topic(topic)
 
-    return {
+    truncated = False
+    if max_payload_kb > 0 and tamanho > max_payload_kb * 1024:
+        payload = payload[: max_payload_kb * 1024]
+        truncated = True
+    if b64:
+        texto = base64.b64encode(payload).decode("ascii")
+    elif truncated:
+        texto = payload.decode("utf-8", errors="ignore")
+
+    row = {
         "broker_id": broker_id,
         "received_at": now,
         "topic": topic[:512],
@@ -395,6 +468,7 @@ def _build_row(
         "event_at": event_at,
         "pinned": False,
     }
+    return row, statuses
 
 
 _ingestor: MqttIngestor | None = None

@@ -98,12 +98,69 @@ O reconhecimento de "status de ramal" é **pelo formato do payload**
 (`{"retorno": {...}}` com `status`/`ramal`), não pelo nome do tópico: renomear o
 tópico no publicador não quebra a integração.
 
+## Estado do ramal: o que "registrado" quer dizer
+
+O payload traz cinco status: `Disponivel`, `Indisponivel`, `Tocando`, `Ocupado`
+e `Discando`. Eles respondem duas perguntas diferentes, e misturá-las causa
+dano real:
+
+- **"o ramal está registrado no PBX?"** → `Device.logical_status`. É o campo que
+  `jobs/monitor_devices.py` usa como sinal de configuração perdida: telefone que
+  responde ping **e** está `unavailable` tem a config reaplicada.
+- **"o que o ramal está fazendo agora?"** → `Device.telephony_status` (novo).
+
+Só quem está registrado toca ou conversa. Portanto **apenas `Indisponivel`
+derruba `logical_status`**; `Tocando`, `Ocupado` e `Discando` continuam
+`available`. O mapeamento anterior (`disponivel` → available, resto →
+unavailable) fazia sentido enquanto o estado vinha só de uma coleta REST
+esporádica, mas com o MQTT, que reflete o instante, ele reaplicaria configuração
+em todo telefone que estivesse em ligação. A regra vive em
+`domain/mqtt/parser.logical_from_status` e é usada pelas **duas** fontes — o
+caminho REST (`upsert_from_uscall`) foi corrigido junto, porque o problema já
+existia lá em menor escala.
+
+Status que o publicador venha a inventar viram `desconhecido`: aparecem na tela
+e **não** mexem no estado lógico — inventar `unavailable` a partir de algo que
+não se entendeu seria pior do que não saber.
+
+## Transições, não amostras
+
+O publicador varre de 5 em 5 s e reenvia o estado atual de todo ramal (~90
+msg/min na captura de referência). Gravar cada amostra em `extension_status_events`
+repetiria a mesma linha milhares de vezes por dia sem acrescentar informação, e
+a poda teria de ser agressiva justamente onde a linha do tempo interessa. Só
+**mudanças** entram; a mensagem crua continua inteira no ledger e a transição
+aponta para ela (`message_id`), então o comprovante nunca depende dessa
+compressão.
+
+**Medição de 2026-08-21, contra o broker do cliente (243 ramais):** ~99% das
+mensagens viram transição — este publicador já fala só na mudança, então o filtro
+quase não corta *aqui*. Ele continua no desenho por dois motivos que não dependem
+de como o publicador se comporta: a sessão durável reentrega a fila acumulada
+quando o serviço volta (e reentrega não pode virar transição nova), e um
+publicador que varra periodicamente repetiria o mesmo estado indefinidamente.
+Consequência prática para dimensionamento: **não** assumir que
+`extension_status_events` é desprezível diante do ledger.
+
+A chave do "mesmo estado" é `(status, numero, uniqueid, duracao)`. `duracao` (o
+horário de início da chamada em curso, apesar do nome) entra porque duas
+chamadas seguidas para o mesmo número, sem passar por `Disponivel`, teriam
+status e número idênticos — e são duas chamadas.
+
+O estado corrente por ramal vive em memória no coletor e é reidratado do banco
+no boot; sem isso, o primeiro lote depois de um restart gravaria uma transição
+falsa para cada ramal. Falha de gravação desfaz o cache, senão a transição
+ficaria marcada como conhecida e nunca mais seria gravada.
+
 ## Consequências
 
 - Nova dependência: `paho-mqtt` (Python puro — sem risco no PyInstaller onefile;
   entra em `hiddenimports` do `.spec`).
 - Migration `0009_mqtt_ingest`: `mqtt_brokers`, `mqtt_messages`,
   `mqtt_connection_events`.
+- Migration `0010_extension_status_events`: `extension_status_events` +
+  `telephony_status`, `telephony_status_at`, `telephony_numero` e
+  `status_source` em `devices`.
 - A coleta REST (`collect_extensions`) **continua**: só ela traz IP/MAC, cria
   devices e sustenta ping, webhooks e o Configurador de Ramais. O payload MQTT
   não tem IP.

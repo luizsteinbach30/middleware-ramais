@@ -24,18 +24,23 @@ PAYLOAD = (
 
 
 def test_linha_guarda_o_payload_como_chegou() -> None:
-    row = _build_row(1, "v1/data/extenStatus/0119", PAYLOAD.encode(), 1, False, 0, AGORA)
+    row, statuses = _build_row(
+        1, "v1/data/extenStatus/0119", PAYLOAD.encode(), 1, False, 0, AGORA,
+    )
     assert row["payload"] == PAYLOAD  # verbatim: é o que serve de prova
     assert row["payload_bytes"] == len(PAYLOAD.encode())
     assert row["b64"] is False and row["truncated"] is False
     assert row["ramal"] == "0119"
     assert row["event_at"] is not None
     assert row["qos"] == 1 and row["pinned"] is False
+    # O parse viaja junto com a linha: a normalização não redecodifica o JSON.
+    assert [st.ramal for st in statuses] == ["0119"]
 
 
 def test_payload_binario_vira_base64_marcado() -> None:
     bruto = b"\x00\x01\x02\xff"
-    row = _build_row(1, "v1/bin", bruto, 0, False, 0, AGORA)
+    row, statuses = _build_row(1, "v1/bin", bruto, 0, False, 0, AGORA)
+    assert statuses == []
     assert row["b64"] is True
     assert base64.b64decode(row["payload"]) == bruto
     assert row["payload_bytes"] == 4
@@ -43,17 +48,17 @@ def test_payload_binario_vira_base64_marcado() -> None:
 
 def test_truncamento_marca_a_linha_e_preserva_o_tamanho_original() -> None:
     grande = b"x" * 3000
-    row = _build_row(1, "v1/grande", grande, 0, False, 1, AGORA)  # 1 KB
+    row, _ = _build_row(1, "v1/grande", grande, 0, False, 1, AGORA)  # 1 KB
     assert row["truncated"] is True
     assert len(row["payload"]) == 1024
     assert row["payload_bytes"] == 3000  # o tamanho real fica registrado
 
 
 def test_ramal_vem_do_topico_quando_o_payload_nao_e_reconhecido() -> None:
-    row = _build_row(1, "v1/data/extenStatus/0307", b"qualquer coisa", 0, False, 0, AGORA)
+    row, _ = _build_row(1, "v1/data/extenStatus/0307", b"qualquer coisa", 0, False, 0, AGORA)
     assert row["ramal"] == "0307"
     assert row["event_at"] is None
-    row = _build_row(1, "v1/data/cdr", b"qualquer coisa", 0, False, 0, AGORA)
+    row, _ = _build_row(1, "v1/data/cdr", b"qualquer coisa", 0, False, 0, AGORA)
     assert row["ramal"] is None
 
 
@@ -67,7 +72,7 @@ def test_fila_cheia_descarta_a_mais_antiga_e_conta(monkeypatch: pytest.MonkeyPat
     assert ing.received == 5
     assert ing.dropped == 2
     assert len(ing._buffer) == 3
-    assert [r["topic"] for r in ing._buffer] == ["v1/t/2", "v1/t/3", "v1/t/4"]
+    assert [row["topic"] for row, _ in ing._buffer] == ["v1/t/2", "v1/t/3", "v1/t/4"]
 
 
 def test_falha_de_gravacao_devolve_o_lote_para_a_fila() -> None:
@@ -136,3 +141,22 @@ def test_relogio_muito_fora_nao_envenena_a_media_mas_e_contado() -> None:
 def test_pedido_de_reconexao_sem_coletor_rodando_e_inofensivo() -> None:
     # A tela salva o broker mesmo com o coletor parado (ex.: testes de API).
     MqttIngestor().request_reload()
+
+
+def test_payload_grande_ainda_e_reconhecido_antes_do_corte() -> None:
+    """Truncar é decisão de disco, não de leitura.
+
+    Se o corte viesse antes do parse, o JSON quebraria no meio e a mensagem
+    perderia ramal e hora do evento — justamente as grandes, que são as que
+    mais interessam quando se procura um comprovante.
+    """
+    recheio = "z" * 4000
+    corpo = json.dumps(
+        {"retorno": {"0119": {"status": "Ocupado", "ramal": "0119",
+                              "data": "2026-08-19 13:51:01.256211",
+                              "numero": "800", "obs": recheio}}}
+    ).encode()
+    row, statuses = _build_row(1, "v1/data/extenStatus/0119", corpo, 0, False, 1, AGORA)
+    assert row["truncated"] is True
+    assert row["ramal"] == "0119" and row["event_at"] is not None
+    assert [st.status for st in statuses] == ["Ocupado"]

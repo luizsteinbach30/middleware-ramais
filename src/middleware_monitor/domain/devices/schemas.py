@@ -17,6 +17,14 @@ class DeviceOut(BaseModel):
     mac: str | None
     model: str | None
     logical_status: str
+    # Estado de telefonia detalhado, vindo do MQTT em tempo real (v2.8.0). Vive
+    # separado de `logical_status`, que responde só "está registrado no PBX?".
+    telephony_status: str = "unknown"
+    telephony_status_at: datetime | None = None
+    telephony_numero: str | None = None
+    # "mqtt" (instantâneo) ou "uscall" (ciclo de coleta REST) — a tela mostra a
+    # origem para não deixar dúvida sobre a idade do dado.
+    status_source: str = "unknown"
     network_status: str
     latency_ms: int | None
     last_seen_at: datetime | None
@@ -29,7 +37,9 @@ class DeviceOut(BaseModel):
     extension_environment_id: str | None = None
     extension_environment_nome: str | None = None
 
-    @field_serializer("last_seen_at", "last_ping_at", when_used="json-unless-none")
+    @field_serializer(
+        "last_seen_at", "last_ping_at", "telephony_status_at", when_used="json-unless-none",
+    )
     def _ser_dt(self, value: datetime | None) -> str | None:
         return iso_utc(value)
 
