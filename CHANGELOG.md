@@ -2,6 +2,57 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.8.1] — 2026-08-21
+
+### Fixed
+- **A verificação de atualização falhava em toda máquina de cliente.** O log
+  mostrava `CERTIFICATE_VERIFY_FAILED — unable to get local issuer certificate`
+  a cada tentativa, e o efeito era pior do que parece: o app **nunca chegava a
+  descobrir** que existia versão nova, então nenhuma correção chegava sozinha ao
+  cliente. Causa: `desktop.py` verificava o release com `urllib.request.urlopen`
+  **sem contexto TLS**, e sem contexto o Python cai no armazenamento de
+  certificados do Windows, onde costuma faltar o emissor intermediário da cadeia
+  da API do GitHub. Só o updater falhava porque só ele usa `urlopen` — todo o
+  resto do app fala HTTPS por `httpx`, que já usa o `certifi`. O `cacert.pem`
+  sempre esteve dentro do `.exe`; o updater é que não o usava. Agora a
+  verificação usa a cadeia do `certifi` (que passou a ser dependência explícita),
+  com a checagem de certificado **ligada** — o objetivo é usar a âncora certa,
+  não afrouxar a validação. Sem `certifi` disponível, cai no contexto padrão em
+  vez de derrubar o app.
+- **Sessões penduradas no broker EMQX.** O coletor aparecia desconectando e
+  abrindo conexão nova, deixando sessão fechada acumulada. Duas causas
+  independentes:
+  - **Encerramento sujo** — `disconnect()` do paho só *enfileira* o pacote; quem
+    o escreve no socket é a thread de rede. O código chamava `loop_stop()` na
+    sequência e matava essa thread antes do DISCONNECT sair, então o broker via a
+    conexão cair de forma anormal. Com `clean_session=False` isso é caro: o EMQX
+    mantém a sessão viva esperando o cliente voltar, guardando fila. Agora espera
+    a confirmação, com teto de 1,5 s — broker mudo não pode travar a parada do
+    serviço nem a tela de configuração.
+  - **`client_id` volátil** — quando a linha do broker estava sem identificador,
+    um novo era gerado a cada conexão e descartado, e cada conexão entrava no
+    broker como um cliente diferente. Com sessão durável, o EMQX guardava uma
+    sessão (com fila) para cada um. Agora é gerado uma vez e **gravado**; sessão
+    durável exige identificador estável.
+  - Além disso, **reconexão em ciclo passa a ser denunciada**. Em MQTT 3.1.1 o
+    broker não diz por que derrubou — só fecha o socket —, então "rede ruim" e
+    "duas instâncias disputando o mesmo `client_id`" chegam idênticos ao
+    coletor. A única coisa que separa os dois é a frequência: 5 quedas em 2 min
+    viram log de erro nomeando a causa provável, em vez de o operador só ver o
+    coletor piscando.
+
+  **Limite conhecido:** isto impede órfãos novos, mas **não remove as sessões que
+  já estão penduradas** no broker, nem ajuda quando o processo é morto à força
+  (aí o DISCONNECT não sai). Sessão MQTT 3.1.1 não expira sozinha — as antigas
+  precisam ser descartadas no painel do EMQX.
+
+### Added
+- `docs/REQUISITOS.md` §15 — roadmap vivo das pendências em aberto, com o
+  diagnóstico do que ficou de fora deste hotfix (inclusive o `TemplateNotFound`
+  do `system_updates.html`, que **não** é omissão de empacotamento: o arquivo
+  está no bundle da v2.7.2 e da v2.8.0, verificado no índice dos executáveis
+  publicados).
+
 ## [2.8.0] — 2026-08-21
 
 ### Added
