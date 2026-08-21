@@ -2,6 +2,92 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.8.0] — 2026-08-21
+
+### Added
+- **Coletor de mensagens MQTT (EMQX) — registro auditável dos envios.** O
+  serviço que publica o status dos ramais não registra os próprios envios; o
+  middleware passa a assinar o broker e a guardar cada mensagem como ela
+  chegou, com a hora exata de recebimento. É de onde sai o comprovante de que
+  a mensagem foi publicada, no tópico certo, na hora certa. Sem árvore de
+  arquivos: tudo em SQLite, com retenção configurável (padrão 7 dias) e teto
+  opcional por espaço — e **mensagem fixada como evidência nunca é apagada**.
+  - **Configuração assistida:** o operador digita só o endereço
+    (`emqx.exemplo.com`, `host:8883`, `ssl://`, `ws://`, `https://` ou até a
+    URL do painel do EMQX). Porta, transporte e TLS são **descobertos testando
+    a rede** — só vale endpoint que responde CONNACK de MQTT. Colar a URL do
+    painel (`:18083`) é reconhecido e o sistema aponta a porta correta.
+  - **Certificado auto-assinado** deixa de ser um "ignorar TLS": a tela mostra
+    emissor, validade e impressão digital SHA-256, e o operador confia naquele
+    certificado — que passa a ser conferido a cada conexão.
+  - **Tópicos são escolhidos, não digitados:** o teste escuta o broker por
+    alguns segundos e lista os ramos existentes com contagem. Quando a ACL do
+    broker nega `#`, tenta ramos mais específicos e diz na tela o que foi
+    recusado e onde escutou. O reconhecimento de status de ramal é pelo
+    formato do payload, não pelo nome do tópico.
+  - **Sessão durável** (`clean_session=False`, QoS 1, `client_id` estável): o
+    broker guarda as mensagens enquanto o serviço está parado e as entrega na
+    volta — reinício não vira buraco no registro.
+  - **Prova de cobertura:** o histórico de conexão do coletor fica registrado,
+    então "não há mensagem no período" passa a distinguir "ninguém publicou" de
+    "não estávamos ouvindo". Reinício sem encerramento limpo marca o período
+    como não comprovado, em vez de assumir cobertura.
+  - **Comprovante em texto** por mensagem (`/api/mqtt/messages/{id}/comprovante`)
+    com hora local e UTC, tópico, QoS, broker e o payload como recebido.
+  - **Tela "Mensagens" (menu Coletor MQTT, abaixo do Configurador de Ramais)** —
+    consulta por período (atalhos de 15 min a 7 dias ou intervalo à mão),
+    tópico com curingas, ramal, texto no conteúdo e "só evidências"; modo ao
+    vivo; detalhe com o payload cru e o formatado lado a lado; fixar evidência
+    e baixar comprovante. A faixa de cobertura acompanha todo resultado, para
+    que lista vazia signifique alguma coisa.
+  - API `/api/mqtt/*` (brokers, discover, sniff, status, messages, coverage) e
+    seção "Coletor de mensagens MQTT" na tela de Configuração.
+  - Migration `0009_mqtt_ingest`; nova dependência `paho-mqtt`.
+  - Ver `docs/ADRs/0005-mqtt-ledger.md`.
+- **Estado dos ramais em tempo real a partir do MQTT.** O que chega do broker
+  deixa de ser só linha no ledger e vira informação operacional: cada mudança de
+  estado do ramal é normalizada em `extension_status_events` e refletida no
+  telefone na hora, em vez de esperar o ciclo de coleta REST (mínimo 60 s).
+  - **Só transições são gravadas** — repetição do mesmo estado não vira linha. A
+    mensagem crua continua inteira no ledger e a transição aponta para ela, então
+    o comprovante nunca se perde. Medido no broker do cliente (243 ramais): esse
+    publicador já fala apenas na mudança, então ali o filtro quase não corta.
+    Ele segue necessário por dois motivos independentes do publicador: a sessão
+    durável reentrega a fila acumulada quando o serviço volta, e reentrega não
+    pode virar transição nova; e publicador que varre periodicamente repetiria o
+    mesmo estado sem parar.
+  - **Tela "Painel ao vivo" (`/mqtt-painel`, menu Coletor MQTT).** Contadores por
+    estado (clicáveis, filtram a grade), grade dos ramais com número da outra
+    ponta e tempo no estado, fita das últimas transições e saúde da ingestão
+    (msg/min, fila, descartes, atraso do PBX, última mensagem). Ramal que parou
+    de ser publicado aparece apagado, com "sem msg há X" — grade toda verde de
+    coletor parado seria pior que tela vazia.
+  - Retenção própria das transições (`extension_event_retention_days`, padrão 7
+    dias), configurável na tela.
+  - Migration `0010_extension_status_events` (tabela + colunas
+    `telephony_status`, `telephony_numero` e `status_source` em `devices`).
+  - API `/api/mqtt/live`.
+
+### Fixed
+- **Ambiente Yealink quebrava no `.exe` (não no código-fonte).** O empacotador
+  levava só os templates `*.xml` dos fabricantes, e o Yealink usa
+  `yealink_template.cfg` (formato chave=valor, não XML). No executável o arquivo
+  simplesmente não existia, então **qualquer** operação que renderize a config de
+  um ambiente Yealink — abrir a planilha, salvar, aplicar — estourava
+  `FileNotFoundError` e virava HTTP 500. Rodando do fonte funcionava, o que
+  escondia o problema. O empacotador passa a casar por `*_template.*`, para o
+  próximo fabricante que chegar com outra extensão não repetir a história.
+- **Ramal em conversa não é mais tratado como configuração perdida.** O estado
+  lógico do device (`logical_status`) era `available` só quando o PBX dizia
+  `Disponivel` — qualquer outro status, inclusive `Tocando`, `Ocupado` e
+  `Discando`, virava `unavailable`. Como `jobs/monitor_devices` usa exatamente
+  "responde ping **e** está `unavailable`" como sinal de que a configuração do
+  telefone sumiu, um ramal coletado no meio de uma ligação podia disparar
+  reaplicação de configuração **durante a chamada**. Agora só `Indisponivel`
+  derruba o estado lógico: quem toca ou fala está registrado. O estado de
+  telefonia detalhado passou a viver em `Device.telephony_status`, separado. A
+  correção vale para as duas fontes — MQTT e coleta REST.
+
 ## [2.7.2] — 2026-08-04
 
 ### Fixed

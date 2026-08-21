@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Painel ao vivo — Middleware Monitor{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center gap-4 flex-wrap">
+    <div class="flex-1 min-w-0">
+      <h1 class="text-lg font-semibold text-gray-100">Painel ao vivo</h1>
+      <p class="text-xs text-gray-400 mt-0.5">O que cada ramal está fazendo agora, direto do broker — sem esperar o ciclo de coleta</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="ml-collector" class="px-2.5 py-1 rounded-full text-[11px] font-medium bg-gray-600/30 text-gray-400 ring-1 ring-inset ring-gray-600 whitespace-nowrap">coletor: —</span>
+      <button id="ml-pause" class="inline-flex items-center gap-1.5 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" id="ml-pause-dot"></span><span id="ml-pause-label">Pausar</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="px-6 py-6 space-y-4">
+  <!-- Contadores por estado. Clicar filtra a grade: a pergunta de operação
+       quase sempre é "quem está X agora", não "como está tudo". -->
+  <div id="ml-counters" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3"></div>
+
+  <!-- Saúde da ingestão: a grade só vale se o coletor estiver mesmo ouvindo. -->
+  <div id="ml-health" class="bg-gray-800 ring-1 ring-gray-700 rounded-xl px-4 py-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-4 gap-y-3 text-xs"></div>
+
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+    <div class="xl:col-span-2 bg-gray-800 ring-1 ring-gray-700 rounded-xl">
+      <div class="px-4 py-3 border-b border-gray-700 flex items-center gap-3 flex-wrap">
+        <h2 class="text-sm font-semibold text-gray-200 flex-1">Ramais</h2>
+        <input id="ml-busca" maxlength="64" placeholder="filtrar ramal ou número" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-1.5 text-xs text-gray-100 font-mono w-56"/>
+        <span id="ml-grid-count" class="text-[11px] text-gray-500">—</span>
+      </div>
+      <div id="ml-grid" class="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
+        <div class="col-span-full py-10 text-center text-sm text-gray-500">Carregando…</div>
+      </div>
+    </div>
+
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl">
+      <div class="px-4 py-3 border-b border-gray-700 flex items-center gap-2">
+        <h2 class="text-sm font-semibold text-gray-200 flex-1">Últimas transições</h2>
+        <span class="text-[11px] text-gray-500">só o que mudou</span>
+      </div>
+      <div id="ml-fita" class="divide-y divide-gray-800 max-h-[34rem] overflow-auto"></div>
+    </div>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/mqtt_live.js"></script>
+{% endblock %}

@@ -37,15 +37,21 @@ alembic_ini = PROJECT_ROOT / "alembic.ini"
 if alembic_ini.exists():
     datas.append((str(alembic_ini), "."))
 
-# Vendor config templates (*.xml). These are read at runtime via
-# ``Path(__file__).parent / "<vendor>_template.xml"`` by the extension
+# Vendor config templates. These are read at runtime via
+# ``Path(__file__).parent / "<vendor>_template.<ext>"`` by the extension
 # configurator vendors. PyInstaller only pulls in .py modules, so without
 # this every config render (compute hash/status, save planilha, apply) blows
 # up with FileNotFoundError -> HTTP 500. Bundle them next to their package.
+#
+# The glob used to be "*.xml" only, which silently left out
+# ``yealink_template.cfg`` (Yealink ships key=value, not XML) -- every Yealink
+# environment broke in the packaged .exe while working fine from source. Match
+# on the template suffix instead of guessing the format, so the next vendor
+# that arrives with its own extension does not repeat this.
 _VENDORS_REL = "src/middleware_monitor/integrations/extension_configurator/vendors"
 vendors_dir = PROJECT_ROOT / _VENDORS_REL
-for xml in vendors_dir.glob("*.xml"):
-    datas.append((str(xml), _VENDORS_REL.removeprefix("src/")))
+for tpl in sorted(vendors_dir.glob("*_template.*")):
+    datas.append((str(tpl), _VENDORS_REL.removeprefix("src/")))
 
 # ---- hidden imports -------------------------------------------------------
 
@@ -73,6 +79,14 @@ hiddenimports = [
     "apscheduler.triggers.interval",
     "apscheduler.triggers.cron",
     "apscheduler.jobstores.memory",
+    # Cliente MQTT (paho) — Python puro, mas o backend de websocket e os
+    # submodulos sao resolvidos em runtime.
+    "paho.mqtt",
+    "paho.mqtt.client",
+    "paho.mqtt.packettypes",
+    "paho.mqtt.reasoncodes",
+    "paho.mqtt.properties",
+    "paho.mqtt.subscribeoptions",
     # SQLAlchemy dialects
     "sqlalchemy.dialects.sqlite",
     "sqlalchemy.dialects.sqlite.pysqlite",
@@ -95,6 +109,7 @@ hiddenimports = [
     "middleware_monitor.api.dashboard",
     "middleware_monitor.api.devices",
     "middleware_monitor.api.logs",
+    "middleware_monitor.api.mqtt",
     "middleware_monitor.api.system",
     "middleware_monitor.api.webhooks",
     "middleware_monitor.web.pages",
@@ -112,6 +127,14 @@ hiddenimports = [
     "middleware_monitor.integrations.network.factory",
     "middleware_monitor.integrations.network.base",
     "middleware_monitor.integrations.uscall_client",
+    "middleware_monitor.integrations.mqtt_client",
+    "middleware_monitor.domain.mqtt.address",
+    "middleware_monitor.domain.mqtt.coverage",
+    "middleware_monitor.domain.mqtt.discovery",
+    "middleware_monitor.domain.mqtt.parser",
+    "middleware_monitor.domain.mqtt.repository",
+    "middleware_monitor.domain.mqtt.schemas",
+    "middleware_monitor.domain.mqtt.service",
     "middleware_monitor.domain.auth.service",
     "middleware_monitor.domain.config.repository",
     "middleware_monitor.domain.config.schemas",

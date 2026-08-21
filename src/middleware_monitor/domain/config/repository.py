@@ -101,6 +101,11 @@ def load_config(db: DBSession) -> AppConfigOut:
     out.webhook_log_retention_days = int(_get(rows, "webhook_log_retention_days", "30"))
     out.collection_retention_days = int(_get(rows, "collection_retention_days", "90"))
     out.system_log_retention_days = int(_get(rows, "system_log_retention_days", "14"))
+    out.mqtt_message_retention_days = int(_get(rows, "mqtt_message_retention_days", "7"))
+    out.mqtt_message_max_mb = int(_get(rows, "mqtt_message_max_mb", "0"))
+    out.extension_event_retention_days = int(
+        _get(rows, "extension_event_retention_days", "7")
+    )
     out.webhook_timeout_seconds = int(_get(rows, "webhook_timeout_seconds", "10"))
 
     out.auto_reapply_on_recovery = _get(rows, "auto_reapply_on_recovery", "0") in (
@@ -156,6 +161,9 @@ def update_config(db: DBSession, payload: AppConfigUpdate, *, user_id: int | Non
         "webhook_log_retention_days",
         "collection_retention_days",
         "system_log_retention_days",
+        "mqtt_message_retention_days",
+        "mqtt_message_max_mb",
+        "extension_event_retention_days",
         "webhook_timeout_seconds",
         "auto_reapply_on_recovery",
         "auto_reapply_debounce_minutes",

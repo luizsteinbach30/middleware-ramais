@@ -14,6 +14,7 @@ from middleware_monitor.core.models import (
     ExtensionLine,
     LineReapplyEvent,
 )
+from middleware_monitor.domain.mqtt.parser import logical_from_status, normalize_status
 
 
 def _now() -> datetime:
@@ -194,8 +195,13 @@ def upsert_from_uscall(
         if not name:
             continue
         ip = (ext.get("ip") or "").strip() or None
-        status_raw = (ext.get("status") or "").strip().lower()
-        logical = "available" if status_raw == "disponivel" else "unavailable"
+        status_raw = (ext.get("status") or "").strip()
+        # "Tocando"/"Ocupado"/"Discando" significam ramal **registrado** e em uso.
+        # Marcá-los `unavailable` faria `jobs/monitor_devices.py` entender "config
+        # perdida" e reaplicar a configuração no telefone durante a ligação — ver
+        # `domain/mqtt/parser.logical_from_status`, que é a mesma regra usada pelo
+        # caminho MQTT para as duas fontes não contarem histórias diferentes.
+        logical = logical_from_status(normalize_status(status_raw)) or "unavailable"
         server_id = by_server.get(name)
 
         existing = db.scalar(select(Device).where(Device.name == name))
@@ -205,6 +211,7 @@ def upsert_from_uscall(
                     name=name,
                     ip=ip,
                     logical_status=logical,
+                    status_source="uscall",
                     network_status="unknown",
                     uscall_server_id=server_id,
                     last_seen_at=now,
@@ -220,6 +227,7 @@ def upsert_from_uscall(
             existing.ip = ip
             ip_changed_devices.append(existing)
         existing.logical_status = logical
+        existing.status_source = "uscall"
         if server_id is not None and existing.uscall_server_id != server_id:
             existing.uscall_server_id = server_id
         if logical == "available":

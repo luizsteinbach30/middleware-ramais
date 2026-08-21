@@ -19,6 +19,8 @@ from middleware_monitor.core.models import (
     WebhookEvent,
 )
 from middleware_monitor.domain.config.repository import load_config
+from middleware_monitor.domain.mqtt import realtime as mqtt_realtime
+from middleware_monitor.domain.mqtt import repository as mqtt_repo
 
 log = get_logger("retention")
 
@@ -44,12 +46,24 @@ async def run_retention() -> None:
         cutoff_collections = _now() - timedelta(days=cfg.collection_retention_days)
         cutoff_syslogs = _now() - timedelta(days=cfg.system_log_retention_days)
         cutoff_login = _now() - timedelta(days=14)
+        cutoff_mqtt = _now() - timedelta(days=cfg.mqtt_message_retention_days)
+        # A prova de cobertura e minuscula em disco e so vale acompanhada de um
+        # historico longo: guarda-se por 1 ano, independente do ledger.
+        cutoff_mqtt_conn = _now() - timedelta(days=365)
+        cutoff_ext_events = _now() - timedelta(days=cfg.extension_event_retention_days)
 
         a = _delete_count(db, delete(DevicePing).where(DevicePing.timestamp < cutoff_pings))
         b = _delete_count(db, delete(WebhookEvent).where(WebhookEvent.timestamp < cutoff_webhooks))
         c = _delete_count(db, delete(Collection).where(Collection.collected_at < cutoff_collections))
         d = _delete_count(db, delete(SystemLog).where(SystemLog.timestamp < cutoff_syslogs))
         e = _delete_count(db, delete(LoginAttempt).where(LoginAttempt.timestamp < cutoff_login))
+
+        # Ledger MQTT: por idade e, se houver teto, por volume de payload.
+        # Mensagens fixadas como evidencia nunca sao apagadas (ver repository).
+        f = mqtt_repo.purge_messages_by_age(db, cutoff_mqtt)
+        g = mqtt_repo.purge_messages_by_size(db, cfg.mqtt_message_max_mb * 1024 * 1024)
+        h = mqtt_repo.purge_connection_events(db, cutoff_mqtt_conn)
+        i = mqtt_realtime.purge_status_events(db, cutoff_ext_events)
         db.commit()
 
     log.info(
@@ -59,4 +73,7 @@ async def run_retention() -> None:
         collections=c,
         system_logs=d,
         login_attempts=e,
+        mqtt_messages=f + g,
+        mqtt_connection_events=h,
+        extension_status_events=i,
     )

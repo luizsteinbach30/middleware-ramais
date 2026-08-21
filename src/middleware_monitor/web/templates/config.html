@@ -153,6 +153,82 @@
       <div id="auto-link-result" class="hidden mt-3 rounded-lg px-3 py-2 text-xs"></div>
     </div>
   </div>
+  <!-- Coletor MQTT (v2.8.0) — configuracao assistida: o operador digita o
+       endereco e o sistema descobre porta, transporte, TLS e topicos. -->
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+    <div class="flex items-start justify-between gap-4 mb-4">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-100">Coletor de mensagens MQTT</h3>
+        <p class="text-xs text-gray-500 mt-0.5">Registra em disco tudo o que o broker publica, com a hora exata de recebimento — é daqui que sai o comprovante de que a mensagem foi enviada. Informe só o endereço: porta, TLS e tópicos são descobertos automaticamente.</p>
+      </div>
+      <div id="mq-state" class="shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium bg-gray-600/30 text-gray-400 ring-1 ring-inset ring-gray-600 whitespace-nowrap">carregando…</div>
+    </div>
+
+    <div id="mq-list" class="space-y-3"></div>
+
+    <div id="mq-wizard" class="hidden mt-4 rounded-lg bg-gray-900/40 ring-1 ring-gray-700 p-4 space-y-4">
+      <div class="grid md:grid-cols-[1fr_auto] gap-3 items-end">
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold text-gray-300">Endereço do broker <span class="text-red-400">*</span></span>
+          <input id="mq-address" maxlength="255" placeholder="emqx.suaempresa.com" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono"/>
+          <span class="text-[11px] text-gray-500">Pode colar como estiver: só o host, com porta, com <code>ssl://</code>, <code>ws://</code> ou até a URL do painel do EMQX. A porta só é usada se você digitar uma.</span>
+        </label>
+        <button id="mq-discover" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-2 text-xs whitespace-nowrap">Descobrir conexão</button>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-3">
+        <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Usuário <span class="font-normal text-gray-500">se o broker exigir</span></span>
+          <input id="mq-user" maxlength="128" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+        <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Senha <span class="font-normal text-gray-500">sensível</span></span>
+          <input id="mq-pass" type="password" maxlength="255" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono"/></label>
+      </div>
+
+      <div id="mq-report" class="hidden rounded-lg bg-gray-900 ring-1 ring-gray-700 p-3 text-xs font-mono text-gray-300 whitespace-pre-wrap"></div>
+      <div id="mq-cert" class="hidden rounded-lg bg-amber-500/10 ring-1 ring-amber-500/30 p-3 text-xs text-amber-200 space-y-2"></div>
+
+      <div id="mq-topics-box" class="hidden space-y-2">
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-xs font-semibold text-gray-300">Tópicos a gravar</span>
+          <button id="mq-sniff" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Procurar tópicos no broker</button>
+        </div>
+        <div id="mq-topics" class="space-y-2 text-xs text-gray-400">Clique em "Procurar tópicos" para ver o que existe no broker e escolher — ou digite o filtro abaixo.</div>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-[11px] text-gray-500">Filtro manual (curingas <code>+</code> e <code>#</code>), um por linha</span>
+          <textarea id="mq-topics-manual" rows="2" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-xs text-gray-100 font-mono" placeholder="v1/data/#"></textarea>
+        </label>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-3">
+        <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Nome <span class="font-normal text-gray-500">como aparece nas telas</span></span>
+          <input id="mq-nome" maxlength="64" placeholder="Broker EMQX" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
+        <label class="flex items-center gap-2 text-sm text-gray-200 cursor-pointer mt-6">
+          <input type="checkbox" id="mq-enabled" checked class="accent-blue-500 w-4 h-4"/> coletor ligado
+        </label>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button id="mq-cancel" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Cancelar</button>
+        <button id="mq-save" disabled class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-2.5 py-1.5 text-xs disabled:opacity-50 disabled:cursor-not-allowed">Salvar broker</button>
+      </div>
+    </div>
+
+    <div class="mt-4">
+      <button id="mq-add" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">+ Configurar broker</button>
+    </div>
+
+    <div class="mt-5 pt-4 border-t border-gray-700/60 grid md:grid-cols-3 gap-4">
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Guardar mensagens por <span class="font-normal text-gray-500">dias</span></span>
+        <input id="f-mqtt_message_retention_days" type="number" min="1" max="365" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/>
+        <span class="text-[11px] text-gray-500">Define até quando dá para provar um envio. Mensagens fixadas como evidência nunca são apagadas.</span></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Limite de espaço <span class="font-normal text-gray-500">MB — 0 = sem limite</span></span>
+        <input id="f-mqtt_message_max_mb" type="number" min="0" max="1000000" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/>
+        <span id="mq-usage" class="text-[11px] text-gray-500">—</span></label>
+      <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">Guardar transições por <span class="font-normal text-gray-500">dias</span></span>
+        <input id="f-extension_event_retention_days" type="number" min="1" max="365" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/>
+        <span class="text-[11px] text-gray-500">Só as mudanças de estado de cada ramal — é o que alimenta o <a class="underline" href="/mqtt-painel">painel ao vivo</a> e a linha do tempo. Cada linha é pequena (sem o corpo da mensagem), mas o número delas acompanha o movimento do PBX.</span></label>
+    </div>
+  </div>
+
   <div id="webhooks-section" class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
     <h3 class="text-sm font-semibold text-gray-100 mb-4">Webhooks</h3>
     <div id="webhooks-list" class="space-y-3"></div>
@@ -170,4 +246,5 @@
   </div>
 </div>
 <script type="module" src="/static/js/pages/config.js"></script>
+<script type="module" src="/static/js/pages/config_mqtt.js"></script>
 {% endblock %}

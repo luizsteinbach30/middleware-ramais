@@ -72,6 +72,15 @@ class AppConfigOut(BaseModel):
     collection_retention_days: int = 90
     system_log_retention_days: int = 14
 
+    # Ledger MQTT (v2.8.0). O limite por espaco vale sobre o volume de payload
+    # gravado; 0 = sem limite. Mensagens fixadas como evidencia sao imunes.
+    mqtt_message_retention_days: int = 7
+    mqtt_message_max_mb: int = 0
+    # Transicoes normalizadas dos ramais: alimentam o painel ao vivo e a linha
+    # do tempo. Linha pequena (sem corpo da mensagem), mas o volume acompanha o
+    # movimento do PBX — nao presuma que e desprezivel diante do ledger.
+    extension_event_retention_days: int = 7
+
     webhook_timeout_seconds: int = 10
 
     auto_reapply_on_recovery: bool = False
@@ -100,6 +109,9 @@ class AppConfigUpdate(BaseModel):
     webhook_log_retention_days: int | None = Field(default=None, ge=1, le=365)
     collection_retention_days: int | None = Field(default=None, ge=1, le=365)
     system_log_retention_days: int | None = Field(default=None, ge=1, le=365)
+    mqtt_message_retention_days: int | None = Field(default=None, ge=1, le=365)
+    mqtt_message_max_mb: int | None = Field(default=None, ge=0, le=1_000_000)
+    extension_event_retention_days: int | None = Field(default=None, ge=1, le=365)
     webhook_timeout_seconds: int | None = Field(default=None, ge=1, le=120)
 
     auto_reapply_on_recovery: bool | None = None

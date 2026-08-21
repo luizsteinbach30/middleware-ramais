@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Mensagens MQTT — Middleware Monitor{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center gap-4 flex-wrap">
+    <div class="flex-1 min-w-0">
+      <h1 class="text-lg font-semibold text-gray-100">Mensagens MQTT</h1>
+      <p class="text-xs text-gray-400 mt-0.5">Tudo o que o broker publicou, com a hora de recebimento — a prova de que o envio ocorreu</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="mm-collector" class="px-2.5 py-1 rounded-full text-[11px] font-medium bg-gray-600/30 text-gray-400 ring-1 ring-inset ring-gray-600 whitespace-nowrap">coletor: —</span>
+      <button id="mm-live" class="inline-flex items-center gap-1.5 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">
+        <span class="w-1.5 h-1.5 rounded-full bg-gray-500" id="mm-live-dot"></span><span id="mm-live-label">Ao vivo</span>
+      </button>
+      <button id="mm-refresh" class="inline-flex items-center gap-1.5 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs"><span data-icon="refresh"></span>Atualizar</button>
+    </div>
+  </div>
+</div>
+
+<div class="px-6 py-6 space-y-4">
+  <!-- Filtros: período em atalhos porque a busca real quase sempre é "o que
+       aconteceu por volta de tal hora". -->
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4 space-y-3">
+    <div class="flex items-center gap-2 flex-wrap">
+      <span class="text-xs font-semibold text-gray-300 mr-1">Período</span>
+      <div class="inline-flex rounded-lg ring-1 ring-inset ring-gray-700 overflow-hidden" id="mm-presets">
+        <button data-last="15m" class="px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-700/60">15 min</button>
+        <button data-last="1h" class="px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-700/60 border-l border-gray-700">1 hora</button>
+        <button data-last="24h" class="px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-700/60 border-l border-gray-700">24 horas</button>
+        <button data-last="7d" class="px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-700/60 border-l border-gray-700">7 dias</button>
+        <button data-last="" class="px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-700/60 border-l border-gray-700">Escolher…</button>
+      </div>
+      <div id="mm-range" class="hidden flex items-center gap-2">
+        <input id="mm-since" type="datetime-local" step="1" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-100"/>
+        <span class="text-xs text-gray-500">até</span>
+        <input id="mm-until" type="datetime-local" step="1" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2.5 py-1.5 text-xs text-gray-100"/>
+      </div>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+      <label class="flex flex-col gap-1.5">
+        <span class="text-xs font-semibold text-gray-300">Tópico <span class="font-normal text-gray-500">um trecho basta</span></span>
+        <input id="mm-topic" list="mm-topic-sugestoes" placeholder="extenStatus" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono"/>
+        <datalist id="mm-topic-sugestoes"></datalist>
+      </label>
+      <label class="flex flex-col gap-1.5">
+        <span class="text-xs font-semibold text-gray-300">Ramal <span class="font-normal text-gray-500">um trecho basta</span></span>
+        <input id="mm-ramal" maxlength="64" placeholder="99" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 font-mono"/>
+      </label>
+      <label class="flex flex-col gap-1.5">
+        <span class="text-xs font-semibold text-gray-300">Texto no conteúdo</span>
+        <input id="mm-contains" maxlength="200" placeholder="Ocupado" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/>
+      </label>
+      <div class="flex items-end gap-2">
+        <label class="flex items-center gap-2 text-sm text-gray-200 cursor-pointer flex-1 pb-2">
+          <input type="checkbox" id="mm-pinned" class="accent-blue-500 w-4 h-4"/> só evidências
+        </label>
+        <button id="mm-clear" class="inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-2 text-xs">Limpar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cobertura: sem ela, "não achei nada" não distingue "ninguém publicou" de
+       "o coletor estava fora do ar". -->
+  <div id="mm-coverage" class="rounded-xl px-4 py-3 text-xs ring-1 ring-inset bg-gray-800 ring-gray-700 text-gray-400">
+    Verificando a cobertura do período…
+  </div>
+
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider">
+        <tr>
+          <th class="text-left px-4 py-3 font-semibold w-44">Recebida em</th>
+          <th class="text-left px-4 py-3 font-semibold">Tópico</th>
+          <th class="text-left px-4 py-3 font-semibold w-24">Ramal</th>
+          <th class="text-left px-4 py-3 font-semibold">Conteúdo</th>
+          <th class="text-right px-4 py-3 font-semibold w-28">Ações</th>
+        </tr>
+      </thead>
+      <tbody id="mm-tbody" class="divide-y divide-gray-800"></tbody>
+    </table>
+    <div class="px-4 py-3 border-t border-gray-800 flex items-center justify-between gap-3 text-xs text-gray-500">
+      <span id="mm-count">—</span>
+      <button id="mm-more" class="hidden inline-flex items-center gap-2 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Carregar mais antigas</button>
+    </div>
+  </div>
+</div>
+
+<!-- Detalhe: o payload cru é o que serve de prova; o formatado é só conforto. -->
+<div id="mm-modal" class="hidden fixed inset-0 bg-black/60 z-50 grid place-items-center px-4">
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl max-w-3xl w-full" onclick="event.stopPropagation()">
+    <div class="px-5 py-4 border-b border-gray-700 flex items-start justify-between gap-4">
+      <div class="min-w-0">
+        <h3 class="text-sm font-semibold text-gray-100">Mensagem recebida</h3>
+        <div id="mm-modal-meta" class="text-xs text-gray-500 mt-1 space-y-0.5 font-mono"></div>
+      </div>
+      <div class="flex items-center gap-1.5 flex-shrink-0">
+        <button id="mm-modal-pin" class="inline-flex items-center gap-1.5 rounded-md font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs"><span data-icon="shield"></span><span id="mm-modal-pin-label">Fixar evidência</span></button>
+        <button id="mm-modal-copy" class="inline-flex items-center gap-1.5 rounded-md font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs"><span data-icon="copy"></span>Copiar</button>
+        <button id="mm-modal-download" class="inline-flex items-center gap-1.5 rounded-md font-medium bg-blue-500 hover:bg-blue-400 text-white px-2.5 py-1.5 text-xs"><span data-icon="download"></span>Comprovante</button>
+        <button data-close class="text-gray-400 hover:text-gray-100 px-2 text-lg leading-none">×</button>
+      </div>
+    </div>
+    <div class="px-5 py-3 border-b border-gray-700 flex items-center gap-2">
+      <button data-tab="pretty" class="px-2.5 py-1 rounded-md text-xs font-medium bg-blue-500/10 text-blue-300 ring-1 ring-inset ring-blue-500/30">Formatado</button>
+      <button data-tab="raw" class="px-2.5 py-1 rounded-md text-xs font-medium text-gray-400 hover:text-gray-100">Como recebido</button>
+    </div>
+    <pre id="mm-modal-content" class="bg-gray-950 px-5 py-4 text-xs font-mono text-gray-300 max-h-[26rem] overflow-auto rounded-b-xl whitespace-pre-wrap break-all"></pre>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/mqtt_messages.js"></script>
+{% endblock %}

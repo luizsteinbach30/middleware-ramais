@@ -8,9 +8,26 @@ const id = location.pathname.split('/').pop();
 let window_ = '24h';
 
 function badge(tone, text, dot = true) {
-  const tones = { green: 'bg-green-500/15 text-green-400 ring-green-500/30', red: 'bg-red-500/15 text-red-400 ring-red-500/30', blue: 'bg-blue-500/15 text-blue-400 ring-blue-500/30', yellow: 'bg-yellow-500/15 text-yellow-400 ring-yellow-500/30', gray: 'bg-gray-500/15 text-gray-400 ring-gray-500/30' };
-  const dots = { green: 'bg-green-400', red: 'bg-red-400', blue: 'bg-blue-400', yellow: 'bg-yellow-400', gray: 'bg-gray-400' };
+  // amber/sky existem para o estado de telefonia usar as mesmas cores do
+  // painel ao vivo — o mesmo estado não pode ter cor diferente em cada tela.
+  const tones = { green: 'bg-green-500/15 text-green-400 ring-green-500/30', red: 'bg-red-500/15 text-red-400 ring-red-500/30', blue: 'bg-blue-500/15 text-blue-400 ring-blue-500/30', yellow: 'bg-yellow-500/15 text-yellow-400 ring-yellow-500/30', amber: 'bg-amber-500/15 text-amber-300 ring-amber-500/30', sky: 'bg-sky-500/15 text-sky-300 ring-sky-500/30', gray: 'bg-gray-500/15 text-gray-400 ring-gray-500/30' };
+  const dots = { green: 'bg-green-400', red: 'bg-red-400', blue: 'bg-blue-400', yellow: 'bg-yellow-400', amber: 'bg-amber-400', sky: 'bg-sky-400', gray: 'bg-gray-400' };
   return `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${tones[tone]}">${dot ? `<span class="w-1.5 h-1.5 rounded-full ${dots[tone]}"></span>` : ''}${text}</span>`;
+}
+
+// Estado de telefonia (MQTT). Só aparece quando o ramal está de fato em uso: um
+// selo "disponível" ao lado do status lógico "disponível" seria redundante.
+const TELEFONIA = {
+  tocando: ['amber', 'tocando'],
+  discando: ['sky', 'discando'],
+  ocupado: ['blue', 'em conversa'],
+};
+
+function telefonia(d) {
+  const par = TELEFONIA[d.telephony_status];
+  if (!par) return '';
+  const alvo = d.telephony_numero ? ` ${d.telephony_numero}` : '';
+  return badge(par[0], par[1] + alvo);
 }
 
 async function load() {
@@ -25,8 +42,8 @@ async function load() {
     document.getElementById('dd-cards').innerHTML = `
       <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
         <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Status lógico</div>
-        <div class="mt-2">${d.logical_status === 'available' ? badge('blue', 'disponível') : d.logical_status === 'unavailable' ? badge('yellow', 'indisponível') : badge('gray', '—')}</div>
-        <div class="text-xs text-gray-500 mt-2">Último seen ${fmtTs(d.last_seen_at)}</div>
+        <div class="mt-2 flex items-center gap-1.5 flex-wrap">${d.logical_status === 'available' ? badge('blue', 'disponível') : d.logical_status === 'unavailable' ? badge('yellow', 'indisponível') : badge('gray', '—')}${telefonia(d)}</div>
+        <div class="text-xs text-gray-500 mt-2">Último seen ${fmtTs(d.last_seen_at)}${d.status_source === 'mqtt' ? ' · via MQTT' : d.status_source === 'uscall' ? ' · via coleta USCall' : ''}</div>
       </div>
       <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
         <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Rede</div>

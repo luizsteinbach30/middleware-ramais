@@ -38,6 +38,9 @@ from middleware_monitor.api import (
     logs as api_logs,
 )
 from middleware_monitor.api import (
+    mqtt as api_mqtt,
+)
+from middleware_monitor.api import (
     system as api_system,
 )
 from middleware_monitor.api import (
@@ -54,6 +57,7 @@ from middleware_monitor.core.scheduler import (
 from middleware_monitor.core.scheduler import (
     start as scheduler_start,
 )
+from middleware_monitor.domain.mqtt.service import get_ingestor
 from middleware_monitor.jobs import register_all
 from middleware_monitor.settings import get_settings
 from middleware_monitor.version import __version__
@@ -130,7 +134,16 @@ def create_app() -> FastAPI:
         init_engine()
         register_all(get_scheduler())
         scheduler_start()
+        # Coletor MQTT: conexao persistente, entao vive no lifespan e nao no
+        # scheduler (que serve para trabalho periodico). Falha ao subir nao
+        # pode derrubar a aplicacao inteira.
+        ingestor = get_ingestor()
+        try:
+            await ingestor.start()
+        except Exception as exc:
+            log.error("mqtt_ingest_start_failed", error=type(exc).__name__, message=str(exc))
         yield
+        await ingestor.stop()
         scheduler_shutdown(wait=False)
         log.info("app_stopped")
 
@@ -165,6 +178,7 @@ def create_app() -> FastAPI:
         api_system.router,
         api_extension_configurator.router,
         api_branding.router,
+        api_mqtt.router,
     ):
         app.include_router(r)
 
