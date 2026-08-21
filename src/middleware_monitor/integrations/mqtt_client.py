@@ -15,6 +15,8 @@ from __future__ import annotations
 import hashlib
 import ssl
 import threading
+import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
@@ -36,6 +38,20 @@ __all__ = [
 ]
 
 log = get_logger("mqtt.client")
+
+# Quanto esperar o DISCONNECT sair do fio antes de matar a thread de rede. Curto
+# de proposito: e caminho de parada e de troca de configuracao, e travar a tela
+# do operador por causa de um broker que nao responde seria pior que a sessao
+# ficar pendurada.
+DISCONNECT_TIMEOUT = 1.5
+
+# Conectamos em MQTT 3.1.1, onde o broker NAO tem como dizer por que derrubou:
+# ele so fecha o socket e o paho reporta "conexao perdida". Entao a deteccao de
+# client_id duplicado nao pode ser por codigo — tem de ser pelo padrao. Duas
+# instancias com o mesmo identificador se derrubam em revezamento, o que produz
+# um ciclo de reconexao rapido e sem fim.
+FLAP_JANELA_S = 120.0
+FLAP_LIMITE = 5
 
 # Mensagens de CONNACK em português — o operador vê a causa, não o número.
 #
@@ -142,6 +158,12 @@ class MqttConnection:
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _state: str = field(default="disconnected", init=False)
     _last_error: str = field(default="", init=False)
+    # Sinalizado pelo `on_disconnect`. Existe para o `stop()` conseguir esperar
+    # o DISCONNECT sair do fio antes de matar a thread de rede.
+    _disconnected: threading.Event = field(
+        default_factory=threading.Event, init=False, repr=False,
+    )
+    _quedas: deque[float] = field(default_factory=deque, init=False, repr=False)
 
     # ── ciclo de vida ────────────────────────────────────────────────────────
 
@@ -151,6 +173,7 @@ class MqttConnection:
                 return
             client = self._build_client()
             self._client = client
+        self._disconnected.clear()
         self._set_state("connecting", f"conectando em {self.endpoint.label}")
         client.connect_async(self.endpoint.host, self.endpoint.port, keepalive=self.keepalive)
         client.loop_start()
@@ -162,7 +185,19 @@ class MqttConnection:
         if client is None:
             return
         try:
+            self._disconnected.clear()
             client.disconnect()
+            # `disconnect()` só ENFILEIRA o pacote — quem o escreve no socket é a
+            # thread de rede. Chamar `loop_stop()` na sequência costumava matar
+            # essa thread antes do DISCONNECT sair, e o broker via a conexão cair
+            # de forma suja. Com `clean_session=False` isso é caro: o EMQX
+            # mantém a sessão viva esperando o cliente voltar, guardando fila —
+            # é a "sessão fechada" que fica pendurada no broker.
+            if not self._disconnected.wait(timeout=DISCONNECT_TIMEOUT):
+                log.warning(
+                    "mqtt_disconnect_sem_confirmacao",
+                    client_id=self.client_id, endpoint=self.endpoint.label,
+                )
             client.loop_stop()
         except Exception as exc:  # pragma: no cover - encerramento best effort
             log.warning("mqtt_stop_failed", error=type(exc).__name__, message=str(exc))
@@ -255,8 +290,44 @@ class MqttConnection:
         reason_code: Any = None, _props: Any = None,
     ) -> None:
         code = reason_code_value(reason_code)
-        detail = "desconectado do broker" if code == 0 else f"conexão perdida (código {code})"
+        self._disconnected.set()
+        if code == 0:
+            self._set_state("disconnected", "desconectado do broker")
+            return
+        # Queda anormal. O broker reconecta sozinho (reconnect_delay_set), mas o
+        # motivo importa: "session taken over" quer dizer que OUTRA instância
+        # entrou com o mesmo client_id, e as duas passam a se derrubar em
+        # revezamento — o sintoma é reconexão sem fim e sessão nova a cada
+        # rodada no EMQX. Sem dizer isso em voz alta, o operador só vê o coletor
+        # "piscando" e não tem como saber a causa.
+        detail = f"conexão perdida (código {code})"
+        if self._registrar_queda_e_detectar_flap():
+            detail = (
+                f"reconexão em ciclo — o identificador {self.client_id} pode estar "
+                f"em uso por outra instância apontando para este mesmo broker"
+            )
+            log.error(
+                "mqtt_reconexao_em_ciclo",
+                client_id=self.client_id,
+                endpoint=self.endpoint.label,
+                quedas=len(self._quedas),
+                janela_s=FLAP_JANELA_S,
+            )
         self._set_state("disconnected", detail)
+
+    def _registrar_queda_e_detectar_flap(self) -> bool:
+        """Anota a queda e diz se o coletor está reconectando em ciclo.
+
+        Duas instâncias com o mesmo ``client_id`` se derrubam em revezamento, e
+        cada rodada deixa uma sessão nova pendurada no broker. Do lado de cá o
+        sintoma é indistinguível de rede ruim — só a **frequência** separa os
+        dois casos, e é isso que se mede aqui.
+        """
+        agora = time.monotonic()
+        self._quedas.append(agora)
+        while self._quedas and agora - self._quedas[0] > FLAP_JANELA_S:
+            self._quedas.popleft()
+        return len(self._quedas) >= FLAP_LIMITE
 
     def _on_subscribe(
         self, _client: mqtt.Client, _userdata: Any, _mid: int,

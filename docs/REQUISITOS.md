@@ -692,3 +692,143 @@ Ver [ADR-0002](ADRs/0002-extension-configurator.md).
 
 ### ADRs
 Ver [ADR-0003](ADRs/0003-multi-uscall.md) e [ADR-0004](ADRs/0004-device-actions.md).
+
+---
+
+## 15. Pendências abertas (roadmap vivo)
+
+Diferente da §11, que é o roadmap histórico das fases já entregues, esta seção
+lista o que está aberto **agora**. Ordem = prioridade sugerida.
+
+### 15.1 🔴 Auto-update não funciona em campo (v2.7.x/v2.8.0)
+
+Relatado em 2026-08-21, com log de máquina de cliente rodando o `.exe`. São
+**duas falhas independentes** no mesmo log; tratar separadamente.
+
+#### (a) Verificação de update falha no TLS — causa identificada
+
+```
+WARNING updater | check_failed: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED]
+certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)>
+```
+
+**Causa.** `src/middleware_monitor/desktop.py:330` chama
+`urllib.request.urlopen(req, timeout=10)` **sem passar contexto SSL**. Sem
+contexto, o Python usa `ssl.create_default_context()`, que no Windows lê o
+armazenamento de certificados do sistema — e ali costuma faltar o emissor
+intermediário, dando exatamente esta mensagem. É por isso que **só o updater
+falha**: todo o resto do app fala HTTPS por `httpx`, que usa o `certifi` por
+padrão.
+
+**Confirmado:** o `certifi/cacert.pem` **está** dentro do bundle das duas
+versões (v2.7.2 e v2.8.0) — verificado lendo o índice do executável publicado.
+Ou seja, o CA existe; o updater simplesmente não o usa.
+
+**Correção proposta** (pequena, sem mudar infraestrutura):
+
+```python
+import ssl, certifi
+_CTX = ssl.create_default_context(cafile=certifi.where())
+...
+urllib.request.urlopen(req, timeout=10, context=_CTX)
+```
+
+Vale para as duas chamadas de rede externa do `desktop.py` (a de `check()` e a
+do download do artefato). A chamada a `127.0.0.1` de
+`_ocupante_e_o_middleware` é HTTP e não é afetada.
+
+**Verificação:** só vale ao vivo, no `.exe` empacotado, em máquina Windows que
+reproduza o erro — rodando do fonte o problema não aparece.
+
+#### (b) Tela de updates quebra com `TemplateNotFound` — causa ainda desconhecida
+
+```
+jinja2.exceptions.TemplateNotFound: 'system_updates.html' not found in
+search path: '...\Temp\_MEI31562\middleware_monitor\web\templates'
+```
+
+**O que já se sabe:** o arquivo **está empacotado** — verificado no índice dos
+executáveis publicados da v2.7.2 **e** da v2.8.0. Portanto **não é omissão de
+empacotamento** (é um problema diferente do template do Yealink, corrigido na
+v2.8.0). O diretório de extração `_MEI...` perdeu o arquivo em tempo de
+execução, ou nunca o extraiu por completo.
+
+**Hipóteses, em ordem de plausibilidade:**
+
+1. **Antivírus** removendo arquivos do diretório de extração em `%TEMP%` com o
+   app no ar — o mais comum com PyInstaller onefile.
+2. **Limpeza de `%TEMP%` pelo Windows** (Sensor de Armazenamento) durante uma
+   execução longa.
+3. **Update parcial**: o próprio updater substituindo arquivos de uma instalação
+   em execução e deixando estado misto. Reforça esta hipótese o fato de a falha
+   acontecer segundos depois das tentativas de verificação de update
+   (13:49:06 → 13:49:30).
+
+**Primeiro passo do diagnóstico** (falta informação para ir além): confirmar
+**qual versão** o cliente roda, se há antivírus com quarentena ativa, e se o
+`_MEI...` da sessão ainda contém `web/templates/` completo no momento do erro.
+
+**Mitigação a considerar independentemente da causa:** empacotar em modo
+*onedir* em vez de *onefile*, que elimina a extração para `%TEMP%` e toda esta
+classe de falha — ao custo de o instalador passar a distribuir uma pasta.
+
+### 15.2 Coletor MQTT — fases 4 e 5
+
+Fases 1 a 3 entregues na v2.8.0. Falta:
+
+- **Fase 4** — reconstrução de chamadas (`extension_calls`) e resumo diário
+  (`extension_daily_stats`), tela de chamadas com exportação e aba "Telefonia"
+  no detalhe do ramal. O dado necessário já está sendo gravado em
+  `extension_status_events` (`uniqueid` e `call_started_at`).
+- **Fase 5** — fechamento de documentação (`GUIA_DE_USO.md`).
+
+### 15.3 Hora automática nos telefones
+
+Plano aprovado, PR 1 (busca por trecho no MQTT) entregue na v2.8.0. Restam a
+fundação da resolução de fuso, a interface, e a cobertura por fabricante —
+sendo que Intelbras V-series e FlyingVoice P10 dependem de sonda de bancada.
+
+### 15.4 Painel ao vivo: ligar o ramal ao resto do sistema
+
+Pedido em 2026-08-21. Hoje o cartão do ramal em `/mqtt-painel` é quase uma ilha:
+mostra estado, número da outra ponta, tempo no estado e — quando existe device
+correspondente — o IP e o estado de rede. O único link é para as mensagens cruas
+daquele ramal.
+
+**O que falta ligar.** Do cartão (e da fita de transições) deve dar para chegar
+em:
+
+- **o device** — `/devices/{id}`, com gráfico de latência, histórico de ping e
+  as ações remotas;
+- **o ambiente do Configurador** a que a linha pertence, e a própria linha na
+  planilha (`ExtensionLine.device_id` já faz esse vínculo, e
+  `repository.get_device_info_for_lines` já resolve o caminho inverso);
+- **o servidor USCall de origem** (`Device.uscall_server_id`), útil em
+  instalação multi-servidor para saber de qual PBX aquele ramal veio;
+- **o MAC e o modelo** (`Device.mac`, `ExtensionLine.ultimo_modelo`), que hoje
+  não aparecem em lugar nenhum do painel;
+- **o histórico de aplicação** daquela linha (último status, último erro), que é
+  o que responde "esse ramal está indisponível porque a config caiu?".
+
+**Por que importa.** O painel responde "o que está acontecendo agora"; a
+pergunta seguinte é sempre "e o que eu faço a respeito" — e hoje ela exige
+procurar o ramal a mão em outra tela.
+
+**Cuidado de desenho.** Ramal pode existir no MQTT sem device (a coleta REST é
+que cria o telefone, porque o payload MQTT não tem IP nem MAC). O cartão já
+mostra "sem device" nesse caso; os links novos precisam sumir em vez de apontar
+para lugar nenhum.
+
+**Nota de implementação.** `/api/mqtt/live` já faz o casamento ramal → device
+para trazer IP e estado de rede; é o mesmo ponto onde os identificadores extras
+entram, sem consulta nova por cartão.
+
+### 15.5 Dívida conhecida — Action URI do Yealink
+
+`docs/ADRs/0004-device-actions.md:76` e
+`docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md:44-46` afirmam que o template do
+Yealink provisiona a "Action URI Allow IP List". **Não provisiona** —
+`yealink_template.cfg` não tem nenhuma chave `features.*`/`action_uri`, e a
+whitelist `_ALLOWED_PREFIXES` (`yealink.py:57-63`) rejeitaria. Na prática o
+`normalize` do Yealink depende de o aparelho já ter o IP do middleware liberado.
+Corrigir a documentação ou implementar o provisionamento.

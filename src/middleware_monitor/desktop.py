@@ -23,6 +23,7 @@ import logging
 import os
 import queue
 import socket
+import ssl
 import sys
 import threading
 import time
@@ -300,6 +301,29 @@ class ServerThread:
 
 # --- update checker ----------------------------------------------------------
 
+def _contexto_tls() -> ssl.SSLContext | None:
+    """Contexto TLS ancorado no CA do ``certifi``.
+
+    Sem contexto explicito o Python usa o armazenamento de certificados do
+    Windows, onde costuma faltar o emissor intermediario da cadeia da API do
+    GitHub — e toda verificacao de update morria em
+    ``CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate``.
+    Era so o updater que falhava: o resto do app fala HTTPS por ``httpx``, que
+    ja usa o ``certifi``. O ``cacert.pem`` sempre esteve dentro do .exe; o
+    updater e que nao o usava.
+
+    Devolve ``None`` (contexto padrao) se o ``certifi`` nao estiver disponivel:
+    updater que nao verifica e ruim, updater que derruba o app e pior.
+    """
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception as exc:  # pragma: no cover - instalacao sem certifi
+        logging.getLogger("updater").warning("certifi_indisponivel: %s", exc)
+        return None
+
+
 class UpdateChecker:
     """Polls GitHub Releases for a version greater than the current one."""
 
@@ -327,7 +351,7 @@ class UpdateChecker:
             headers["Authorization"] = f"Bearer {self.token}"
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10, context=_contexto_tls()) as resp:
                 import json as _json
 
                 releases = _json.load(resp)

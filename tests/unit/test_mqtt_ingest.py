@@ -160,3 +160,38 @@ def test_payload_grande_ainda_e_reconhecido_antes_do_corte() -> None:
     assert row["truncated"] is True
     assert row["ramal"] == "0119" and row["event_at"] is not None
     assert [st.status for st in statuses] == ["Ocupado"]
+
+
+def test_broker_sem_client_id_ganha_um_e_persiste(db) -> None:
+    """Sessão durável exige identificador estável.
+
+    O `client_id` era gerado na hora da conexão e descartado, então **cada**
+    conexão entrava no broker como um cliente diferente. Com
+    `clean_session=False` isso é caro: o EMQX guarda uma sessão nova (com fila
+    de mensagens) para cada identificador, e ela fica pendurada para sempre —
+    o operador vê sessões fechadas se acumulando no broker.
+    """
+    from middleware_monitor.core.db import session_factory
+    from middleware_monitor.core.models import MqttBroker
+    from middleware_monitor.domain.mqtt import repository as repo
+
+    broker = repo.create_broker(
+        db, nome="EMQX", address_input="h", host="h", port=1883,
+        password_plain="", topics=["v1/#"],
+    )
+    broker.client_id = ""  # simula linha antiga/importada sem identificador
+    broker_id = broker.id
+    db.commit()
+    db.close()
+
+    def ler_client_id() -> str:
+        with session_factory() as s:
+            return s.get(MqttBroker, broker_id).client_id  # type: ignore[union-attr]
+
+    ing = MqttIngestor(db_factory=session_factory)
+    asyncio.run(ing._connect_all())
+    primeiro = ler_client_id()
+    assert primeiro, "o identificador tinha de ter sido gravado"
+
+    asyncio.run(ing._connect_all())
+    assert ler_client_id() == primeiro, "não pode mudar a cada conexão"
