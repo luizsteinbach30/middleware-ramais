@@ -12,6 +12,7 @@ const FIELDS = [
   'auto_reapply_on_recovery', 'auto_reapply_debounce_minutes',
   'webhook_log_retention_days', 'collection_retention_days', 'system_log_retention_days',
   'mqtt_message_retention_days', 'mqtt_message_max_mb', 'extension_event_retention_days',
+  'phone_timezone_mode', 'phone_timezone', 'phone_ntp_server',
 ];
 
 function setDirty(on) {
@@ -111,10 +112,53 @@ function renderWebhooks(webhooks) {
   }));
 }
 
+// ── hora dos telefones ──────────────────────────────────────────────────────
+
+// O catalogo vem do backend (zoneinfo), nao de uma lista escrita aqui: fuso e
+// dado que muda — o Brasil ja mudou o seu — e lista mantida a mao envelhece sem
+// ninguem perceber.
+let fusosCarregados = false;
+
+function alternarSeletorDeFuso() {
+  const modo = document.getElementById('f-phone_timezone_mode');
+  const seletor = document.getElementById('f-phone_timezone');
+  if (!modo || !seletor) return;
+  seletor.classList.toggle('hidden', modo.value !== 'proprio');
+}
+
+async function carregarFusos(valorAtual) {
+  const caixa = document.getElementById('tz-detected');
+  if (!caixa) return;
+  try {
+    const d = await api('/api/config/timezones');
+    const det = d.detected || {};
+    const semNome = !det.name;
+    caixa.className = `rounded-lg px-3.5 py-3 ring-1 ring-inset mb-4 text-xs ${
+      semNome ? 'bg-amber-500/10 ring-amber-500/30 text-amber-200'
+              : 'bg-gray-900/60 ring-gray-700 text-gray-400'}`;
+    caixa.innerHTML = semNome
+      ? `Não foi possível identificar o fuso do servidor (só o deslocamento: <strong>${escHtml(det.label)}</strong>). Fixe um fuso abaixo para não depender disso.`
+      : `Servidor em <strong class="text-gray-200">${escHtml(det.label)}</strong> · relógio marcando <strong class="text-gray-200">${escHtml(d.server_time)}</strong>
+         <div class="mt-1 text-gray-500">O middleware herda o fuso, não corrige o relógio — se a hora acima estiver errada, os telefones herdam o erro.</div>`;
+
+    const seletor = document.getElementById('f-phone_timezone');
+    if (seletor && !fusosCarregados) {
+      seletor.innerHTML = (d.zones || [])
+        .map((z) => `<option value="${escHtml(z)}">${escHtml(z)}</option>`).join('');
+      fusosCarregados = true;
+      if (valorAtual) seletor.value = valorAtual;
+    }
+  } catch (_e) {
+    caixa.textContent = 'Não foi possível consultar o fuso do servidor.';
+  }
+}
+
 async function load() {
   const cfg = await api('/api/config');
   original = cfg;
   fillForm(cfg);
+  await carregarFusos(cfg.phone_timezone);
+  alternarSeletorDeFuso();
   dirty.clear();
   for (const k of Object.keys(tokenChanges)) delete tokenChanges[k];
   setDirty(false);
@@ -128,6 +172,8 @@ FIELDS.forEach((k) => {
 });
 
 document.getElementById('cfg-reload').addEventListener('click', load);
+
+document.getElementById('f-phone_timezone_mode')?.addEventListener('change', alternarSeletorDeFuso);
 
 function readField(k) {
   const el = document.getElementById('f-' + k);

@@ -40,6 +40,8 @@ from xml.sax.saxutils import escape as xml_escape
 
 import httpx
 
+from middleware_monitor.core.logging import get_logger
+
 from .base import (
     ACTION_NORMALIZE,
     ActionResult,
@@ -49,6 +51,8 @@ from .base import (
     VendorAuthError,
     VendorCredentials,
 )
+
+log = get_logger("vendors.htek")
 
 
 # REGRA HTEK: o firmware faz URL-decode (%XX) no conteudo de texto dos XML
@@ -78,13 +82,33 @@ _CODEC_IDS: dict[str, int] = {
     "ilbc": 97,
 }
 
+# Id de fuso do HTEK. Os ids NAO sao funcao do offset (18=GMT-3, 14=GMT-4,
+# 25=GMT-2, 30=UTC), entao nao da para calcular: so mapear.
 _TIMEZONE_IDS: dict[str, int] = {
-    # Apenas os mais usados pelo cliente; lista completa nos manuais HTEK.
-    "America/Sao_Paulo": 18,  # GMT-3
-    "America/Manaus": 14,     # GMT-4
-    "America/Noronha": 25,    # GMT-2
+    # GMT-3 — o Brasil inteiro que nao e Amazonia nem Fernando de Noronha.
+    "America/Sao_Paulo": 18,
+    "America/Bahia": 18,
+    "America/Fortaleza": 18,
+    "America/Recife": 18,
+    "America/Maceio": 18,
+    "America/Belem": 18,
+    "America/Araguaina": 18,
+    "America/Santarem": 18,
+    # GMT-4
+    "America/Manaus": 14,
+    "America/Cuiaba": 14,
+    "America/Campo_Grande": 14,
+    "America/Boa_Vista": 14,
+    "America/Porto_Velho": 14,
+    # GMT-2
+    "America/Noronha": 25,
     "UTC": 30,
 }
+
+# Rede de seguranca por offset: fuso fora do mapa acima, mas cujo deslocamento
+# atual bate com um conhecido, herda o id do representante. Cobre o mundo "bem o
+# bastante" sem transcrever a tabela inteira do manual.
+_OFFSET_TO_ID: dict[int, int] = {-120: 25, -180: 18, -240: 14, 0: 30}
 
 _LANGUAGE_IDS: dict[str, int] = {
     # Conferir nos manuais por modelo — o id pode variar por firmware.
@@ -260,16 +284,42 @@ class HTEKAdapter(VendorAdapter):
             return int(s)
         raise ValueError(f"codec desconhecido: {name_or_id!r}")
 
+    @classmethod
+    def _render_timezone(cls, template: dict[str, Any]) -> str:
+        """Linha do P64, ou vazio quando o fuso nao pode ser traduzido."""
+        tz_id = cls._timezone_id(
+            template.get("timezone", "America/Sao_Paulo"),
+            template.get("timezone_offset_minutes"),
+        )
+        if tz_id is None:
+            return ""
+        return f'        <P64 para="Preference_TimeZone">{tz_id}</P64>'
+
     @staticmethod
-    def _timezone_id(value: str | int) -> int:
+    def _timezone_id(value: str | int, offset_minutes: int | None = None) -> int | None:
+        """Id de fuso do HTEK, ou ``None`` quando nao da para saber.
+
+        Levantava ``ValueError`` para fuso desconhecido. So que
+        ``generate_config`` roda dentro de ``compute_statuses``, entao aquilo
+        nao errava uma linha: derrubava o calculo de status da **planilha
+        inteira** com HTTP 500 — uma tela que nao tem nada a ver com hora
+        quebrava por causa de um fuso.
+
+        Agora a escada e: nome mapeado -> id cru digitado -> offset equivalente
+        -> ``None``. Com ``None`` o chamador omite o campo, e o aparelho fica
+        com o fuso que ja tinha, que e melhor do que um palpite errado.
+        """
         if isinstance(value, int):
             return value
-        s = str(value).strip()
-        if s in _TIMEZONE_IDS:
-            return _TIMEZONE_IDS[s]
-        if s.isdigit():
-            return int(s)
-        raise ValueError(f"timezone HTEK desconhecido: {value!r}")
+        texto = str(value).strip()
+        if texto in _TIMEZONE_IDS:
+            return _TIMEZONE_IDS[texto]
+        if texto.isdigit():
+            return int(texto)
+        if offset_minutes is not None and offset_minutes in _OFFSET_TO_ID:
+            return _OFFSET_TO_ID[offset_minutes]
+        log.warning("htek_timezone_desconhecido", timezone=texto, offset=offset_minutes)
+        return None
 
     @staticmethod
     def _language_id(value: str | int) -> int:
@@ -379,7 +429,7 @@ class HTEKAdapter(VendorAdapter):
             "auth_id": _htek_text(row.get("auth_id") or row.get("conta_sip", "")),
             "password": _htek_text(row.get("senha_sip", "")),
             "display_name": _htek_text(row.get("display_name") or row.get("conta_sip", "")),
-            "timezone": str(self._timezone_id(template.get("timezone", "America/Sao_Paulo"))),
+            "timezone_xml": self._render_timezone(template),
             "web_language": str(self._language_id(template.get("web_language", "pt-BR"))),
             "lcd_language": str(self._language_id(template.get("lcd_language", "pt-BR"))),
             "ntp_server": _htek_text(template.get("ntp_server", "a.ntp.br")),

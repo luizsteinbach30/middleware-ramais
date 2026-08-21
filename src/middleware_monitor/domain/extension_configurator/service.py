@@ -24,6 +24,7 @@ from middleware_monitor.integrations.extension_configurator.vendors import (
     YealinkAdapter,
 )
 
+from . import time_settings
 from .repository import merged_config_padrao
 from .softkeys import is_intelbras_s_series
 
@@ -49,14 +50,25 @@ def adapter_for(modelo_telefone: str) -> VendorAdapter:
 
 
 def build_template(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Subset de `config_padrao` que vai para `adapter.generate_config`."""
+    """Subset de `config_padrao` que vai para `adapter.generate_config`.
+
+    A hora chega **já resolvida** (ambiente -> instalacao -> fuso detectado do
+    servidor), e nao crua do `config_padrao`: e isso que faz o telefone receber
+    o fuso certo sem ninguem digitar nada. Ver `time_settings.resolve`.
+
+    Duas representacoes do mesmo fuso, porque os firmwares se dividem: HTEK e
+    Intelbras S3002 querem id de tabela (derivado do nome), Yealink e Intelbras
+    V-series querem o offset numerico.
+    """
+    hora = time_settings.resolve(cfg)
     return {
         "sip_server": cfg.get("sip_server", ""),
         "sip_transport": cfg.get("sip_transport", "udp"),
         "sip_account": cfg.get("sip_account", 1),
         "register_expiration": cfg.get("register_expiration", 30),
-        "ntp_server": cfg.get("ntp_server", "a.ntp.br"),
-        "timezone": cfg.get("timezone", "America/Sao_Paulo"),
+        "ntp_server": hora.ntp_server,
+        "timezone": hora.timezone,
+        "timezone_offset_minutes": hora.offset_minutes,
         "web_language": cfg.get("web_language", "pt-BR"),
         "lcd_language": cfg.get("lcd_language", "pt-BR"),
         "function_keys": cfg.get("function_keys", []),

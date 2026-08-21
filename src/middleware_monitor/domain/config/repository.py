@@ -106,6 +106,9 @@ def load_config(db: DBSession) -> AppConfigOut:
     out.extension_event_retention_days = int(
         _get(rows, "extension_event_retention_days", "7")
     )
+    out.phone_timezone_mode = str(_get(rows, "phone_timezone_mode", "herdar"))
+    out.phone_timezone = str(_get(rows, "phone_timezone", "") or "")
+    out.phone_ntp_server = str(_get(rows, "phone_ntp_server", "a.ntp.br") or "a.ntp.br")
     out.webhook_timeout_seconds = int(_get(rows, "webhook_timeout_seconds", "10"))
 
     out.auto_reapply_on_recovery = _get(rows, "auto_reapply_on_recovery", "0") in (
@@ -164,6 +167,9 @@ def update_config(db: DBSession, payload: AppConfigUpdate, *, user_id: int | Non
         "mqtt_message_retention_days",
         "mqtt_message_max_mb",
         "extension_event_retention_days",
+        "phone_timezone_mode",
+        "phone_timezone",
+        "phone_ntp_server",
         "webhook_timeout_seconds",
         "auto_reapply_on_recovery",
         "auto_reapply_debounce_minutes",
@@ -187,6 +193,18 @@ def update_config(db: DBSession, payload: AppConfigUpdate, *, user_id: int | Non
                     write(f"webhooks.{t}.token", box.encrypt(cfg.token), secret=True)
 
     db.commit()
+
+    # A hora dos telefones é lida em cache (uma vez por processo, ver
+    # `time_settings.global_settings`): sem isto o operador salvaria o fuso e não
+    # veria efeito nenhum até reiniciar o serviço.
+    try:
+        from middleware_monitor.domain.extension_configurator.time_settings import (
+            invalidate_cache,
+        )
+
+        invalidate_cache()
+    except Exception:  # pragma: no cover - invalidação nunca derruba o save
+        pass
 
     # Apply scheduler reschedule if intervals changed.
     if interval_changed:
