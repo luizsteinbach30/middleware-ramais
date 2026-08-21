@@ -142,10 +142,28 @@ publicador que varra periodicamente repetiria o mesmo estado indefinidamente.
 Consequência prática para dimensionamento: **não** assumir que
 `extension_status_events` é desprezível diante do ledger.
 
-A chave do "mesmo estado" é `(status, numero, uniqueid, duracao)`. `duracao` (o
-horário de início da chamada em curso, apesar do nome) entra porque duas
-chamadas seguidas para o mesmo número, sem passar por `Disponivel`, teriam
-status e número idênticos — e são duas chamadas.
+A chave do "mesmo estado" é `(status, numero, uniqueid, duracao)`. `duracao`
+entra porque duas chamadas seguidas para o mesmo número, sem passar por
+`Disponivel`, teriam status e número idênticos — e são duas chamadas.
+
+> **Correção de 2026-08-21, medida em tráfego real.** Este ADR dizia que
+> `duracao` era o *horário de início da chamada* e que, por isso, `(ramal,
+> duracao)` seria a chave da chamada quando faltasse `uniqueid`. **Não é.**
+> O campo marca o início do *estado atual* e muda em **98% das chamadas**
+> (1161 de 1183): usá-lo como chave de chamada partiria uma conversa em três.
+> Para a chave de **transição** ele continua correto e útil — é o que separa
+> duas chamadas coladas.
+>
+> No mesmo levantamento caiu outra premissa: **`uniqueid` não identifica um
+> par de ramais**. Um grupo de captura toca vários com o mesmo id (medido:
+> até 5), e pode nunca ser atendido.
+>
+> Como a reconstrução ficou (`domain/mqtt/calls.py`): uma perna de chamada é
+> uma sequência ininterrupta de `tocando`/`discando`/`ocupado` do mesmo
+> ramal, fechada por `disponivel`/`indisponivel` — funciona com e sem
+> identificador. O `uniqueid` serve para amarrar as pernas e para deduplicar
+> no resumo diário; o `duracao` serve para medir toque e conversa com mais
+> precisão que a hora de recebimento.
 
 O estado corrente por ramal vive em memória no coletor e é reidratado do banco
 no boot; sem isso, o primeiro lote depois de um restart gravaria uma transição

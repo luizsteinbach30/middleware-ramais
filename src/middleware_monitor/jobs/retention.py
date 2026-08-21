@@ -14,6 +14,8 @@ from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import (
     Collection,
     DevicePing,
+    ExtensionCall,
+    ExtensionDailyStat,
     LoginAttempt,
     SystemLog,
     WebhookEvent,
@@ -51,6 +53,12 @@ async def run_retention() -> None:
         # historico longo: guarda-se por 1 ano, independente do ledger.
         cutoff_mqtt_conn = _now() - timedelta(days=365)
         cutoff_ext_events = _now() - timedelta(days=cfg.extension_event_retention_days)
+        cutoff_chamadas = _now() - timedelta(days=cfg.extension_call_retention_days)
+        # O resumo diario e comparado por texto (AAAA-MM-DD), que ordena igual a
+        # data — e o que permite podar sem converter linha a linha.
+        corte_resumo = (
+            _now() - timedelta(days=cfg.extension_daily_stats_retention_days)
+        ).date().isoformat()
 
         a = _delete_count(db, delete(DevicePing).where(DevicePing.timestamp < cutoff_pings))
         b = _delete_count(db, delete(WebhookEvent).where(WebhookEvent.timestamp < cutoff_webhooks))
@@ -64,6 +72,8 @@ async def run_retention() -> None:
         g = mqtt_repo.purge_messages_by_size(db, cfg.mqtt_message_max_mb * 1024 * 1024)
         h = mqtt_repo.purge_connection_events(db, cutoff_mqtt_conn)
         i = mqtt_realtime.purge_status_events(db, cutoff_ext_events)
+        j = _delete_count(db, delete(ExtensionCall).where(ExtensionCall.started_at < cutoff_chamadas))
+        k = _delete_count(db, delete(ExtensionDailyStat).where(ExtensionDailyStat.dia < corte_resumo))
         db.commit()
 
     log.info(
@@ -76,4 +86,6 @@ async def run_retention() -> None:
         mqtt_messages=f + g,
         mqtt_connection_events=h,
         extension_status_events=i,
+        extension_calls=j,
+        extension_daily_stats=k,
     )

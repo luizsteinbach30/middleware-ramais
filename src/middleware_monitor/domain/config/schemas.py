@@ -80,6 +80,10 @@ class AppConfigOut(BaseModel):
     # do tempo. Linha pequena (sem corpo da mensagem), mas o volume acompanha o
     # movimento do PBX — nao presuma que e desprezivel diante do ledger.
     extension_event_retention_days: int = 7
+    # Chamadas reconstruidas e o resumo diario. O resumo vive muito mais porque
+    # e ele que sobrevive a poda de tudo o mais — e o unico historico longo.
+    extension_call_retention_days: int = 90
+    extension_daily_stats_retention_days: int = 365
 
     # Hora dos telefones (v2.9.0). "herdar" = usa o fuso detectado do servidor,
     # que e o caminho normal e nao exige digitar nada. Vale para todos os
@@ -119,6 +123,8 @@ class AppConfigUpdate(BaseModel):
     mqtt_message_retention_days: int | None = Field(default=None, ge=1, le=365)
     mqtt_message_max_mb: int | None = Field(default=None, ge=0, le=1_000_000)
     extension_event_retention_days: int | None = Field(default=None, ge=1, le=365)
+    extension_call_retention_days: int | None = Field(default=None, ge=1, le=3650)
+    extension_daily_stats_retention_days: int | None = Field(default=None, ge=1, le=3650)
     phone_timezone_mode: str | None = Field(default=None, pattern="^(herdar|proprio)$")
     phone_timezone: str | None = Field(default=None, max_length=64)
     phone_ntp_server: str | None = Field(default=None, max_length=128)
