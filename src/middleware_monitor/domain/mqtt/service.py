@@ -188,6 +188,17 @@ class MqttIngestor:
     async def _connect_all(self) -> None:
         with self._db_factory() as db:
             brokers = repo.list_brokers(db, enabled_only=True)
+            # Broker sem client_id gravado ganha um agora e **persiste**. Antes o
+            # identificador era gerado na hora e jogado fora, entao cada conexao
+            # entrava no broker como um cliente diferente — e, com sessao duravel,
+            # o EMQX guardava uma sessao nova (com fila) para cada uma delas,
+            # para sempre. Sessao duravel exige identificador estavel.
+            faltando = [b for b in brokers if not b.client_id]
+            for b in faltando:
+                b.client_id = repo.default_client_id(b.nome)
+                log.info("mqtt_client_id_gerado", broker_id=b.id, client_id=b.client_id)
+            if faltando:
+                db.commit()
             configs = [
                 (
                     b.id, b.nome, b.host, b.port, b.transport, b.tls, b.ws_path,
@@ -213,7 +224,7 @@ class MqttIngestor:
         endpoint = MqttEndpoint(host=host, port=port, transport=transport, tls=tls, ws_path=ws_path)
         conn = MqttConnection(
             endpoint=endpoint,
-            client_id=client_id or repo.default_client_id(nome),
+            client_id=client_id,
             topics=topics,
             auth=MqttAuth(username=username, password=password),
             qos=qos,
