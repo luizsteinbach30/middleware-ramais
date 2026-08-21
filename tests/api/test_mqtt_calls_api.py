@@ -7,7 +7,7 @@ de inflar o número de chamadas perdidas em quase três vezes.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from middleware_monitor.core.models import ExtensionCall
 from middleware_monitor.domain.auth.service import bootstrap_admin
@@ -150,3 +150,90 @@ def test_reconstrucao_e_idempotente(db) -> None:
     assert primeiro["criadas"] == 1
     assert segundo["criadas"] == 0, "reprocessar não pode duplicar"
     assert db.query(ExtensionCall).count() == 1
+
+
+def test_chamada_em_curso_antiga_nao_duplica_as_ja_concluidas(db) -> None:
+    """Regressao da duplicacao vista em producao (95 mil linhas para 3,7 mil).
+
+    O cenario que quebrava: uma chamada fica **aberta** (telefone fora do gancho,
+    ramal com registro oscilando). Toda passagem do job puxava o piso de leitura
+    para tras ate ela e reprocessava tudo dali — e as pernas ja concluidas nesse
+    intervalo viravam linha nova a cada rodada. Com o job de minuto em minuto,
+    a mesma chamada foi gravada 32 vezes.
+
+    Aqui o job roda tres vezes com uma chamada aberta no comeco da janela: as
+    concluidas depois dela nao podem se multiplicar.
+    """
+    from middleware_monitor.core.models import ExtensionStatusEvent
+
+    # Ancorado no agora: com BASE fixa, o teste passa a medir o relogio —
+    # depois de ABANDONO a chamada aberta e encerrada antes da verificacao.
+    agora = datetime.now(UTC).replace(tzinfo=None)
+
+    def evento(ramal, status, numero, seg, uid=None):
+        db.add(ExtensionStatusEvent(
+            ramal=ramal, status=status, status_raw=status.title(), numero=numero,
+            uniqueid=uid, received_at=agora + timedelta(seconds=seg),
+            event_at=None, call_started_at=None,
+        ))
+
+    # Uma chamada que NUNCA fecha, aberta antes de todas as outras.
+    evento("0318", "ocupado", None, 0)
+    # E duas chamadas completas depois dela.
+    evento("9959", "tocando", "1211", 10, "A")
+    evento("9959", "ocupado", "1211", 14, "A")
+    evento("9959", "disponivel", None, 40)
+    evento("9950", "tocando", "1212", 50, "B")
+    evento("9950", "disponivel", None, 58)
+    db.commit()
+
+    for _ in range(3):
+        calls_domain.rebuild_calls(db)
+        db.commit()
+
+    concluidas = db.query(ExtensionCall).filter(ExtensionCall.outcome != "em_curso").all()
+    assert len(concluidas) == 2, (
+        f"as concluidas se multiplicaram: {[(c.ramal, c.started_at) for c in concluidas]}"
+    )
+    assert db.query(ExtensionCall).filter(ExtensionCall.outcome == "em_curso").count() == 1
+
+
+def test_chamada_aberta_continua_na_mesma_linha(db) -> None:
+    """A perna aberta tem de ser CONTINUADA, nao recriada.
+
+    E o outro lado da mesma moeda: se o job so lesse eventos novos sem semear as
+    pernas abertas, a chamada em curso perderia o inicio e viraria uma linha
+    nova quando finalmente fechasse.
+    """
+    from middleware_monitor.core.models import ExtensionStatusEvent
+
+    agora = datetime.now(UTC).replace(tzinfo=None)
+
+    def evento(status, numero, seg):
+        db.add(ExtensionStatusEvent(
+            ramal="9959", status=status, status_raw=status.title(), numero=numero,
+            uniqueid="A", received_at=agora + timedelta(seconds=seg),
+            event_at=None, call_started_at=None,
+        ))
+
+    evento("tocando", "1211", 0)
+    db.commit()
+    calls_domain.rebuild_calls(db)
+    db.commit()
+
+    (aberta,) = db.query(ExtensionCall).all()
+    assert aberta.outcome == "em_curso"
+    id_original = aberta.id
+
+    # A chamada e atendida e encerrada numa passagem posterior do job.
+    evento("ocupado", "1211", 6)
+    evento("disponivel", None, 30)
+    db.commit()
+    calls_domain.rebuild_calls(db)
+    db.commit()
+
+    (fechada,) = db.query(ExtensionCall).all()
+    assert fechada.id == id_original, "tem de continuar a mesma linha"
+    assert fechada.outcome == "atendida"
+    assert fechada.started_at == agora, "o inicio nao pode se perder"
+    assert fechada.talk_seconds == 24
