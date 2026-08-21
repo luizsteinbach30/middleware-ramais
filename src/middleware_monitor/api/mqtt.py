@@ -493,6 +493,9 @@ def list_calls(
     since: datetime | None = None,
     until: datetime | None = None,
     ramal: str | None = Query(default=None, max_length=64),
+    ramal_exato: bool = Query(
+        default=False, description="casa o ramal inteiro em vez de por trecho",
+    ),
     numero: str | None = Query(default=None, max_length=64),
     direcao: str | None = Query(default=None, pattern="^(entrante|sainte|desconhecida)$"),
     outcome: str | None = Query(
@@ -511,8 +514,8 @@ def list_calls(
     """
     ini, fim = _window(last, since, until)
     resultado = calls_domain.search_calls(
-        db, since=ini, until=fim, ramal=ramal, numero=numero,
-        direcao=direcao, outcome=outcome, limit=limit, offset=offset,
+        db, since=ini, until=fim, ramal=ramal, ramal_exato=ramal_exato,
+        numero=numero, direcao=direcao, outcome=outcome, limit=limit, offset=offset,
     )
     return CallsPage(
         items=[

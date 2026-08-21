@@ -237,3 +237,21 @@ def test_chamada_aberta_continua_na_mesma_linha(db) -> None:
     assert fechada.outcome == "atendida"
     assert fechada.started_at == agora, "o inicio nao pode se perder"
     assert fechada.talk_seconds == 24
+
+
+def test_ramal_exato_nao_traz_chamada_de_outro_ramal(client, db) -> None:
+    """A página de um telefone não pode mostrar chamada de outro.
+
+    O filtro de ramal casa por trecho, que é o certo na tela de busca — mas ali
+    `9959` traria também o `19959`. Numa página de device isso é erro, não
+    conveniência: o operador leria como sendo daquele aparelho.
+    """
+    _authed(client, db)
+    _call(db, ramal="9959")
+    _call(db, ramal="19959")
+    db.commit()
+
+    assert client.get("/api/mqtt/calls?last=24h&ramal=9959").json()["total"] == 2
+    exato = client.get("/api/mqtt/calls?last=24h&ramal=9959&ramal_exato=true").json()
+    assert exato["total"] == 1
+    assert exato["items"][0]["ramal"] == "9959"

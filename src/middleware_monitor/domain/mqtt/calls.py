@@ -440,6 +440,7 @@ def search_calls(
     since: datetime | None = None,
     until: datetime | None = None,
     ramal: str | None = None,
+    ramal_exato: bool = False,
     numero: str | None = None,
     direcao: str | None = None,
     outcome: str | None = None,
@@ -450,6 +451,8 @@ def search_calls(
 
     ``ramal`` e ``numero`` casam por **trecho**, como no ledger de mensagens:
     quem procura uma ligação costuma lembrar de um pedaço do número.
+    ``ramal_exato`` desliga isso para o ramal — usado na página de um telefone,
+    onde ``9959`` não pode trazer as chamadas do ``19959``.
     """
     stmt = select(ExtensionCall)
     total_stmt = select(func.count()).select_from(ExtensionCall)
@@ -464,7 +467,12 @@ def search_calls(
     if until is not None:
         aplicar(ExtensionCall.started_at <= until)
     if ramal:
-        aplicar(ExtensionCall.ramal.icontains(ramal.strip()))
+        # Trecho e o certo na busca; exato e o certo na pagina de um telefone.
+        alvo = ramal.strip()
+        aplicar(
+            ExtensionCall.ramal == alvo if ramal_exato
+            else ExtensionCall.ramal.icontains(alvo)
+        )
     if numero:
         aplicar(ExtensionCall.numero.icontains(numero.strip()))
     if direcao:
