@@ -25,6 +25,7 @@ from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import Device, MqttBroker, MqttMessage, User
 from middleware_monitor.core.time import as_local_str, iso_utc
 from middleware_monitor.domain.config.repository import load_config
+from middleware_monitor.domain.mqtt import calls as calls_domain
 from middleware_monitor.domain.mqtt import realtime
 from middleware_monitor.domain.mqtt import repository as repo
 from middleware_monitor.domain.mqtt.address import (
@@ -42,8 +43,11 @@ from middleware_monitor.domain.mqtt.schemas import (
     BrokerIn,
     BrokerOut,
     BrokerStatus,
+    CallOut,
+    CallsPage,
     CoverageGap,
     CoverageOut,
+    DailyStatOut,
     DiscoverRequest,
     DiscoverResponse,
     LiveExtension,
@@ -68,6 +72,11 @@ log = get_logger("api.mqtt")
 
 _SPAN_RE = re.compile(r"^(\d+)([mhd])$")
 PREVIEW_CHARS = 240
+
+# Marca de ordem de byte. O Excel em portugues so reconhece UTF-8 no CSV se ela
+# estiver la; sem isso os acentos viram lixo na planilha.
+BOM = "\ufeff"
+CRLF = "\r\n"
 
 
 def _now() -> datetime:
@@ -472,6 +481,125 @@ def live(
         dropped=int(snap["dropped"]),
         avg_lag_seconds=snap["avg_lag_seconds"],
         last_message_at=snap["last_message_at"],
+    )
+
+
+# ── chamadas ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/calls", response_model=CallsPage)
+def list_calls(
+    last: str = Query(default="24h", description="janela: 15m, 1h, 24h, 7d"),
+    since: datetime | None = None,
+    until: datetime | None = None,
+    ramal: str | None = Query(default=None, max_length=64),
+    numero: str | None = Query(default=None, max_length=64),
+    direcao: str | None = Query(default=None, pattern="^(entrante|sainte|desconhecida)$"),
+    outcome: str | None = Query(
+        default=None, pattern="^(atendida|perdida|nao_atendida|indeterminada|em_curso)$",
+    ),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> CallsPage:
+    """Chamadas reconstruídas.
+
+    Uma linha é **uma perna**: ligação interna aparece duas vezes (uma por
+    ramal), amarrada pelo `uniqueid`. É proposital — a pergunta do operador é
+    quase sempre sobre um ramal, não sobre a conversa inteira.
+    """
+    ini, fim = _window(last, since, until)
+    resultado = calls_domain.search_calls(
+        db, since=ini, until=fim, ramal=ramal, numero=numero,
+        direcao=direcao, outcome=outcome, limit=limit, offset=offset,
+    )
+    return CallsPage(
+        items=[
+            CallOut(
+                id=c.id, ramal=c.ramal, direcao=c.direcao, numero=c.numero,
+                uniqueid=c.uniqueid, started_at=c.started_at, answered_at=c.answered_at,
+                ended_at=c.ended_at, ring_seconds=c.ring_seconds,
+                talk_seconds=c.talk_seconds, outcome=c.outcome,
+            )
+            for c in resultado.items
+        ],
+        total=resultado.total,
+        limit=limit,
+    )
+
+
+@router.get("/calls/daily", response_model=list[DailyStatOut])
+def call_daily_stats(
+    dia: str = Query(description="AAAA-MM-DD"),
+    ramal: str | None = Query(default=None, max_length=64),
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> list[DailyStatOut]:
+    """Resumo por ramal do dia.
+
+    Diferente de contar as linhas de `/calls`: aqui uma chamada com `uniqueid`
+    conta **uma vez por ramal**, mesmo que o PBX a tenha tocado várias — é o que
+    impede um grupo de captura de inflar o número de perdidas.
+    """
+    if len(dia) != 10 or dia[4] != "-" or dia[7] != "-":
+        raise HTTPException(status_code=422, detail="dia_invalido")
+    return [
+        DailyStatOut(
+            dia=r.dia, ramal=r.ramal, chamadas=r.chamadas, atendidas=r.atendidas,
+            perdidas=r.perdidas, entrantes=r.entrantes, saintes=r.saintes,
+            talk_seconds=r.talk_seconds, ring_seconds=r.ring_seconds,
+        )
+        for r in calls_domain.daily_stats(db, dia=dia, ramal=ramal)
+    ]
+
+
+@router.get("/calls/export")
+def export_calls(
+    last: str = Query(default="24h"),
+    since: datetime | None = None,
+    until: datetime | None = None,
+    ramal: str | None = Query(default=None, max_length=64),
+    numero: str | None = Query(default=None, max_length=64),
+    direcao: str | None = Query(default=None, pattern="^(entrante|sainte|desconhecida)$"),
+    outcome: str | None = Query(default=None, max_length=16),
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> Response:
+    """Mesma busca da tela, em CSV.
+
+    Horas em hora local, não em UTC: a planilha vai ser cruzada com o relato de
+    quem estava no telefone, e ninguém relata em UTC. Separador `;` e BOM porque
+    o destino real é o Excel em português — sem isso ele joga tudo numa coluna
+    só e estraga os acentos.
+    """
+    ini, fim = _window(last, since, until)
+    resultado = calls_domain.search_calls(
+        db, since=ini, until=fim, ramal=ramal, numero=numero,
+        direcao=direcao, outcome=outcome, limit=1000,
+    )
+    linhas = [
+        "inicio;ramal;direcao;numero;resultado;atendida_em;fim;toque_s;conversa_s;uniqueid",
+    ]
+    for c in resultado.items:
+        linhas.append(";".join([
+            as_local_str(c.started_at) or "",
+            c.ramal,
+            c.direcao,
+            c.numero or "",
+            c.outcome,
+            as_local_str(c.answered_at) or "",
+            as_local_str(c.ended_at) or "",
+            "" if c.ring_seconds is None else str(c.ring_seconds),
+            "" if c.talk_seconds is None else str(c.talk_seconds),
+            c.uniqueid or "",
+        ]))
+    corpo = BOM + CRLF.join(linhas) + CRLF
+    nome = f"chamadas-{_now().strftime('%Y%m%d-%H%M')}.csv"
+    return Response(
+        content=corpo.encode("utf-8"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'},
     )
 
 

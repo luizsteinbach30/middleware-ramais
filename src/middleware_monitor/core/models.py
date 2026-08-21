@@ -507,6 +507,72 @@ class ExtensionStatusEvent(Base):
     )
 
 
+class ExtensionCall(Base):
+    """Chamada reconstruída a partir das transições de estado do ramal.
+
+    **Uma linha por perna da chamada**, não por conversa: numa ligação interna o
+    PBX publica os dois ramais, e cada um vira uma linha. ``uniqueid`` amarra as
+    pernas quando o publicador o envia — e ele NÃO é único por par: um grupo de
+    captura toca vários ramais com o mesmo id (medido: até 5 pernas).
+
+    Como o trecho é delimitado (medido em produção, 2026-08-21): uma perna é uma
+    sequência ininterrupta de ``tocando``/``discando``/``ocupado`` do mesmo
+    ramal, fechada por ``disponivel``/``indisponivel``. **Não** se usa o campo
+    ``duracao`` do payload como chave: ele varia em 98% das chamadas (1161 de
+    1183), porque marca o início do *estado atual* e não o da chamada — ele
+    serve para medir toque e conversa, não para identificar.
+    """
+
+    __tablename__ = "extension_calls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ramal: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # entrante | sainte | desconhecida
+    direcao: Mapped[str] = mapped_column(String(16), nullable=False, default="desconhecida")
+    numero: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    uniqueid: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ring_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    talk_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # atendida | perdida | nao_atendida | indeterminada | em_curso
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False, default="em_curso")
+    # Último evento consumido: torna a reconstrução retomável e idempotente.
+    last_event_id: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_extension_calls_ramal_started", "ramal", "started_at"),
+        Index("ix_extension_calls_outcome", "outcome"),
+    )
+
+
+class ExtensionDailyStat(Base):
+    """Resumo por ramal e por dia — sobrevive à poda das transições.
+
+    As transições têm retenção curta (7 dias por padrão); este resumo fica por um
+    ano, então é dele que sai qualquer comparação histórica.
+    """
+
+    __tablename__ = "extension_daily_stats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    dia: Mapped[str] = mapped_column(String(10), nullable=False, index=True)  # AAAA-MM-DD
+    ramal: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    chamadas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    atendidas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    perdidas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    entrantes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    saintes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    talk_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ring_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    __table_args__ = (Index("ix_extension_daily_stats_dia_ramal", "dia", "ramal", unique=True),)
+
+
 __all__: list[str] = [
     "AppConfig",
     "Collection",
@@ -515,6 +581,8 @@ __all__: list[str] = [
     "DevicePing",
     "ExtensionApplyRun",
     "ExtensionApplyRunLine",
+    "ExtensionCall",
+    "ExtensionDailyStat",
     "ExtensionEnvironment",
     "ExtensionLine",
     "ExtensionStatusEvent",

@@ -2,6 +2,37 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [Não publicado]
+
+### Added
+- **Chamadas reconstruídas a partir do MQTT.** O PBX não publica chamadas —
+  publica o estado de cada ramal. O middleware passa a deduzir a chamada dessa
+  sequência: quem ligou, quem atendeu, quanto tocou e quanto durou. Tela nova
+  **Chamadas** (menu Coletor MQTT) com filtro por período, ramal e número (ambos
+  por trecho), direção e resultado, mais exportação em CSV com hora local e
+  separador que o Excel em português entende.
+  - **Resumo diário por ramal** (`extension_daily_stats`), que sobrevive à poda
+    das transições e é o único histórico longo. Nele, **uma chamada com
+    `uniqueid` conta uma vez por ramal**, mesmo que o PBX a tenha tocado várias:
+    medido em produção, um grupo de captura gerou 11 pernas "perdida" para uma
+    única ligação, e contar as pernas cruas inflaria o número quase três vezes.
+  - Migration `0011_extension_calls`; retenção própria (90 dias para chamadas,
+    365 para o resumo), configurável.
+
+  **Duas premissas do ADR-0005 não sobreviveram aos dados reais** e foram
+  corrigidas lá:
+  - o campo `duracao` **não** é o início da chamada e não serve como chave —
+    medido, ele muda em 98% das chamadas (1161 de 1183), porque marca o início
+    do *estado atual*. O trecho passou a ser delimitado por estado (uma sequência
+    ininterrupta de `tocando`/`discando`/`ocupado`), que funciona com e sem
+    identificador;
+  - o `uniqueid` **não** identifica um par de ramais: um grupo de captura toca
+    vários com o mesmo id (medido: até 5).
+
+  Armadilha tratada: `Indisponivel` ecoa o `uniqueid` da chamada anterior por
+  minutos: herdá-lo grudaria pernas de chamadas diferentes e mostraria uma
+  conversa que nunca existiu.
+
 ## [2.8.1] — 2026-08-21
 
 ### Fixed

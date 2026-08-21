@@ -106,6 +106,12 @@ def load_config(db: DBSession) -> AppConfigOut:
     out.extension_event_retention_days = int(
         _get(rows, "extension_event_retention_days", "7")
     )
+    out.extension_call_retention_days = int(
+        _get(rows, "extension_call_retention_days", "90")
+    )
+    out.extension_daily_stats_retention_days = int(
+        _get(rows, "extension_daily_stats_retention_days", "365")
+    )
     out.phone_timezone_mode = str(_get(rows, "phone_timezone_mode", "herdar"))
     out.phone_timezone = str(_get(rows, "phone_timezone", "") or "")
     out.phone_ntp_server = str(_get(rows, "phone_ntp_server", "a.ntp.br") or "a.ntp.br")
@@ -167,6 +173,8 @@ def update_config(db: DBSession, payload: AppConfigUpdate, *, user_id: int | Non
         "mqtt_message_retention_days",
         "mqtt_message_max_mb",
         "extension_event_retention_days",
+        "extension_call_retention_days",
+        "extension_daily_stats_retention_days",
         "phone_timezone_mode",
         "phone_timezone",
         "phone_ntp_server",

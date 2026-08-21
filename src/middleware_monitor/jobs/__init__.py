@@ -32,6 +32,7 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     """
     from middleware_monitor.jobs.collect_extensions import run_collect_extensions
     from middleware_monitor.jobs.monitor_devices import run_monitor_devices
+    from middleware_monitor.jobs.rebuild_calls import run_daily_stats, run_rebuild_calls
     from middleware_monitor.jobs.retention import run_retention
 
     with session_factory() as db:
@@ -51,6 +52,22 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
         run_monitor_devices,
         job_id="monitor_devices",
         seconds=interval_seconds,
+    )
+    # Chamadas: a reconstrucao e barata (426 ms para 11 mil transicoes medidas)
+    # e roda perto do tempo real, para a tela de chamadas nao ficar minutos
+    # atras do que o operador acabou de ver no painel ao vivo.
+    add_interval_job(
+        run_rebuild_calls,
+        job_id="rebuild_calls",
+        seconds=60,
+    )
+    # O resumo diario e recalculado de hora em hora: ele e o que sobrevive a
+    # poda das transicoes, entao nao pode depender de uma unica passagem
+    # noturna que talvez nao aconteca (maquina desligada, servico parado).
+    add_interval_job(
+        run_daily_stats,
+        job_id="daily_stats",
+        seconds=3600,
     )
     # Retention runs once a day at 00:30 UTC.
     add_cron_job(

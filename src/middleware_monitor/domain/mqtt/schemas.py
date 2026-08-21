@@ -16,8 +16,11 @@ from middleware_monitor.core.time import iso_utc
 __all__ = [
     "BrokerIn",
     "BrokerOut",
+    "CallOut",
+    "CallsPage",
     "CoverageGap",
     "CoverageOut",
+    "DailyStatOut",
     "DiscoverRequest",
     "DiscoverResponse",
     "LiveExtension",
@@ -345,3 +348,45 @@ class LiveOut(BaseModel):
     @field_serializer("generated_at", "last_message_at")
     def _ser_dt(self, value: datetime | None) -> str | None:
         return iso_utc(value)
+
+
+class CallOut(BaseModel):
+    """Uma perna de chamada.
+
+    Numa ligação interna há **duas** linhas (uma por ramal), amarradas pelo
+    ``uniqueid``. Num grupo de captura há uma por ramal tocado.
+    """
+
+    id: int
+    ramal: str
+    direcao: str  # entrante | sainte | desconhecida
+    numero: str | None = None
+    uniqueid: str | None = None
+    started_at: datetime
+    answered_at: datetime | None = None
+    ended_at: datetime | None = None
+    ring_seconds: int | None = None
+    talk_seconds: int | None = None
+    outcome: str
+
+    @field_serializer("started_at", "answered_at", "ended_at")
+    def _ser_dt(self, value: datetime | None) -> str | None:
+        return iso_utc(value)
+
+
+class CallsPage(BaseModel):
+    items: list[CallOut] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 100
+
+
+class DailyStatOut(BaseModel):
+    dia: str
+    ramal: str
+    chamadas: int = 0
+    atendidas: int = 0
+    perdidas: int = 0
+    entrantes: int = 0
+    saintes: int = 0
+    talk_seconds: int = 0
+    ring_seconds: int = 0

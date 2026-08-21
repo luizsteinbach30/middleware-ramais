@@ -69,7 +69,8 @@
     <div class="pt-4 mt-2 border-t border-gray-800/80">
       <div class="sb-hide-collapsed px-3 pb-1.5 text-[10px] tracking-wider uppercase text-gray-500">Coletor MQTT</div>
       {% set MQTT_NAV = [
-        ('mqtt_live',     'Painel ao vivo', '/mqtt-painel',  'phone'),
+        ('mqtt_live',     'Painel ao vivo', '/mqtt-painel',   'phone'),
+        ('mqtt_calls',    'Chamadas',       '/mqtt-chamadas', 'list'),
         ('mqtt_messages', 'Mensagens',      '/mqtt-messages', 'activity'),
       ] %}
       {% for id, label, href, icon in MQTT_NAV %}
