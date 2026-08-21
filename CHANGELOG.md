@@ -2,7 +2,7 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
-## [Não publicado]
+## [2.8.0] — 2026-08-21
 
 ### Added
 - **Coletor de mensagens MQTT (EMQX) — registro auditável dos envios.** O
@@ -44,6 +44,49 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
     seção "Coletor de mensagens MQTT" na tela de Configuração.
   - Migration `0009_mqtt_ingest`; nova dependência `paho-mqtt`.
   - Ver `docs/ADRs/0005-mqtt-ledger.md`.
+- **Estado dos ramais em tempo real a partir do MQTT.** O que chega do broker
+  deixa de ser só linha no ledger e vira informação operacional: cada mudança de
+  estado do ramal é normalizada em `extension_status_events` e refletida no
+  telefone na hora, em vez de esperar o ciclo de coleta REST (mínimo 60 s).
+  - **Só transições são gravadas** — repetição do mesmo estado não vira linha. A
+    mensagem crua continua inteira no ledger e a transição aponta para ela, então
+    o comprovante nunca se perde. Medido no broker do cliente (243 ramais): esse
+    publicador já fala apenas na mudança, então ali o filtro quase não corta.
+    Ele segue necessário por dois motivos independentes do publicador: a sessão
+    durável reentrega a fila acumulada quando o serviço volta, e reentrega não
+    pode virar transição nova; e publicador que varre periodicamente repetiria o
+    mesmo estado sem parar.
+  - **Tela "Painel ao vivo" (`/mqtt-painel`, menu Coletor MQTT).** Contadores por
+    estado (clicáveis, filtram a grade), grade dos ramais com número da outra
+    ponta e tempo no estado, fita das últimas transições e saúde da ingestão
+    (msg/min, fila, descartes, atraso do PBX, última mensagem). Ramal que parou
+    de ser publicado aparece apagado, com "sem msg há X" — grade toda verde de
+    coletor parado seria pior que tela vazia.
+  - Retenção própria das transições (`extension_event_retention_days`, padrão 7
+    dias), configurável na tela.
+  - Migration `0010_extension_status_events` (tabela + colunas
+    `telephony_status`, `telephony_numero` e `status_source` em `devices`).
+  - API `/api/mqtt/live`.
+
+### Fixed
+- **Ambiente Yealink quebrava no `.exe` (não no código-fonte).** O empacotador
+  levava só os templates `*.xml` dos fabricantes, e o Yealink usa
+  `yealink_template.cfg` (formato chave=valor, não XML). No executável o arquivo
+  simplesmente não existia, então **qualquer** operação que renderize a config de
+  um ambiente Yealink — abrir a planilha, salvar, aplicar — estourava
+  `FileNotFoundError` e virava HTTP 500. Rodando do fonte funcionava, o que
+  escondia o problema. O empacotador passa a casar por `*_template.*`, para o
+  próximo fabricante que chegar com outra extensão não repetir a história.
+- **Ramal em conversa não é mais tratado como configuração perdida.** O estado
+  lógico do device (`logical_status`) era `available` só quando o PBX dizia
+  `Disponivel` — qualquer outro status, inclusive `Tocando`, `Ocupado` e
+  `Discando`, virava `unavailable`. Como `jobs/monitor_devices` usa exatamente
+  "responde ping **e** está `unavailable`" como sinal de que a configuração do
+  telefone sumiu, um ramal coletado no meio de uma ligação podia disparar
+  reaplicação de configuração **durante a chamada**. Agora só `Indisponivel`
+  derruba o estado lógico: quem toca ou fala está registrado. O estado de
+  telefonia detalhado passou a viver em `Device.telephony_status`, separado. A
+  correção vale para as duas fontes — MQTT e coleta REST.
 
 ## [2.7.2] — 2026-08-04
 
