@@ -772,15 +772,30 @@ execução, ou nunca o extraiu por completo.
 *onedir* em vez de *onefile*, que elimina a extração para `%TEMP%` e toda esta
 classe de falha — ao custo de o instalador passar a distribuir uma pasta.
 
-### 15.2 Coletor MQTT — fases 4 e 5
+### 15.2 Coletor MQTT — fase 5
 
-Fases 1 a 3 entregues na v2.8.0. Falta:
+Fases 1 a 3 entregues na v2.8.0; **fase 4 entregue** (PRs #47 e #48):
+`extension_calls`, `extension_daily_stats`, tela `/mqtt-chamadas` com exportação
+CSV, seção Telefonia no detalhe do ramal, job de reconstrução e retenção própria.
 
-- **Fase 4** — reconstrução de chamadas (`extension_calls`) e resumo diário
-  (`extension_daily_stats`), tela de chamadas com exportação e aba "Telefonia"
-  no detalhe do ramal. O dado necessário já está sendo gravado em
-  `extension_status_events` (`uniqueid` e `call_started_at`).
-- **Fase 5** — fechamento de documentação (`GUIA_DE_USO.md`).
+Falta a **fase 5** — fechamento de documentação (`GUIA_DE_USO.md`), que ainda não
+descreve nenhuma das telas do coletor.
+
+**O que a fase 4 ensinou e vale para quem mexer nisso depois** (está detalhado em
+`domain/mqtt/calls.py` e na correção do ADR-0005):
+
+- o campo `duracao` **não** é o início da chamada — muda em 98% delas;
+- o `uniqueid` **não** identifica um par de ramais — grupo de captura toca vários;
+- numa ligação interna o PBX só manda o número para quem **recebe**;
+- `Indisponivel` ecoa o `uniqueid` da chamada anterior por minutos;
+- no resumo diário, chamada com `uniqueid` conta **uma vez por ramal** — sem
+  isso um grupo de captura infla as perdidas quase três vezes.
+
+⚠️ **Armadilha de reprocessamento**, encontrada em produção e já corrigida: o job
+não pode reler evento antigo. Um telefone fora do gancho mantém uma chamada
+aberta indefinidamente, e qualquer lógica que puxe o piso de leitura até ela vai
+reprocessar — e duplicar — tudo o que veio depois. A marca d'água nunca anda para
+trás; as pernas abertas são semeadas a partir do banco.
 
 ### 15.3 Hora automática nos telefones
 
