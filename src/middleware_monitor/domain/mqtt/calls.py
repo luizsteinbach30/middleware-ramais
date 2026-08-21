@@ -96,6 +96,10 @@ class Leg:
     answered_at: datetime | None = None
     ended_at: datetime | None = None
     last_event_id: int = 0
+    # Preenchido quando a perna veio do banco (chamada que ficou aberta na
+    # passagem anterior). E o que distingue "continuar esta linha" de "criar
+    # uma nova" — sem isso, cada passagem do job recriava a mesma chamada.
+    db_id: int | None = None
     _viu_tocando: bool = field(default=False, repr=False)
     _viu_discando: bool = field(default=False, repr=False)
 
@@ -146,14 +150,22 @@ def _direcao_de(status: str, numero: str | None) -> str:
     return "desconhecida"
 
 
-def reconstruir(eventos: list[Any]) -> list[Leg]:
+def reconstruir(
+    eventos: list[Any], abertas_iniciais: dict[str, Leg] | None = None,
+) -> list[Leg]:
     """Transições (ordenadas por id) → pernas de chamada.
 
     Função pura: recebe qualquer objeto com os campos de ``ExtensionStatusEvent``
     e devolve as pernas. É onde mora toda a regra, e é o que os testes exercitam
     com sequências capturadas do PBX real.
+
+    ``abertas_iniciais`` continua pernas que ficaram abertas na passagem
+    anterior, trazidas do banco. É isso que permite processar **apenas eventos
+    novos**: sem semear, uma chamada em curso teria de ser reconstruída relendo
+    eventos antigos — e reler evento antigo foi exatamente o que duplicava
+    chamada a cada rodada do job.
     """
-    abertas: dict[str, Leg] = {}
+    abertas: dict[str, Leg] = dict(abertas_iniciais or {})
     prontas: list[Leg] = []
 
     for ev in eventos:
@@ -239,43 +251,67 @@ def _parear_pontas(pernas: list[Leg]) -> None:
             leg.numero = next(iter(outro))
 
 
+def _leg_do_banco(linha: ExtensionCall) -> Leg:
+    """Recria em memória a perna que ficou aberta, a partir da linha gravada.
+
+    Os dois sinalizadores de "por onde passou" não são colunas — são deduzidos
+    do que já se sabe: quem é entrante tocou; quem é sainte e tem tempo de toque
+    discou. Sainte sem tempo de toque é o chamador de uma ligação interna, que o
+    PBX joga direto em conversa e portanto não passou por nenhum dos dois.
+    """
+    leg = Leg(
+        ramal=linha.ramal,
+        started_at=linha.started_at,
+        direcao=linha.direcao,
+        numero=linha.numero,
+        uniqueid=linha.uniqueid,
+        answered_at=linha.answered_at,
+        last_event_id=linha.last_event_id,
+        db_id=linha.id,
+    )
+    if linha.direcao == "entrante":
+        leg._viu_tocando = True
+    elif linha.direcao == "sainte" and linha.ring_seconds is not None:
+        leg._viu_discando = True
+    return leg
+
+
 def rebuild_calls(db: DBSession, *, limite: int = 20_000) -> dict[str, int]:
     """Processa as transições novas e grava/atualiza as chamadas.
 
-    Retomável: parte do maior ``last_event_id`` já consumido. Reprocessar é
-    inofensivo — as pernas ainda abertas são reabertas e atualizadas no lugar,
-    em vez de duplicadas.
+    **Só lê evento novo.** A versão anterior puxava o piso de leitura para trás
+    até a chamada em curso mais antiga e reprocessava tudo dali — e as pernas já
+    concluídas nesse intervalo, que a comparação não sabia reconhecer, viravam
+    linha nova a cada passagem. Com o job de minuto em minuto, uma chamada
+    chegou a ser gravada 32 vezes.
+
+    Agora as chamadas que ficaram abertas são **semeadas** na reconstrução, e a
+    marca d'água nunca anda para trás. Reprocessar é inofensivo: sem evento
+    novo, não há nada a fazer.
     """
     watermark = int(db.scalar(select(func.max(ExtensionCall.last_event_id))) or 0)
 
-    # Pernas ainda em curso voltam para o jogo: os eventos que as encerram podem
-    # ter chegado depois do último processamento.
     em_curso = list(
         db.scalars(select(ExtensionCall).where(ExtensionCall.outcome == "em_curso")).all()
     )
-    piso = min([c.last_event_id for c in em_curso], default=watermark)
 
     eventos = list(
         db.scalars(
             select(ExtensionStatusEvent)
-            .where(ExtensionStatusEvent.id > piso)
+            .where(ExtensionStatusEvent.id > watermark)
             .order_by(ExtensionStatusEvent.id)
             .limit(limite)
         ).all()
     )
     if not eventos:
+        _encerrar_abandonadas(db)
         return {"lidos": 0, "criadas": 0, "atualizadas": 0}
 
-    pernas = reconstruir(eventos)
-    abertas_por_ramal = {c.ramal: c for c in em_curso}
+    pernas = reconstruir(eventos, {c.ramal: _leg_do_banco(c) for c in em_curso})
     agora = _now()
     criadas = atualizadas = 0
 
     for leg in pernas:
-        alvo = abertas_por_ramal.get(leg.ramal)
-        # Só continua a mesma perna se ela realmente é a mesma (o evento que a
-        # abriu já estava contado). Senão, é chamada nova.
-        continua = alvo is not None and alvo.started_at <= leg.started_at
         valores = {
             "direcao": leg.direcao,
             "numero": leg.numero,
@@ -288,10 +324,11 @@ def rebuild_calls(db: DBSession, *, limite: int = 20_000) -> dict[str, int]:
             "last_event_id": leg.last_event_id,
             "updated_at": agora,
         }
-        if continua and alvo is not None:
-            db.execute(update(ExtensionCall).where(ExtensionCall.id == alvo.id).values(**valores))
+        if leg.db_id is not None:
+            db.execute(
+                update(ExtensionCall).where(ExtensionCall.id == leg.db_id).values(**valores)
+            )
             atualizadas += 1
-            abertas_por_ramal.pop(leg.ramal, None)
         else:
             db.execute(
                 insert(ExtensionCall),
@@ -304,20 +341,26 @@ def rebuild_calls(db: DBSession, *, limite: int = 20_000) -> dict[str, int]:
             )
             criadas += 1
 
-    # Perna aberta há muito tempo sem nenhum evento: encerra como indeterminada,
-    # senão ela contaria como "em curso" para sempre e envenenaria o resumo.
-    limite_abandono = agora - ABANDONO
+    _encerrar_abandonadas(db)
+    log.info("mqtt_calls_rebuilt", lidos=len(eventos), criadas=criadas, atualizadas=atualizadas)
+    return {"lidos": len(eventos), "criadas": criadas, "atualizadas": atualizadas}
+
+
+def _encerrar_abandonadas(db: DBSession) -> None:
+    """Perna aberta há muito tempo sem nenhum evento vira indeterminada.
+
+    Sem isto ela contaria como "em curso" para sempre, seria semeada em toda
+    passagem do job e envenenaria o resumo diário.
+    """
+    limite = _now() - ABANDONO
     db.execute(
         update(ExtensionCall)
         .where(
             ExtensionCall.outcome == "em_curso",
-            ExtensionCall.started_at < limite_abandono,
+            ExtensionCall.started_at < limite,
         )
-        .values(outcome="indeterminada", ended_at=None, updated_at=agora)
+        .values(outcome="indeterminada", updated_at=_now())
     )
-
-    log.info("mqtt_calls_rebuilt", lidos=len(eventos), criadas=criadas, atualizadas=atualizadas)
-    return {"lidos": len(eventos), "criadas": criadas, "atualizadas": atualizadas}
 
 
 def rebuild_daily_stats(db: DBSession, dia: str) -> int:
@@ -397,6 +440,7 @@ def search_calls(
     since: datetime | None = None,
     until: datetime | None = None,
     ramal: str | None = None,
+    ramal_exato: bool = False,
     numero: str | None = None,
     direcao: str | None = None,
     outcome: str | None = None,
@@ -407,6 +451,8 @@ def search_calls(
 
     ``ramal`` e ``numero`` casam por **trecho**, como no ledger de mensagens:
     quem procura uma ligação costuma lembrar de um pedaço do número.
+    ``ramal_exato`` desliga isso para o ramal — usado na página de um telefone,
+    onde ``9959`` não pode trazer as chamadas do ``19959``.
     """
     stmt = select(ExtensionCall)
     total_stmt = select(func.count()).select_from(ExtensionCall)
@@ -421,7 +467,12 @@ def search_calls(
     if until is not None:
         aplicar(ExtensionCall.started_at <= until)
     if ramal:
-        aplicar(ExtensionCall.ramal.icontains(ramal.strip()))
+        # Trecho e o certo na busca; exato e o certo na pagina de um telefone.
+        alvo = ramal.strip()
+        aplicar(
+            ExtensionCall.ramal == alvo if ramal_exato
+            else ExtensionCall.ramal.icontains(alvo)
+        )
     if numero:
         aplicar(ExtensionCall.numero.icontains(numero.strip()))
     if direcao:

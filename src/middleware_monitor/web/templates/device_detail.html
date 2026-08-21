@@ -16,6 +16,22 @@
 <div class="px-6 py-6 space-y-6">
   <div id="dd-cards" class="grid grid-cols-1 lg:grid-cols-4 gap-3"></div>
 
+  <!-- Telefonia: o que este ramal fez no telefone, vindo do coletor MQTT. Fica
+       antes do Configurador porque responde a pergunta mais imediata — "o que
+       aconteceu com esse ramal hoje" — enquanto o Configurador responde "como
+       ele foi provisionado". -->
+  <div id="dd-tel-card" class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-100">Telefonia</h3>
+        <p class="text-xs text-gray-500 mt-0.5">Chamadas reconstruídas a partir do que o PBX publicou sobre este ramal</p>
+      </div>
+      <div class="flex items-center gap-2" id="dd-tel-links"></div>
+    </div>
+    <div id="dd-tel-resumo" class="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4"></div>
+    <div id="dd-tel-body" class="text-sm text-gray-400">Carregando…</div>
+  </div>
+
   <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5">
     <div class="flex items-center justify-between mb-4">
       <div>

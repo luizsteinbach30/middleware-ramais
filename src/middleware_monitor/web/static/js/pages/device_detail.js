@@ -30,6 +30,116 @@ function telefonia(d) {
   return badge(par[0], par[1] + alvo);
 }
 
+// ── Telefonia (coletor MQTT) ────────────────────────────────────────────────
+
+const RESULTADO_TEL = {
+  atendida: ['text-green-300', 'atendida'],
+  perdida: ['text-red-300', 'perdida'],
+  nao_atendida: ['text-amber-300', 'não atenderam'],
+  em_curso: ['text-blue-300', 'em curso'],
+  indeterminada: ['text-gray-500', 'indeterminada'],
+};
+
+function durTel(seg) {
+  if (seg === null || seg === undefined) return '—';
+  const s = Math.max(0, Math.floor(seg));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}min ${String(s % 60).padStart(2, '0')}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}min`;
+}
+
+function tel(s) {
+  return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function cartaoResumo(rotulo, valor, cor) {
+  return `<div class="rounded-lg px-3 py-2.5 bg-gray-900/60 ring-1 ring-inset ring-gray-700">
+    <div class="text-[10px] uppercase tracking-wider text-gray-500">${tel(rotulo)}</div>
+    <div class="text-xl font-semibold tabular-nums mt-0.5 ${cor || 'text-gray-100'}">${tel(valor)}</div>
+  </div>`;
+}
+
+async function carregarTelefonia(ramal) {
+  const card = document.getElementById('dd-tel-card');
+  const corpo = document.getElementById('dd-tel-body');
+  const resumo = document.getElementById('dd-tel-resumo');
+  const links = document.getElementById('dd-tel-links');
+  if (!card) return;
+
+  const hoje = new Date();
+  const dia = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+
+  let chamadas = { items: [], total: 0 };
+  let stats = [];
+  try {
+    // `ramal_exato`: sem isso, o ramal 9959 traria as chamadas do 19959 — e
+    // chamada de outro ramal nesta página seria erro, não conveniência.
+    [chamadas, stats] = await Promise.all([
+      api(`/api/mqtt/calls?last=24h&limit=10&ramal_exato=true&ramal=${encodeURIComponent(ramal)}`),
+      api(`/api/mqtt/calls/daily?dia=${dia}&ramal=${encodeURIComponent(ramal)}`),
+    ]);
+  } catch (_e) {
+    corpo.innerHTML = '<span class="text-gray-500">Não foi possível consultar as chamadas.</span>';
+    return;
+  }
+
+  const d = stats[0];
+  resumo.innerHTML = d
+    ? [
+        cartaoResumo('Chamadas hoje', d.chamadas),
+        cartaoResumo('Atendidas', d.atendidas, 'text-green-300'),
+        cartaoResumo('Perdidas', d.perdidas, d.perdidas ? 'text-red-300' : null),
+        cartaoResumo('Recebidas / feitas', `${d.entrantes} / ${d.saintes}`),
+        cartaoResumo('Em conversa', durTel(d.talk_seconds)),
+      ].join('')
+    : '';
+
+  links.innerHTML = `
+    <a href="/mqtt-chamadas?ramal=${encodeURIComponent(ramal)}" class="inline-flex items-center gap-1.5 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Todas as chamadas</a>
+    <a href="/mqtt-messages?ramal=${encodeURIComponent(ramal)}" class="inline-flex items-center gap-1.5 rounded-lg font-medium bg-transparent hover:bg-gray-700/60 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Mensagens cruas</a>`;
+
+  if (!chamadas.items.length) {
+    // Distingue "não há coletor" de "o ramal não falou": são problemas
+    // diferentes e a ação do operador é outra em cada caso.
+    corpo.innerHTML = d
+      ? '<span class="text-gray-500">Nenhuma chamada nas últimas 24 horas.</span>'
+      : '<span class="text-gray-500">Sem dados de telefonia para este ramal. Se o coletor MQTT ainda não foi configurado, comece pela <a class="underline" href="/config">configuração</a>.</span>';
+    return;
+  }
+
+  corpo.innerHTML = `<table class="w-full text-sm">
+    <thead class="text-gray-500 text-xs uppercase tracking-wider">
+      <tr>
+        <th class="text-left py-2 font-semibold">Início</th>
+        <th class="text-left py-2 font-semibold">Direção</th>
+        <th class="text-left py-2 font-semibold">Outra ponta</th>
+        <th class="text-left py-2 font-semibold">Resultado</th>
+        <th class="text-right py-2 font-semibold">Toque</th>
+        <th class="text-right py-2 font-semibold">Conversa</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-800">
+      ${chamadas.items.map((c) => {
+        const [cor, rotulo] = RESULTADO_TEL[c.outcome] || RESULTADO_TEL.indeterminada;
+        const dir = c.direcao === 'entrante' ? 'recebida' : c.direcao === 'sainte' ? 'feita' : '—';
+        return `<tr>
+          <td class="py-2 font-mono text-xs text-gray-300">${tel(fmtTs(c.started_at))}</td>
+          <td class="py-2 text-xs text-gray-400">${dir}</td>
+          <td class="py-2 font-mono text-xs text-gray-300">${c.numero ? tel(c.numero) : '<span class="text-gray-600">—</span>'}</td>
+          <td class="py-2 text-xs ${cor}">${rotulo}</td>
+          <td class="py-2 text-right tabular-nums text-xs text-gray-400">${durTel(c.ring_seconds)}</td>
+          <td class="py-2 text-right tabular-nums text-xs text-gray-200">${durTel(c.talk_seconds)}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>
+  ${chamadas.total > chamadas.items.length
+    ? `<div class="mt-3 text-xs text-gray-500">Mostrando ${chamadas.items.length} de ${chamadas.total} nas últimas 24 horas.</div>`
+    : ''}`;
+}
+
+
 async function load() {
   try {
     const [d, hist, pings] = await Promise.all([
@@ -38,6 +148,9 @@ async function load() {
       api(`/api/devices/${id}/pings?limit=20`),
     ]);
     document.getElementById('dd-title').textContent = `Ramal ${d.name}`;
+    // O nome do device E o numero do ramal (RF-12): e por ele que a
+    // telefonia e consultada.
+    carregarTelefonia(d.name);
     document.getElementById('dd-subtitle').textContent = `${d.ip || '—'} · ${d.model || '—'}`;
     document.getElementById('dd-cards').innerHTML = `
       <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-4">
