@@ -37,6 +37,34 @@
   </div>
 
   <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+    <div class="flex items-center gap-2">
+      <h3 class="text-sm font-semibold text-gray-100">Hora do telefone</h3>
+      <span id="cfg-hora-badge" class="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-gray-700/60 text-gray-400">herdado</span>
+    </div>
+    <p class="text-xs text-gray-500">Por padrão vem da <a class="underline" href="/config">configuração geral</a>, que por sua vez herda o fuso do servidor. Sobrescreva só quando este ambiente estiver em outra região.</p>
+    <div class="grid md:grid-cols-2 gap-3 text-xs">
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Fuso horário</span>
+        <select id="cfg-timezone_mode" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100">
+          <option value="herdar">Herdar da configuração geral</option>
+          <option value="proprio">Este ambiente usa outro fuso</option>
+        </select>
+        <select id="cfg-timezone" class="hidden bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"></select>
+        <span id="cfg-timezone-hint" class="text-[11px] text-gray-500">—</span>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Servidor NTP</span>
+        <select id="cfg-ntp_mode" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100">
+          <option value="herdar">Herdar da configuração geral</option>
+          <option value="proprio">Este ambiente usa outro NTP</option>
+        </select>
+        <input id="cfg-ntp_server" maxlength="128" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/>
+        <span class="text-[11px] text-gray-500">Rede fechada sem internet costuma ter NTP próprio.</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
     <h3 class="text-sm font-semibold text-gray-100">Credencial atual do aparelho <span class="text-gray-500 text-xs font-normal">(usada para login)</span></h3>
     <p class="text-xs text-gray-500">Usuário e senha que os aparelhos do ambiente <strong>já têm hoje</strong>. O sistema usa isso para logar na web GUI e fazer upload do XML. <strong>Não vai no XML.</strong> Default de fábrica: <code>admin</code> / <code>admin</code>.</p>
     <div class="grid md:grid-cols-2 gap-3 text-xs">

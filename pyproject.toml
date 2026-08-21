@@ -33,6 +33,12 @@ dependencies = [
     "packaging>=23.0",
     "openpyxl>=3.1",
     "fpdf2>=2.7",
+    # Fuso horario do servidor -> hora dos telefones. Ja vinham de carona pelo
+    # APScheduler; explicitas porque agora o codigo depende delas diretamente.
+    # `tzdata` e obrigatorio no Windows: o `zoneinfo` nao tem base IANA do SO,
+    # e sem ele `ZoneInfo("America/Sao_Paulo")` levanta ZoneInfoNotFoundError.
+    "tzlocal>=5.2",
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

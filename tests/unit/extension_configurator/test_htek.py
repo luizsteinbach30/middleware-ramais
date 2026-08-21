@@ -218,3 +218,61 @@ def test_generate_config_unknown_codec_raises() -> None:
             template={"codecs": ["g999"]},
             row={"conta_sip": "1", "senha_sip": "x", "servidor_sip": "y"},
         )
+
+
+def _row() -> dict:
+    """Linha minima para os testes que so olham o bloco de hora."""
+    return {
+        "conta_sip": "1001",
+        "senha_sip": "s3nh4",
+        "servidor_sip": "10.0.0.1",
+        "label": "Recepcao",
+        "display_name": "Recepcao",
+        "auth_id": "1001",
+        "numero_abreviado": "800",
+        "account_active": 1,
+    }
+
+
+def test_fuso_desconhecido_nao_derruba_a_geracao_de_config() -> None:
+    """Antes isto levantava `ValueError` — e o estrago era grande.
+
+    `generate_config` roda dentro de `compute_statuses`, então um fuso fora do
+    mapa não errava uma linha: derrubava o cálculo de status da **planilha
+    inteira** com HTTP 500. Uma tela que não tem nada a ver com hora quebrava
+    por causa do fuso.
+
+    Sem tradução possível, o P64 é omitido: config parcial, o aparelho fica com
+    o fuso que já tinha — melhor do que um palpite errado.
+    """
+    adapter = HTEKAdapter()
+    template = {
+        "timezone": "Europe/Lisbon",
+        "timezone_offset_minutes": 60,  # nenhum id do HTEK corresponde
+        "ntp_server": "a.ntp.br",
+        "function_keys": [],
+    }
+    saida = adapter.generate_config(template, _row()).decode("utf-8")
+    assert "<P64" not in saida
+    assert "a.ntp.br" in saida  # o resto da config segue normal
+
+
+def test_fuso_fora_do_mapa_cai_no_id_do_offset_equivalente() -> None:
+    # Cuiabá não está no mapa por nome, mas tem o mesmo deslocamento de Manaus.
+    adapter = HTEKAdapter()
+    template = {
+        "timezone": "America/Cuiaba_Inexistente",
+        "timezone_offset_minutes": -240,
+        "ntp_server": "a.ntp.br",
+        "function_keys": [],
+    }
+    saida = adapter.generate_config(template, _row()).decode("utf-8")
+    assert '<P64 para="Preference_TimeZone">14</P64>' in saida
+
+
+def test_id_cru_do_manual_continua_aceito() -> None:
+    # Escape hatch: o operador pode digitar o id do manual do fabricante.
+    adapter = HTEKAdapter()
+    template = {"timezone": "27", "ntp_server": "a.ntp.br", "function_keys": []}
+    saida = adapter.generate_config(template, _row()).decode("utf-8")
+    assert '<P64 para="Preference_TimeZone">27</P64>' in saida

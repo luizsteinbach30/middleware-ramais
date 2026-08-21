@@ -39,6 +39,15 @@ def default_config_padrao() -> dict[str, Any]:
         "web_password": "admin",
         "nova_web_user": "",
         "nova_web_password": "",
+        # Hora do aparelho. Os dois `*_mode` decidem se este ambiente herda a
+        # configuracao da instalacao ou usa a propria: "herdar" (default) faz o
+        # telefone receber o fuso detectado do servidor sem ninguem digitar nada.
+        # Existe um modo explicito, e nao "campo vazio = herda", porque ambiente
+        # antigo ja tem `timezone` gravado no blob (create_environment serializa
+        # os defaults inteiros) — sem o modo, filial em Manaus ficaria presa em
+        # Sao Paulo para sempre.
+        "timezone_mode": "herdar",
+        "ntp_mode": "herdar",
         "ntp_server": "a.ntp.br",
         "timezone": "America/Sao_Paulo",
         "web_language": "pt-BR",

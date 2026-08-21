@@ -40,7 +40,7 @@
         <P62 para="Profile1_Choice6">{codec_6}</P62>
 {account_block}
         <!--Preferences-->
-        <P64 para="Preference_TimeZone">{timezone}</P64>
+{timezone_xml}
         <P2525 para="Preference_WebLanguage">{web_language}</P2525>
         <P8621 para="Preference_LcdLanguage">{lcd_language}</P8621>
         <P30 para="NW_Adv_UrlOrIpAddress">{ntp_server}</P30>

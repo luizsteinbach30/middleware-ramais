@@ -16,6 +16,8 @@ if (ambienteNovo) {
 const FIELDS_STR = [
   'web_user', 'web_password', 'nova_web_user', 'nova_web_password',
   'menu_password', 'keylock_password',
+  // Hora: o valor só é usado quando o modo correspondente é "proprio".
+  'timezone_mode', 'timezone', 'ntp_mode', 'ntp_server',
 ];
 const FIELDS_INT = ['register_expiration', 'keylock_enable', 'keylock_timeout', 'sip_account'];
 const FIELDS_BOOL = ['validar_conectividade', 'verificar_registro_sip'];
@@ -100,6 +102,8 @@ function fkRow(fk) {
 }
 
 function collectFKs() {
+  await pintarHora(cfg);
+
   const list = $('#ec-fk-list');
   return Array.from(list.querySelectorAll('.ec-fk-row')).map(row => {
     const o = {};
@@ -171,6 +175,63 @@ async function reload() {
   (fks.length ? fks : [defaultFK()]).forEach((fk) => list.appendChild(fkRow(fk)));
 }
 
+// ── hora ────────────────────────────────────────────────────────────────────
+
+// Mostrar o valor herdado DENTRO do rótulo da opção é o sinal mais claro de
+// herança que existe: o operador lê o que vai acontecer sem procurar em outra
+// tela. Campo vazio seria lido como "não configurado", que é a leitura errada.
+async function pintarHora(cfg) {
+  const modoTz = $('#cfg-timezone_mode');
+  const modoNtp = $('#cfg-ntp_mode');
+  if (!modoTz || !modoNtp) return;
+
+  modoTz.value = cfg.timezone_mode === 'proprio' ? 'proprio' : 'herdar';
+  modoNtp.value = cfg.ntp_mode === 'proprio' ? 'proprio' : 'herdar';
+
+  let herdadoTz = '';
+  let herdadoNtp = '';
+  try {
+    const [fusos, geral] = await Promise.all([
+      api('/api/config/timezones'),
+      api('/api/config'),
+    ]);
+    const seletor = $('#cfg-timezone');
+    if (seletor && !seletor.childElementCount) {
+      seletor.innerHTML = (fusos.zones || [])
+        .map((z) => `<option value="${z}">${z}</option>`).join('');
+    }
+    if (seletor) seletor.value = cfg.timezone || (fusos.detected || {}).name || '';
+    herdadoTz = geral.phone_timezone_mode === 'proprio' && geral.phone_timezone
+      ? geral.phone_timezone
+      : ((fusos.detected || {}).label || '');
+    herdadoNtp = geral.phone_ntp_server || 'a.ntp.br';
+  } catch (_e) { /* a tela funciona sem o catálogo; só perde a dica */ }
+
+  const hint = $('#cfg-timezone-hint');
+  if (hint) {
+    hint.textContent = modoTz.value === 'herdar'
+      ? `Aplicando ${herdadoTz || 'o fuso da configuração geral'}.`
+      : 'Este ambiente ignora a configuração geral.';
+  }
+  const ntpInput = $('#cfg-ntp_server');
+  if (ntpInput) {
+    const proprio = modoNtp.value === 'proprio';
+    ntpInput.disabled = !proprio;
+    // Herdando, o campo exibe o valor real que será aplicado — e não vazio.
+    ntpInput.value = proprio ? (cfg.ntp_server || '') : herdadoNtp;
+  }
+  $('#cfg-timezone')?.classList.toggle('hidden', modoTz.value !== 'proprio');
+
+  const badge = $('#cfg-hora-badge');
+  if (badge) {
+    const herdando = modoTz.value === 'herdar' && modoNtp.value === 'herdar';
+    badge.textContent = herdando ? 'herdado' : 'sobrescrito';
+    badge.className = herdando
+      ? 'text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-gray-700/60 text-gray-400'
+      : 'text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-300';
+  }
+}
+
 async function save() {
   const body = { config_padrao: {} };
   FIELDS_STR.forEach((k) => { body.config_padrao[k] = $('#cfg-' + k).value; });
@@ -190,6 +251,21 @@ async function save() {
   } catch (e) {
     toast.error('Erro: ' + e.message);
   }
+}
+
+for (const id of ['cfg-timezone_mode', 'cfg-ntp_mode']) {
+  document.getElementById(id)?.addEventListener('change', () => pintarHora(collectHora()));
+}
+
+// Ao alternar o modo, redesenha com o que está na tela (e não com o que veio do
+// servidor), senão a escolha do operador seria descartada na hora.
+function collectHora() {
+  return {
+    timezone_mode: $('#cfg-timezone_mode')?.value,
+    ntp_mode: $('#cfg-ntp_mode')?.value,
+    timezone: $('#cfg-timezone')?.value,
+    ntp_server: $('#cfg-ntp_mode')?.value === 'proprio' ? $('#cfg-ntp_server')?.value : '',
+  };
 }
 
 $('#ec-save').addEventListener('click', save);

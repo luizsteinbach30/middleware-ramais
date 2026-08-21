@@ -53,11 +53,25 @@ vendors_dir = PROJECT_ROOT / _VENDORS_REL
 for tpl in sorted(vendors_dir.glob("*_template.*")):
     datas.append((str(tpl), _VENDORS_REL.removeprefix("src/")))
 
+# Base IANA de fusos. `tzdata` e um pacote SO DE DADOS (tzdata/zoneinfo/**):
+# declarar hiddenimport nao traz os arquivos, e sem eles `ZoneInfo(...)` levanta
+# ZoneInfoNotFoundError no Windows -- todo telefone cairia no fuso de fallback
+# em silencio.
+try:
+    from PyInstaller.utils.hooks import collect_data_files
+
+    datas += collect_data_files("tzdata")
+except Exception:  # pragma: no cover - build sem tzdata instalado
+    pass
+
 # ---- hidden imports -------------------------------------------------------
 
 # PyInstaller can't see imports done by APScheduler / SQLAlchemy / FastAPI
 # through string lookups. List them explicitly so the bundle contains them.
 hiddenimports = [
+    # Fuso do servidor (hora dos telefones)
+    "tzlocal",
+    "tzdata",
     # uvicorn workers + protocols
     "uvicorn.workers",
     "uvicorn.lifespan",

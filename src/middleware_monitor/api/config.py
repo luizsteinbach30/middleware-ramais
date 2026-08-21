@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.api.deps import get_session, require_admin, require_csrf
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import UscallServer, User
+from middleware_monitor.core.timezone import FALLBACK_TZ, detect_server_timezone
 from middleware_monitor.domain.config.repository import (
     load_config,
     update_config,
@@ -20,6 +23,7 @@ from middleware_monitor.domain.config.schemas import (
     UscallTestRequest,
     UscallTestResponse,
 )
+from middleware_monitor.domain.extension_configurator.time_settings import invalidate_cache
 from middleware_monitor.domain.uscall import repository as uscall_repo
 from middleware_monitor.integrations.uscall_client import UscallClient
 
@@ -59,6 +63,54 @@ def put_app_config(
     db: DBSession = Depends(get_session),
 ) -> AppConfigOut:
     return _with_servers(db, update_config(db, payload, user_id=user.id))
+
+
+# ------------------------------------------------------------- hora dos telefones
+
+
+@router.get("/config/timezones", dependencies=[Depends(require_admin)])
+def list_timezones() -> dict[str, object]:
+    """Fuso detectado do servidor + catálogo para o seletor da tela.
+
+    A lista sai de ``zoneinfo.available_timezones()``, não de uma tabela escrita
+    à mão: fuso é dado que muda (o Brasil já mudou o seu), e uma lista mantida
+    manualmente envelhece sem ninguém perceber. As Américas vêm primeiro porque
+    são o caso real deste produto.
+    """
+    import zoneinfo
+
+    detectado = detect_server_timezone()
+    agora = datetime.now().astimezone()
+    try:
+        todos = sorted(zoneinfo.available_timezones())
+    except Exception:  # pragma: no cover - base IANA ausente
+        todos = [FALLBACK_TZ]
+    americas = [z for z in todos if z.startswith("America/")]
+    resto = [z for z in todos if not z.startswith("America/")]
+
+    return {
+        "detected": {
+            "name": detectado.name,
+            "offset_minutes": detectado.offset_minutes,
+            "label": detectado.label,
+            "source": detectado.source,
+        },
+        # A hora do servidor, não só o fuso: o middleware herda o fuso, não
+        # conserta o relógio. Servidor com hora errada contamina todos os
+        # telefones com cara de ajuste automático — mostrar deixa isso à vista.
+        "server_time": agora.strftime("%Y-%m-%d %H:%M:%S"),
+        "zones": americas + resto,
+    }
+
+
+@router.post(
+    "/config/timezones/redetect",
+    dependencies=[Depends(require_csrf), Depends(require_admin)],
+)
+def redetect_timezone() -> dict[str, object]:
+    """Relê o fuso do SO (o valor é cacheado por processo)."""
+    invalidate_cache()
+    return list_timezones()
 
 
 # ------------------------------------------------------ USCall servers (CRUD)

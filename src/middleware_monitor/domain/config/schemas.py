@@ -81,6 +81,13 @@ class AppConfigOut(BaseModel):
     # movimento do PBX — nao presuma que e desprezivel diante do ledger.
     extension_event_retention_days: int = 7
 
+    # Hora dos telefones (v2.9.0). "herdar" = usa o fuso detectado do servidor,
+    # que e o caminho normal e nao exige digitar nada. Vale para todos os
+    # ambientes do Configurador; cada ambiente pode sobrescrever.
+    phone_timezone_mode: str = "herdar"
+    phone_timezone: str = ""
+    phone_ntp_server: str = "a.ntp.br"
+
     webhook_timeout_seconds: int = 10
 
     auto_reapply_on_recovery: bool = False
@@ -112,6 +119,9 @@ class AppConfigUpdate(BaseModel):
     mqtt_message_retention_days: int | None = Field(default=None, ge=1, le=365)
     mqtt_message_max_mb: int | None = Field(default=None, ge=0, le=1_000_000)
     extension_event_retention_days: int | None = Field(default=None, ge=1, le=365)
+    phone_timezone_mode: str | None = Field(default=None, pattern="^(herdar|proprio)$")
+    phone_timezone: str | None = Field(default=None, max_length=64)
+    phone_ntp_server: str | None = Field(default=None, max_length=128)
     webhook_timeout_seconds: int | None = Field(default=None, ge=1, le=120)
 
     auto_reapply_on_recovery: bool | None = None
