@@ -307,6 +307,11 @@ hora do aperto:
 
 1. Em **Exportar configuração**, marque o que levar (por padrão vai tudo:
    configurações do sistema, ambientes, usuários e devices).
+
+   > Para levar **só alguns ambientes**, o caminho é mais curto: na tela
+   > **Ambientes**, selecione os cards e clique em **Backup**. Sai o mesmo
+   > `.mwrbak`, com esses ambientes apenas. Os botões XLSX/PDF ao lado são
+   > outra coisa — relatório de conferência, com as senhas mascaradas.
 2. Escolha uma passphrase e clique em *Exportar arquivo*. **Guarde a
    passphrase**: sem ela o arquivo não abre, nem por aqui nem por ninguém.
    O arquivo carrega o token do USCall, a senha do broker e a senha SIP de cada

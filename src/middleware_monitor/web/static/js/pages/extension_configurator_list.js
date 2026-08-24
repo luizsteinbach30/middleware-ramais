@@ -407,6 +407,59 @@ $('#ec-grid').addEventListener('click', (e) => {
 $('#ec-export-xlsx').addEventListener('click', () => doExport('xlsx'));
 $('#ec-export-pdf').addEventListener('click', () => doExport('pdf'));
 
+// --- Exportar backup dos selecionados (.mwrbak cifrado) ---
+// Mesma regra de alvo do XLSX/PDF: com seleção, exporta o que está marcado;
+// sem seleção, o que está visível pelos filtros. O que muda é o conteúdo — aqui
+// vão as senhas de verdade, para o ambiente funcionar no destino.
+const bakModal = $('#ec-bak-modal');
+
+function openBakModal() {
+  const ids = exportTargets();
+  if (!ids.length) { toast.error('Nenhum ambiente para exportar'); return; }
+  const nomes = _allEnvs.filter((e) => ids.includes(e.id)).map((e) => e.nome);
+  $('#ec-bak-alvo').textContent = nomes.length === 1
+    ? `Ambiente: ${nomes[0]}`
+    : `${nomes.length} ambientes: ${nomes.slice(0, 4).join(', ')}${nomes.length > 4 ? '…' : ''}`;
+  $('#ec-bak-pass').value = '';
+  bakModal.classList.remove('hidden');
+  $('#ec-bak-pass').focus();
+}
+function closeBakModal() { bakModal.classList.add('hidden'); }
+
+$('#ec-export-bak').addEventListener('click', openBakModal);
+$('#ec-bak-cancel').addEventListener('click', closeBakModal);
+bakModal.addEventListener('click', (e) => { if (e.target === bakModal) closeBakModal(); });
+
+$('#ec-bak-confirm').addEventListener('click', async () => {
+  const ids = exportTargets();
+  const passphrase = $('#ec-bak-pass').value;
+  if (!passphrase) { toast.error('Informe uma passphrase'); return; }
+  const btn = $('#ec-bak-confirm');
+  btn.disabled = true;
+  try {
+    const envelope = await api('/api/backup/export', {
+      method: 'POST',
+      body: { passphrase, sections: ['environments'], environment_ids: ids },
+    });
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+    const nome = ids.length === 1 ? `${ids[0]}-${stamp}.mwrbak` : `ambientes-${stamp}.mwrbak`;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(envelope)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    closeBakModal();
+    toast.success(`${ids.length} ambiente(s) exportado(s) (cifrado)`);
+  } catch (err) {
+    toast.error('Falha ao exportar: ' + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // --- Importar ambiente (.mwrenv cifrado) ---
 const importModal = $('#ec-import-modal');
 function openImportModal() {
@@ -427,6 +480,13 @@ $('#ec-import-confirm').addEventListener('click', async () => {
   const nome = $('#ec-import-nome').value.trim();
   if (!file) { toast.error('Selecione um arquivo .mwrenv'); return; }
   if (!passphrase) { toast.error('Informe a passphrase'); return; }
+  // Pacote de backup entra por outro caminho: lá o operador vê a comparação e
+  // decide cada conflito. Aqui, esta tela só sabe criar ambiente novo — melhor
+  // apontar o caminho certo do que falhar com "schema não suportado".
+  if (file.name.toLowerCase().endsWith('.mwrbak')) {
+    toast.error('Arquivo de backup (.mwrbak): importe em Sistema → Backup, que mostra o que muda antes de aplicar');
+    return;
+  }
   const btn = $('#ec-import-confirm');
   btn.disabled = true;
   try {

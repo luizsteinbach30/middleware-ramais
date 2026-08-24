@@ -246,9 +246,13 @@ def _build_config(db: DBSession) -> dict[str, Any]:
     return {"app_config": linhas, "uscall_servers": servidores, "mqtt_brokers": brokers}
 
 
-def _build_environments(db: DBSession) -> list[dict[str, Any]]:
+def _build_environments(
+    db: DBSession, apenas: tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for env in ec_repo.list_environments(db):
+        if apenas is not None and env.id not in apenas:
+            continue
         linhas = ec_repo.list_lines(db, env.id)
         out.append({
             "id": env.id,
@@ -291,13 +295,24 @@ def _build_devices(db: DBSession) -> list[dict[str, Any]]:
     ]
 
 
-def build(db: DBSession, sections: tuple[str, ...] = SECTIONS) -> dict[str, Any]:
-    """Monta o dicionario do pacote com as secoes pedidas."""
+def build(
+    db: DBSession,
+    sections: tuple[str, ...] = SECTIONS,
+    *,
+    environment_ids: tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Monta o dicionario do pacote com as secoes pedidas.
+
+    ``environment_ids`` restringe a secao de ambientes a uma selecao — é o que
+    a tela de Ambientes usa para exportar só o que está marcado. ``None`` leva
+    todos; **tupla vazia leva nenhum**, e não todos, para uma seleção que se
+    perdeu no caminho não virar export do sistema inteiro sem querer.
+    """
     corpo: dict[str, Any] = {}
     if "config" in sections:
         corpo["config"] = _build_config(db)
     if "environments" in sections:
-        corpo["environments"] = _build_environments(db)
+        corpo["environments"] = _build_environments(db, environment_ids)
     if "users" in sections:
         corpo["users"] = _build_users(db)
     if "devices" in sections:

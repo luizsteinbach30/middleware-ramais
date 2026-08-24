@@ -556,8 +556,21 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
 ### 14.1 Ambientes (`/extension-configurator/environments`)
 - Grid responsivo de cards (1/2/3 colunas conforme breakpoint).
 - **Seleção múltipla** (clique no botão de seleção do card, que fica realçado):
-  alimenta a exportação XLSX/PDF (sem seleção, exporta os visíveis) e o botão
+  alimenta as três exportações (sem seleção, exportam os visíveis) e o botão
   **Apagar selecionados** (v2.7.0).
+- **Três exportações, com finalidades diferentes** — a distinção está no
+  tooltip de cada botão, porque confundi-las custa caro:
+
+  | Botão | Conteúdo | Para quê |
+  |---|---|---|
+  | XLSX / PDF | relatório legível, **senhas mascaradas** | conferência e entrega |
+  | Backup | pacote `.mwrbak` cifrado, **com as senhas** | levar o ambiente para outra instalação |
+
+  O *Backup* pede uma passphrase e diz, no modal, quantos e quais ambientes
+  vão no arquivo. A importação dele **não** é aqui: é em `/system/backup`, que
+  mostra a comparação e deixa escolher o que fica em cada conflito. Escolher um
+  `.mwrbak` no modal de importar desta tela devolve exatamente essa instrução,
+  em vez de falhar com "schema não suportado".
 - **Apagar selecionados** (v2.7.0) — botão vermelho que **só aparece quando há
   seleção** (ação destrutiva não fica a um clique no estado normal). Abre modal
   com a contagem de ambientes/ramais, a **lista do que será apagado** e

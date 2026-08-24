@@ -63,6 +63,10 @@ _MAX_BUNDLE_BYTES = 20 * 1024 * 1024
 class ExportIn(BaseModel):
     passphrase: str = Field(min_length=1)
     sections: list[str] = Field(default_factory=list)
+    # Restringe a seção de ambientes a uma seleção (tela de Ambientes). Ausente
+    # ou nulo = todos; lista vazia é recusada, para uma seleção perdida no
+    # caminho não virar "exportou tudo".
+    environment_ids: list[str] | None = None
 
 
 class InspectIn(BaseModel):
@@ -120,9 +124,20 @@ def export_bundle(
     db: DBSession = Depends(get_session),
 ) -> Response:
     """Gera o pacote portavel cifrado e devolve como download."""
-    data = bundle_mod.build(db, _sections(payload.sections))
+    if payload.environment_ids is not None and not payload.environment_ids:
+        raise HTTPException(status_code=400, detail="nenhum ambiente selecionado")
+    ambientes = (
+        tuple(payload.environment_ids) if payload.environment_ids is not None else None
+    )
+    data = bundle_mod.build(db, _sections(payload.sections), environment_ids=ambientes)
+    if ambientes is not None and not data["sections"].get("environments"):
+        raise HTTPException(status_code=404, detail="ambiente(s) não encontrado(s)")
+    log.info(
+        "backup_exported",
+        sections=list(data["sections"].keys()),
+        ambientes=len(ambientes) if ambientes is not None else None,
+    )
     blob = encrypt_export(bundle_mod.to_bytes(data), payload.passphrase)
-    log.info("backup_exported", sections=list(data["sections"].keys()))
     return Response(
         content=blob,
         media_type="application/json",

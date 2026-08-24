@@ -258,3 +258,50 @@ def test_decisao_invalida_e_recusada_pela_api(client, db: Session) -> None:
         headers={"X-CSRF-Token": csrf},
     )
     assert r.status_code == 400
+
+
+def test_exportar_apenas_os_ambientes_selecionados(client, db: Session) -> None:
+    """A tela de Ambientes exporta o que está marcado, não o sistema inteiro."""
+    csrf = _authed(client, db)
+    a = ec_repo.create_environment(db, nome="Loja 14", modelo_telefone="Intelbras S3002")
+    ec_repo.create_environment(db, nome="Loja 20", modelo_telefone="HTEK UC912")
+    db.commit()
+
+    blob = client.post(
+        "/api/backup/export",
+        json={"passphrase": "frase", "sections": ["environments"], "environment_ids": [a.id]},
+        headers={"X-CSRF-Token": csrf},
+    ).text
+    resumo = client.post(
+        "/api/backup/inspect", json={"blob": blob, "passphrase": "frase"},
+        headers={"X-CSRF-Token": csrf},
+    ).json()
+
+    assert resumo["sections"]["environments"] == {
+        "ambientes": 1, "linhas": 0, "nomes": ["Loja 14"],
+    }
+
+
+def test_selecao_vazia_nao_vira_exportar_tudo(client, db: Session) -> None:
+    """Seleção perdida no caminho não pode virar export do sistema inteiro."""
+    csrf = _authed(client, db)
+    ec_repo.create_environment(db, nome="Loja 14", modelo_telefone="Intelbras S3002")
+    db.commit()
+
+    r = client.post(
+        "/api/backup/export",
+        json={"passphrase": "frase", "environment_ids": []},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 400
+
+
+def test_exportar_ambiente_inexistente(client, db: Session) -> None:
+    csrf = _authed(client, db)
+    r = client.post(
+        "/api/backup/export",
+        json={"passphrase": "frase", "sections": ["environments"],
+              "environment_ids": ["nao-existe"]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 404
