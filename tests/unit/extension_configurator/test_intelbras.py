@@ -236,14 +236,14 @@ def test_xml_intelbras_nao_toca_em_rede() -> None:
 
     O Intelbras aplica configs parciais (igual ao HTEK) — o que NÃO
     enviamos fica preservado. Whitelist do que pode aparecer:
-      <sip>, <web>, <phone>, <dsskey> (+ raiz <sysConf>)
+      <sip>, <web>, <phone>, <dsskey>, <date> (+ raiz <sysConf>)
     PROIBIDO: <net>, <vpn>, <dot1x>, <qos>, <hotspot>, <ap>, <tr069>,
               <log>, <mt> (manutencao/firmware), <call>, <dm>.
     """
     cfg = IntelbrasAdapter().generate_config(_template(), _row())
     root = ET.fromstring(cfg)
     assert root.tag == "sysConf"
-    allowed = {"sip", "web", "phone", "dsskey"}
+    allowed = {"sip", "web", "phone", "dsskey", "date"}
     forbidden = {"net", "vpn", "dot1x", "qos", "hotspot", "ap", "tr069", "mt"}
     found = {child.tag for child in root}
     violations = found - allowed
@@ -264,3 +264,57 @@ def test_generate_config_servidor_sip_da_linha_sobrescreve_template() -> None:
     cfg = IntelbrasAdapter().generate_config(_template(), row)
     root = ET.fromstring(cfg)
     assert root.find("./sip/line[@index='1']/RegisterAddr").text == "outra.pbx.com"
+
+
+# ----------------------------------------------------- hora (NTP + fuso)
+
+
+def _template_com_hora(**over) -> dict:
+    t = _template()
+    t.update({
+        "ntp_server": "a.ntp.br",
+        "timezone": "America/Sao_Paulo",
+        "timezone_offset_minutes": -180,
+    })
+    t.update(over)
+    return t
+
+
+def test_date_emite_ntp_e_o_fuso_comprovado() -> None:
+    """Nomes e seção vieram do export de fábrica do próprio aparelho."""
+    cfg = IntelbrasAdapter().generate_config(_template_com_hora(), _row())
+    date = ET.fromstring(cfg).find("date")
+    assert date is not None
+    assert date.findtext("EnableSNTP") == "1"
+    assert date.findtext("SNTPServer") == "a.ntp.br"
+    assert date.findtext("TimeZone") == "-12"
+    assert date.findtext("TimeZoneName") == "UTC-3"
+
+
+def test_fuso_desconhecido_manda_so_o_ntp() -> None:
+    """`TimeZone` é id de tabela do firmware, não offset: chutar o id colocaria
+    o telefone em outro fuso sem ninguém perceber."""
+    cfg = IntelbrasAdapter().generate_config(
+        _template_com_hora(timezone="America/Manaus", timezone_offset_minutes=-240), _row(),
+    )
+    date = ET.fromstring(cfg).find("date")
+    assert date is not None
+    assert date.findtext("SNTPServer") == "a.ntp.br"
+    assert date.find("TimeZone") is None
+    assert date.find("TimeZoneName") is None
+
+
+def test_sem_hora_no_template_nao_emite_a_secao() -> None:
+    """Ambiente sem NTP nem fuso resolvido não deve mexer na hora do aparelho —
+    o Intelbras aplica config parcial, então o que não vai fica preservado."""
+    cfg = IntelbrasAdapter().generate_config(_template(), _row())
+    assert ET.fromstring(cfg).find("date") is None
+
+
+def test_fuso_desconhecido_nao_derruba_a_geracao() -> None:
+    """generate_config roda dentro de compute_statuses: exceção aqui derrubaria
+    o status da planilha inteira, não só de uma linha."""
+    cfg = IntelbrasAdapter().generate_config(
+        _template_com_hora(timezone_offset_minutes="lixo"), _row(),
+    )
+    assert ET.fromstring(cfg).find("date").findtext("SNTPServer") == "a.ntp.br"

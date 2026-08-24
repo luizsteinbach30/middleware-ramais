@@ -38,11 +38,16 @@ def reset_mqtt_ingestor() -> Iterator[None]:
     reapareceria no seguinte — e o painel passaria a ser verificado contra
     dado de outro cenário.
     """
+    from middleware_monitor.domain.mqtt import links as mqtt_links
     from middleware_monitor.domain.mqtt import service as mqtt_service
 
     mqtt_service._ingestor = None
+    # O índice ramal → device/ambiente também é de processo, com TTL de 30 s:
+    # sem zerar, o teste seguinte veria o vínculo do anterior.
+    mqtt_links.invalidate()
     yield
     mqtt_service._ingestor = None
+    mqtt_links.invalidate()
 
 
 @pytest.fixture

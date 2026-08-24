@@ -7,6 +7,7 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from middleware_monitor.core import resources
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.scheduler import (
@@ -32,6 +33,11 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     module stays decoupled from concrete jobs.
     """
     from middleware_monitor.jobs.backup import apply_backup_schedule
+    from middleware_monitor.jobs.bundle_probe import (
+        PROBE_JOB_ID,
+        PROBE_SECONDS,
+        run_bundle_probe,
+    )
     from middleware_monitor.jobs.collect_extensions import run_collect_extensions
     from middleware_monitor.jobs.monitor_devices import run_monitor_devices
     from middleware_monitor.jobs.rebuild_calls import run_daily_stats, run_rebuild_calls
@@ -84,6 +90,12 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     apply_update_schedule(upd)
     # Backup diário: horário e retenção configuráveis pela tela.
     apply_backup_schedule(bkp)
+    # Sonda do bundle: só existe diretório de extração para vigiar quando o app
+    # roda do .exe empacotado (ver jobs/bundle_probe.py).
+    if resources.empacotado():
+        add_interval_job(
+            run_bundle_probe, job_id=PROBE_JOB_ID, seconds=PROBE_SECONDS,
+        )
 
     log.info(
         "jobs_registered",

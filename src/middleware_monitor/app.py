@@ -9,7 +9,6 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
@@ -49,6 +48,7 @@ from middleware_monitor.api import (
 from middleware_monitor.api import (
     webhooks as api_webhooks,
 )
+from middleware_monitor.core import resources
 from middleware_monitor.core.db import init_engine
 from middleware_monitor.core.logging import configure_logging, get_logger
 from middleware_monitor.core.scheduler import (
@@ -65,6 +65,7 @@ from middleware_monitor.jobs import register_all
 from middleware_monitor.settings import get_settings
 from middleware_monitor.version import __version__
 from middleware_monitor.web import pages as web_pages
+from middleware_monitor.web.static_files import ResilientStaticFiles
 
 log = get_logger("app")
 
@@ -165,9 +166,14 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(SecurityHeadersMiddleware)
 
+    # Lê templates e estáticos para memória antes de montar as rotas. Só faz
+    # algo no .exe empacotado — é a rede de segurança contra o diretório de
+    # extração ser esvaziado com o app no ar (ver core/resources.py).
+    resources.preload()
+
     static_dir = Path(__file__).parent / "web" / "static"
     if static_dir.exists():
-        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+        app.mount("/static", ResilientStaticFiles(directory=str(static_dir)), name="static")
 
     # API routers
     for r in (

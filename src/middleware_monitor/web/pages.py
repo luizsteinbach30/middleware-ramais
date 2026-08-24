@@ -25,7 +25,20 @@ def get_templates() -> Jinja2Templates:
     from pathlib import Path
 
     here = Path(__file__).parent
-    return Jinja2Templates(directory=str(here / "templates"))
+    templates = Jinja2Templates(directory=str(here / "templates"))
+    from middleware_monitor.core import resources
+
+    cache = resources.templates_cache()
+    loader = templates.env.loader
+    if cache and loader is not None:
+        # O disco continua sendo a fonte; o cache em memória só entra quando o
+        # arquivo não está mais lá. É o que mantém a tela de pé quando o
+        # diretório de extração do .exe é esvaziado com o app no ar
+        # (ver core/resources.py).
+        from jinja2 import ChoiceLoader, DictLoader
+
+        templates.env.loader = ChoiceLoader([loader, DictLoader(cache)])
+    return templates
 
 
 def _maybe_user(

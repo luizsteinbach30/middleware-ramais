@@ -18,6 +18,7 @@
     <web><account index="1">  usuario/senha da web admin
     <phone><MenuPassword/KeyLockPassword>  senhas de menu e bloqueio
     <phone><EnableKeyLock/KeyLockTimeout>  bloqueio universal de menu (default 2 / 30s)
+    <date>             NTP e fuso (EnableSNTP/SNTPServer/TimeZone/TimeZoneName)
     <dsskey><dssSoft>  function keys (atalhos / Central)
 
   Validado por teste tests/unit/test_intelbras.py — nao modificar sem rodar pytest.
@@ -44,4 +45,5 @@
         <KeyLockTimeout>{keylock_timeout}</KeyLockTimeout>
     </phone>
 {dss_keys_xml}
+{date_xml}
 </sysConf>

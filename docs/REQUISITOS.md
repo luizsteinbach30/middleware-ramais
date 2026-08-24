@@ -700,86 +700,77 @@ Ver [ADR-0003](ADRs/0003-multi-uscall.md) e [ADR-0004](ADRs/0004-device-actions.
 Diferente da §11, que é o roadmap histórico das fases já entregues, esta seção
 lista o que está aberto **agora**. Ordem = prioridade sugerida.
 
-### 15.1 🔴 Auto-update não funciona em campo (v2.7.x/v2.8.0)
+### 15.1 Auto-update em campo (v2.7.x/v2.8.0) — mitigado
 
 Relatado em 2026-08-21, com log de máquina de cliente rodando o `.exe`. São
-**duas falhas independentes** no mesmo log; tratar separadamente.
+**duas falhas independentes** no mesmo log; foram tratadas separadamente.
 
-#### (a) Verificação de update falha no TLS — causa identificada
+#### (a) ✅ Verificação de update falhava no TLS — corrigido na v2.8.1
 
 ```
-WARNING updater | check_failed: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED]
+WARNING updater | check_failed: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED
 certificate verify failed: unable to get local issuer certificate (_ssl.c:1006)>
 ```
 
-**Causa.** `src/middleware_monitor/desktop.py:330` chama
-`urllib.request.urlopen(req, timeout=10)` **sem passar contexto SSL**. Sem
-contexto, o Python usa `ssl.create_default_context()`, que no Windows lê o
-armazenamento de certificados do sistema — e ali costuma faltar o emissor
-intermediário, dando exatamente esta mensagem. É por isso que **só o updater
-falha**: todo o resto do app fala HTTPS por `httpx`, que usa o `certifi` por
-padrão.
+`desktop.py` verificava o release com `urllib.request.urlopen` **sem contexto
+TLS**; sem contexto o Python cai no armazenamento de certificados do Windows,
+onde costuma faltar o emissor intermediário. O `certifi` sempre esteve dentro
+do bundle — o updater é que não o usava. Corrigido em `_contexto_tls()`
+(`desktop.py`), coberto por `tests/unit/test_desktop_update_tls.py`.
 
-**Confirmado:** o `certifi/cacert.pem` **está** dentro do bundle das duas
-versões (v2.7.2 e v2.8.0) — verificado lendo o índice do executável publicado.
-Ou seja, o CA existe; o updater simplesmente não o usa.
+**Conferido em 2026-08-24:** era a única chamada afetada. O download do
+artefato usa `httpx` (`updater/client.py`), que já usa o `certifi` por padrão, e
+a chamada a `127.0.0.1` do detector de instância é HTTP.
 
-**Correção proposta** (pequena, sem mudar infraestrutura):
+**Falta:** confirmar em campo, no `.exe`, numa máquina que reproduzia o erro —
+rodando do código-fonte o problema não aparece.
 
-```python
-import ssl, certifi
-_CTX = ssl.create_default_context(cafile=certifi.where())
-...
-urllib.request.urlopen(req, timeout=10, context=_CTX)
-```
-
-Vale para as duas chamadas de rede externa do `desktop.py` (a de `check()` e a
-do download do artefato). A chamada a `127.0.0.1` de
-`_ocupante_e_o_middleware` é HTTP e não é afetada.
-
-**Verificação:** só vale ao vivo, no `.exe` empacotado, em máquina Windows que
-reproduza o erro — rodando do fonte o problema não aparece.
-
-#### (b) Tela de updates quebra com `TemplateNotFound` — causa ainda desconhecida
+#### (b) Tela de updates quebrava com `TemplateNotFound` — mitigado, causa ainda aberta
 
 ```
 jinja2.exceptions.TemplateNotFound: 'system_updates.html' not found in
-search path: '...\Temp\_MEI31562\middleware_monitor\web\templates'
+search path: '...\Temp\_MEI31562\middleware_monitor\web	emplates'
 ```
 
-**O que já se sabe:** o arquivo **está empacotado** — verificado no índice dos
-executáveis publicados da v2.7.2 **e** da v2.8.0. Portanto **não é omissão de
-empacotamento** (é um problema diferente do template do Yealink, corrigido na
-v2.8.0). O diretório de extração `_MEI...` perdeu o arquivo em tempo de
-execução, ou nunca o extraiu por completo.
+O arquivo **estava** empacotado (verificado no índice dos executáveis da v2.7.2
+e da v2.8.0), então não é omissão de empacotamento: o diretório de extração
+(`%TEMP%\_MEI…`) perdeu o arquivo em tempo de execução. Hipóteses, na ordem:
+antivírus com quarentena em `%TEMP%`, limpeza do Windows numa execução longa, ou
+update parcial.
 
-**Hipóteses, em ordem de plausibilidade:**
+**Mitigação entregue em 2026-08-24** (`core/resources.py`), em duas metades:
 
-1. **Antivírus** removendo arquivos do diretório de extração em `%TEMP%` com o
-   app no ar — o mais comum com PyInstaller onefile.
-2. **Limpeza de `%TEMP%` pelo Windows** (Sensor de Armazenamento) durante uma
-   execução longa.
-3. **Update parcial**: o próprio updater substituindo arquivos de uma instalação
-   em execução e deixando estado misto. Reforça esta hipótese o fato de a falha
-   acontecer segundos depois das tentativas de verificação de update
-   (13:49:06 → 13:49:30).
+- **o app não cai mais por isso.** No boot do executável, templates (211 KB) e
+  estáticos (1,5 MB) são lidos para memória. O disco continua sendo a fonte; o
+  cache só entra quando o arquivo não está mais lá — templates por
+  `ChoiceLoader`, estáticos por `ResilientStaticFiles`. Sem a segunda metade a
+  tela responderia sem CSS nem JS, que para o operador é a mesma coisa que
+  estar fora.
+- **a causa deixa de depender de sorte.** Uma sonda de 15 em 15 minutos
+  (`jobs/bundle_probe.py`, só no `.exe`) confere arquivos-canário e grava
+  `recursos_do_bundle_sumiram` com a hora exata. Antes, o fato só aparecia
+  quando alguém abria a tela, muito depois — agora dá para cruzar com o log do
+  antivírus.
 
-**Primeiro passo do diagnóstico** (falta informação para ir além): confirmar
-**qual versão** o cliente roda, se há antivírus com quarentena ativa, e se o
-`_MEI...` da sessão ainda contém `web/templates/` completo no momento do erro.
+**Correção de raiz, ainda por decidir:** empacotar em *onedir* elimina a
+extração para `%TEMP%` e toda esta classe de falha. Não foi feito aqui porque
+muda o formato de distribuição (o asset deixa de ser um `.exe` solto e vira uma
+pasta/zip), o que afeta instalador, updater e todas as instalações existentes —
+é decisão de release, não de implementação.
 
-**Mitigação a considerar independentemente da causa:** empacotar em modo
-*onedir* em vez de *onefile*, que elimina a extração para `%TEMP%` e toda esta
-classe de falha — ao custo de o instalador passar a distribuir uma pasta.
+**Recomendação operacional:** excluir do antivírus a pasta do executável e o
+diretório de dados (`%LOCALAPPDATA%\MiddlewareMonitor`).
 
-### 15.2 Coletor MQTT — fase 5
+### 15.2 ✅ Coletor MQTT — fase 5 concluída (2026-08-24)
 
 Fases 1 a 3 entregues na v2.8.0; **fase 4 entregue** (PRs #47 e #48):
 `extension_calls`, `extension_daily_stats`, tela `/mqtt-chamadas` com exportação
 CSV, seção Telefonia no detalhe do ramal, job de reconstrução e retenção própria.
 
-Falta a **fase 5** — fechamento de documentação (`GUIA_DE_USO.md`), que ainda não
-descreve nenhuma das telas do coletor.
+**Fase 5 entregue em 2026-08-24**: o `GUIA_DE_USO.md` ganhou a §11 (Coletor
+MQTT) — para que serve, configuração assistida, as três telas, o que cada
+retenção guarda e o que checar quando algo parece errado. A tela de Chamadas,
+entregue na fase 4 sem documentação de UI, virou `docs/TELAS.md` §15.4.
 
 **O que a fase 4 ensinou e vale para quem mexer nisso depois** (está detalhado em
 `domain/mqtt/calls.py` e na correção do ADR-0005):
@@ -797,56 +788,83 @@ aberta indefinidamente, e qualquer lógica que puxe o piso de leitura até ela v
 reprocessar — e duplicar — tudo o que veio depois. A marca d'água nunca anda para
 trás; as pernas abertas são semeadas a partir do banco.
 
-### 15.3 Hora automática nos telefones
+### 15.3 Hora automática nos telefones — parcial
 
-Plano aprovado, PR 1 (busca por trecho no MQTT) entregue na v2.8.0. Restam a
-fundação da resolução de fuso, a interface, e a cobertura por fabricante —
-sendo que Intelbras V-series e FlyingVoice P10 dependem de sonda de bancada.
+**Já entregue** (v2.9.0, PR #45 e este): a fundação da resolução
+(`domain/extension_configurator/time_settings.py`, três níveis — ambiente,
+instalação, fuso detectado do servidor), a interface em `/config` e no
+ambiente, e a cobertura de **HTEK**, **Yealink** e agora **Intelbras
+V-series**.
 
-### 15.4 Painel ao vivo: ligar o ramal ao resto do sistema
+O Intelbras foi implementado a partir do **export de fábrica** do próprio
+aparelho (V3501 e V5501), que é a fonte canônica deste firmware: seção
+`<date>`, campos `EnableSNTP`, `SNTPServer`, `TimeZone` e `TimeZoneName`.
 
-Pedido em 2026-08-21. Hoje o cartão do ramal em `/mqtt-painel` é quase uma ilha:
-mostra estado, número da outra ponta, tempo no estado e — quando existe device
-correspondente — o IP e o estado de rede. O único link é para as mensagens cruas
-daquele ramal.
+⚠️ **`TimeZone` é id de tabela do firmware, não offset.** Nos dois exports vem
+`-12` com `TimeZoneName` `UTC-3`. Só esse par é emitido; para qualquer outro
+fuso o adapter manda **apenas o NTP** e loga
+`intelbras_timezone_desconhecido`. Chutar id colocaria o telefone em outro
+fuso sem ninguém perceber — pior do que não mexer.
 
-**O que falta ligar.** Do cartão (e da fita de transições) deve dar para chegar
-em:
+**O que falta, e por quê:**
 
-- **o device** — `/devices/{id}`, com gráfico de latência, histórico de ping e
-  as ações remotas;
-- **o ambiente do Configurador** a que a linha pertence, e a própria linha na
-  planilha (`ExtensionLine.device_id` já faz esse vínculo, e
-  `repository.get_device_info_for_lines` já resolve o caminho inverso);
-- **o servidor USCall de origem** (`Device.uscall_server_id`), útil em
-  instalação multi-servidor para saber de qual PBX aquele ramal veio;
-- **o MAC e o modelo** (`Device.mac`, `ExtensionLine.ultimo_modelo`), que hoje
-  não aparecem em lugar nenhum do painel;
-- **o histórico de aplicação** daquela linha (último status, último erro), que é
-  o que responde "esse ramal está indisponível porque a config caiu?".
+| Item | Bloqueio |
+|---|---|
+| Demais fusos do Intelbras V-series | precisa da tabela de ids do firmware: ler o `<select>` de fuso na página web de um aparelho, ou exportar a config depois de trocar o fuso à mão |
+| Intelbras S3002 (linha S) | adapter é form-replay em páginas `.asp`; sem export nem bancada não dá para saber o campo |
+| FlyingVoice P10 | idem — o dump de lab que existe é da página *Preference*, que não tem NTP/fuso |
+| Homologar o V-series no aparelho | o XML é gerado e testado, mas nenhum telefone recebeu ainda |
 
-**Por que importa.** O painel responde "o que está acontecendo agora"; a
-pergunta seguinte é sempre "e o que eu faço a respeito" — e hoje ela exige
-procurar o ramal a mão em outra tela.
+⚠️ **Impacto de release:** a seção `<date>` muda o XML gerado, então **toda
+linha Intelbras V-series aparece como desatualizada** na primeira vez, e será
+reaplicada. É o comportamento correto (o telefone precisa receber a hora), mas
+não é silencioso — avise antes de subir em cliente com muitos ramais.
 
-**Cuidado de desenho.** Ramal pode existir no MQTT sem device (a coleta REST é
-que cria o telefone, porque o payload MQTT não tem IP nem MAC). O cartão já
-mostra "sem device" nesse caso; os links novos precisam sumir em vez de apontar
-para lugar nenhum.
+### 15.4 ✅ Painel ao vivo ligado ao resto do sistema (2026-08-24)
 
-**Nota de implementação.** `/api/mqtt/live` já faz o casamento ramal → device
-para trazer IP e estado de rede; é o mesmo ponto onde os identificadores extras
-entram, sem consulta nova por cartão.
+O cartão do ramal em `/mqtt-painel` era quase uma ilha: mostrava estado, número
+da outra ponta, tempo no estado e — quando havia device — IP e estado de rede. O
+único link levava às mensagens cruas daquele ramal.
 
-### 15.5 Dívida conhecida — Action URI do Yealink
+**Entregue.** `/api/mqtt/live` passou a devolver também MAC, modelo, servidor
+USCall de origem, o ambiente do Configurador que provisiona a linha e o
+resultado da última aplicação. No cartão isso vira uma faixa de atalhos:
 
-`docs/ADRs/0004-device-actions.md:76` e
-`docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md:44-46` afirmam que o template do
-Yealink provisiona a "Action URI Allow IP List". **Não provisiona** —
-`yealink_template.cfg` não tem nenhuma chave `features.*`/`action_uri`, e a
-whitelist `_ALLOWED_PREFIXES` (`yealink.py:57-63`) rejeitaria. Na prática o
-`normalize` do Yealink depende de o aparelho já ter o IP do middleware liberado.
-Corrigir a documentação ou implementar o provisionamento.
+- **telefone** → `/devices/{id}`, com IP, MAC, modelo e servidor no tooltip;
+- **nome do ambiente** → `/extension-configurator/environments/{id}`;
+- **selo "config com erro"** (vermelho, com o erro no tooltip) quando a última
+  aplicação naquela linha falhou.
+
+Três decisões de desenho:
+
+- **Vínculo que não existe não vira link morto** — some. Ramal pode existir no
+  MQTT sem device, porque o payload não traz IP nem MAC e quem cria o telefone é
+  a coleta REST.
+- **Só erro vira selo.** Config em dia é o esperado; selo verde em todo cartão
+  seria ruído, mesmo critério do "sem msg há X". O campo é o resultado cru da
+  última aplicação (`ok`/`erro`), não o status derivado da tela do ambiente —
+  este exige gerar o XML da linha para comparar hash, caro demais aqui.
+- **Índice com cache de 30 s** (`domain/mqtt/links.py`): o painel recarrega a
+  cada 2,5 s e a instalação real tem ~800 ramais publicando; refazer três
+  junções por ciclo custaria mais que a própria ingestão. O que o índice
+  responde muda em escala de minutos; o estado do ramal, que muda em segundos,
+  continua vindo da memória do coletor a cada ciclo.
+
+### 15.5 ✅ Action URI do Yealink — documentação corrigida (2026-08-24)
+
+A afirmação de que o template provisionava a "Action URI Allow IP List" era
+falsa e saiu do ADR-0004 e do guia de homologação: `yealink_template.cfg` não
+emite chave `features.*` nenhuma, e a whitelist `_ALLOWED_PREFIXES` recusaria.
+O erro 403 do `normalize` agora diz onde liberar o IP (Features → Remote
+Control), em vez de mandar conferir a senha.
+
+**Provisionar a lista continua em aberto**, como melhoria. O desenho, para quem
+pegar: emitir `features.action_uri_limit_ip` com o IP do middleware, liberando
+na whitelist **a chave exata** (não o prefixo `features.`, que abriria espaço
+para qualquer coisa) e resolvendo qual IP local enxerga a sub-rede do telefone.
+Não foi feito agora por dois motivos: exige bancada para confirmar o nome da
+chave no firmware, e acrescentar linha ao template muda o hash de **todas** as
+linhas Yealink — toda a base apareceria como desatualizada de uma vez.
 
 ### 15.6 Revisão de arquitetura e desempenho
 

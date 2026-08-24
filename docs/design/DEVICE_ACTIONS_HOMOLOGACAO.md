@@ -41,9 +41,11 @@ API/UI, mas **nenhum vendor homologou** até agora.
   - Volume é **relativo** (1 passo por request); a escala vai a ~15, então 10
     presses a partir de qualquer ponto garantem o teto.
 - **Gate**: o aparelho só aceita Action URI de IPs na "Action URI Allow IP
-  List" (Features → Remote Control). O template do `generate_config` já
-  provisiona a permissão; aparelho provisionado por fora precisa liberar o IP
-  do middleware manualmente.
+  List" (Features → Remote Control). O middleware **não** provisiona essa
+  lista — o `yealink_template.cfg` não emite chave `features.*` nenhuma. O IP
+  do middleware precisa estar liberado no aparelho, à mão ou pelo sistema que
+  provisionou o telefone; sem isso o `normalize` responde 403 e a mensagem de
+  erro diz exatamente onde liberar.
 
 ### FlyingVoice P10 — form-replay
 

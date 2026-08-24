@@ -365,3 +365,111 @@ hora do aperto:
   Atualize o middleware primeiro.
 - **Quanto espaço isso ocupa?** O rodapé da tabela mostra o total. Se apertar,
   baixe o limite em MB — a poda seguinte já obedece.
+
+---
+
+## 11. Coletor MQTT
+
+### Para que serve
+
+O PBX publica num broker MQTT (EMQX) o estado de cada ramal — disponível,
+tocando, discando, em conversa, indisponível. O middleware assina esse broker e
+faz três coisas com o que chega:
+
+| Tela | Pergunta que responde |
+|---|---|
+| **Painel ao vivo** (`/mqtt-painel`) | o que está acontecendo agora |
+| **Chamadas** (`/mqtt-chamadas`) | quem falou com quem, quanto tempo, como terminou |
+| **Mensagens** (`/mqtt-messages`) | essa mensagem foi mesmo publicada? |
+
+A terceira é a razão original da integração: **o serviço que publica não
+registra os próprios envios**. Quando aparece a dúvida "o sistema mandou esse
+evento?", é aqui que existe a prova.
+
+### Configurar (uma vez)
+
+Em **Configuração** (`/config`), seção *Coletor de mensagens MQTT*:
+
+1. Digite o endereço do broker no campo único — pode ser `emqx.exemplo.com`,
+   `emqx.exemplo.com:8883` ou até a URL do painel web do EMQX. Clique em
+   **Descobrir conexão**.
+2. O sistema **sonda** a rede e mostra o relatório passo a passo: qual porta
+   respondeu, se tem TLS, se o broker exige credencial. Ele não confia em porta
+   aberta — só aceita endpoint que responde CONNACK de MQTT.
+3. Se o certificado não for de uma CA conhecida, a tela mostra a impressão
+   digital e pede sua confirmação. Confirmada, aquele certificado — e só ele —
+   passa a ser aceito.
+4. Informe usuário e senha se o broker exigir, e escolha os **tópicos** a partir
+   do que existe no broker (a sonda lista o que está passando).
+5. Defina a **retenção**: dias de ledger e, opcionalmente, um teto em MB.
+
+Depois disso o coletor conecta sozinho a cada inicialização e reconecta se cair.
+
+### Painel ao vivo
+
+Um cartão por ramal, colorido pelo estado, com a outra ponta da chamada e há
+quanto tempo está assim. Clicar num contador (Tocando, Em conversa…) filtra a
+grade. O número do ramal leva às mensagens cruas dele.
+
+- **Faixa âmbar no topo**: o coletor não está rodando ou não há broker — a grade
+  abaixo é o **último estado conhecido**, não o de agora. Preste atenção nisso
+  antes de concluir qualquer coisa.
+- **Ramal apagado com "sem msg há X"**: o publicador parou de falar daquele
+  ramal há mais de 2 minutos.
+- **"sem device"**: o ramal existe no PBX mas ainda não como telefone
+  monitorado. Normal — quem cria o device é a coleta REST, porque o payload MQTT
+  não traz IP nem MAC.
+- **Descartadas > 0** (em vermelho, na saúde da ingestão): mensagem que não foi
+  gravada é prova perdida. Se aparecer, avise.
+
+### Chamadas
+
+Cada linha é **uma ponta**: ligação entre dois ramais aparece duas vezes, uma
+para cada lado; um grupo de captura aparece uma vez por ramal que tocou. Filtre
+por período, ramal, outra ponta, direção e resultado, e exporte em CSV (abre no
+Excel em português, com hora local).
+
+O **resumo diário por ramal** (usado na seção Telefonia do device) conta
+diferente de propósito: uma chamada com identificador conta **uma vez por
+ramal**, mesmo tendo tocado em vários. Sem isso, um grupo de captura inflaria as
+perdidas em quase três vezes — foi medido.
+
+### Mensagens (a prova)
+
+Busque por período, tópico (aceita `+` e `#`), ramal ou texto do conteúdo. Cada
+mensagem abre com o payload **como recebido** (é ele que vale como prova) e uma
+aba formatada, que é só conforto de leitura. Ações: *Copiar*, *Comprovante* (o
+texto pronto para anexar num chamado) e **Fixar evidência**.
+
+Duas coisas para não errar aqui:
+
+- **A faixa de cobertura acompanha todo resultado.** Verde quer dizer "o coletor
+  esteve conectado 100% do período — o que não está aqui não foi publicado".
+  Âmbar lista as lacunas. Sem essa faixa verde, ausência de mensagem **não prova
+  nada**: pode ter sido o coletor que estava fora do ar.
+- **Mensagem fixada como evidência nunca é apagada** pela retenção, nem por
+  idade nem por espaço. Se o comprovante já foi usado num chamado, fixe.
+
+### Retenção — o que dura quanto
+
+| Dado | Padrão | Onde muda |
+|---|---|---|
+| Mensagens cruas (ledger) | 7 dias, sem teto de MB | `/config` |
+| Transições de estado | 7 dias | `/config` |
+| Chamadas reconstruídas | 90 dias | `/config` |
+| Resumo diário por ramal | 365 dias | `/config` |
+| Histórico de conexão do coletor | 1 ano, fixo | — |
+| Evidências fixadas | para sempre | — |
+
+O resumo diário é o único histórico longo: ele sobrevive à poda de todo o resto,
+e é dele que sai qualquer comparação de meses atrás.
+
+### Quando algo parece errado
+
+- **"não configurado"** no cabeçalho: não há broker cadastrado — vá em `/config`.
+- **"sem conexão"**: o coletor não está conseguindo assinar. Veja em `/logs` os
+  eventos do módulo `mqtt`; credencial recusada e certificado trocado aparecem
+  lá com o motivo.
+- **Estado do painel diferente do que o telefone mostra**: o painel reflete o
+  que o PBX publicou. Se o publicador parou, o cartão apaga com "sem msg há X" —
+  compare com a hora da última mensagem na saúde da ingestão.

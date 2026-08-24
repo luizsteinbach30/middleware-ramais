@@ -72,9 +72,13 @@ catálogo e o guard ficam prontos para quando houver homologação.
 - **Reboots documentados**: FlyingVoice reinicia ao mudar DND; HTEK reinicia
   ao aceitar qualquer config (inclusive o normalize). A UI avisa; o
   `ActionResult.rebooted` propaga até o toast e o painel.
-- Yealink Action URI é gated por "Action URI Allow IP List" no aparelho — o
-  template do `generate_config` já provisiona a permissão; instalações com
-  telefones provisionados fora do middleware precisam liberar o IP.
+- Yealink Action URI é gated por "Action URI Allow IP List" no aparelho, e o
+  template do `generate_config` **não** provisiona essa permissão (corrigido
+  em 2026-08-24: a redação anterior afirmava que sim). O `yealink_template.cfg`
+  não tem nenhuma chave `features.*`, e a whitelist `_ALLOWED_PREFIXES` do
+  adapter recusaria. Na prática o `normalize` do Yealink depende de o aparelho
+  já ter o IP do middleware liberado — provisionado à mão ou por outro sistema.
+  Ver a melhoria proposta em `docs/REQUISITOS.md` §15.5.
 - MUTE não tem controle HTTP no FlyingVoice/HTEK (estado de runtime); no
   Yealink a key MUTE é um toggle — em idle o efeito líquido é destravar.
 - Intelbras V-series homologado numa segunda rodada (2026-08-03) via export

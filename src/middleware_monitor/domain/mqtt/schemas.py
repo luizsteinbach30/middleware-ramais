@@ -311,6 +311,21 @@ class LiveExtension(BaseModel):
     device_id: int | None = None
     ip: str | None = None
     network_status: str = "unknown"
+    # Identificação e vínculos do ramal (v2.9.0). Sem isso o cartão respondia
+    # "o que está acontecendo" e parava aí: a pergunta seguinte — "e o que eu
+    # faço a respeito" — exigia procurar o ramal à mão em outra tela.
+    mac: str | None = None
+    model: str | None = None
+    uscall_server: str | None = None
+    environment_id: str | None = None
+    environment_nome: str | None = None
+    # Resultado CRU da última aplicação de configuração naquela linha ("ok" |
+    # "erro" | None), não o status derivado da tela do ambiente — este exige
+    # gerar o XML da linha para comparar hash, caro num painel que recarrega a
+    # cada 2,5 s. É o que responde "o ramal está indisponível porque a config
+    # caiu?".
+    line_status: str | None = None
+    line_error: str | None = None
 
     @field_serializer("since", "last_seen_at")
     def _ser_dt(self, value: datetime | None) -> str | None:

@@ -812,7 +812,37 @@ sonda passo a passo, confirmação da impressão digital do certificado quando e
 não é assinado por CA conhecida, escolha dos tópicos a partir do que existe no
 broker, e retenção do ledger (dias + teto opcional em MB, com o volume atual).
 
-### 15.4 Endpoints API consumidos
+### 15.4 Chamadas — `/mqtt-chamadas`
+
+**Propósito.** O PBX não publica chamadas: publica o estado de cada ramal. Esta
+tela mostra a chamada **reconstruída** dessa sequência — quem falou com quem,
+quanto tocou, quanto durou e como terminou. Menu **Coletor MQTT**, entre Painel
+ao vivo e Mensagens.
+
+**Layout.**
+
+1. **Filtros** — período em atalhos (1 h / 24 h / 7 dias / intervalo à mão),
+   ramal e outra ponta (ambos por trecho), direção (recebidas / feitas) e
+   resultado (atendidas / perdidas / não atenderam / em curso).
+2. **Nota fixa acima da tabela** — cada linha é **uma ponta** da chamada: uma
+   ligação entre dois ramais aparece duas vezes, e um grupo de captura aparece
+   uma vez por ramal tocado. É a leitura errada mais provável da tabela, então
+   o aviso não é escondido em ajuda.
+3. **Tabela** — início, ramal, direção, outra ponta, resultado, tempo de toque e
+   tempo de conversa. Rodapé com a contagem e *Carregar mais*.
+4. **Exportar CSV** — mesmo filtro da tela, hora local e separador que o Excel
+   em português entende.
+
+**Regras de exibição.**
+
+- Chamada `em curso` não tem duração e é rotulada como tal — não entra no
+  resumo diário, que só conta o que terminou.
+- Numa ligação interna o PBX só manda o número para quem **recebe**; a ponta que
+  originou aparece sem a outra ponta, e isso é o dado real, não falha da tela.
+- No detalhe do device (`/devices/{id}`) a seção **Telefonia** mostra o mesmo
+  para aquele ramal: resumo do dia e as últimas chamadas.
+
+### 15.5 Endpoints API consumidos
 
 | Recurso | Método | Path |
 |---|---|---|
@@ -826,6 +856,9 @@ broker, e retenção do ledger (dias + teto opcional em MB, com o volume atual).
 | Fixar evidência | POST | `/api/mqtt/messages/{id}/pin` |
 | Comprovante (texto) | GET | `/api/mqtt/messages/{id}/comprovante` |
 | Cobertura do período | GET | `/api/mqtt/coverage` |
+| Chamadas reconstruídas | GET | `/api/mqtt/calls` |
+| Chamadas em CSV | GET | `/api/mqtt/calls/export` |
+| Resumo diário por ramal | GET | `/api/mqtt/calls/daily` |
 
 ---
 

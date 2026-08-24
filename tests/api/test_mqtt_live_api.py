@@ -112,3 +112,97 @@ def test_live_traz_a_fita_de_transicoes_mais_recente_primeiro(client, db) -> Non
 
     # transicoes=0 serve para a tela pedir só a grade, sem tocar no banco.
     assert client.get("/api/mqtt/live?transicoes=0").json()["transitions"] == []
+
+
+def test_live_liga_o_ramal_ao_device_ambiente_e_ultima_aplicacao(client, db) -> None:
+    """O cartão deixa de ser ilha: dele se chega no telefone, no ambiente que o
+    provisiona e no servidor de onde ele veio."""
+    from middleware_monitor.domain.extension_configurator import repository as ec_repo
+    from middleware_monitor.domain.mqtt import links
+    from middleware_monitor.domain.uscall import repository as uscall_repo
+
+    _authed(client, db)
+    srv = uscall_repo.create_server(
+        db, nome="PBX Matriz", host="https://pbx.exemplo", token_plain="tok",
+    )
+    dev = Device(
+        name="0119", ip="192.168.0.48", mac="00:11:22:33:44:55", model="Intelbras S3002",
+        logical_status="available", network_status="online",
+        uscall_server_id=srv.id, created_at=BASE, updated_at=BASE,
+    )
+    db.add(dev)
+    db.flush()
+    env = ec_repo.create_environment(db, nome="Loja 14", modelo_telefone="Intelbras S3002")
+    (linha,) = ec_repo.save_lines(db, env, [{"ip": "192.168.0.48", "numero_ramal": "0119"}])
+    ec_repo.update_line_status(db, linha, status="erro", erro="timeout no upload")
+    db.commit()
+    links.invalidate()
+
+    ing = get_ingestor()
+    ing.state = realtime.RealtimeState()
+    ing.state._primed = True
+    ing.state.classify([_sample("0119", "indisponivel")])
+
+    ramal = client.get("/api/mqtt/live").json()["extensions"][0]
+    assert ramal["mac"] == "00:11:22:33:44:55"
+    assert ramal["model"] == "Intelbras S3002"
+    assert ramal["uscall_server"] == "PBX Matriz"
+    assert ramal["environment_id"] == env.id
+    assert ramal["environment_nome"] == "Loja 14"
+    # é o que responde "está indisponível porque a config caiu?"
+    assert ramal["line_status"] == "erro"
+    assert ramal["line_error"] == "timeout no upload"
+
+
+def test_live_sem_vinculo_nao_inventa_link(client, db) -> None:
+    """Ramal pode existir no MQTT sem device (o payload não tem IP nem MAC).
+    Nesse caso os campos vêm nulos e a tela não desenha link para lugar nenhum."""
+    from middleware_monitor.domain.mqtt import links
+
+    _authed(client, db)
+    links.invalidate()
+    ing = get_ingestor()
+    ing.state = realtime.RealtimeState()
+    ing.state._primed = True
+    ing.state.classify([_sample("9999", "disponivel")])
+
+    ramal = client.get("/api/mqtt/live").json()["extensions"][0]
+    assert ramal["device_id"] is None
+    assert ramal["environment_id"] is None
+    assert ramal["uscall_server"] is None
+    assert ramal["line_status"] is None
+
+
+def test_indice_de_vinculos_serve_do_cache_dentro_do_ttl(db) -> None:
+    """O painel recarrega a cada 2,5 s; sem cache seriam três junções por ciclo
+    para ~800 ramais."""
+    from middleware_monitor.domain.mqtt import links
+
+    links.invalidate()
+    db.add(Device(name="0119", ip="10.0.0.1", created_at=BASE, updated_at=BASE))
+    db.commit()
+
+    assert links.index(db, ["0119"])["0119"].ip == "10.0.0.1"
+
+    db.query(Device).filter(Device.name == "0119").update({"ip": "10.0.0.99"})
+    db.commit()
+    # dentro do TTL, continua servindo o que já tinha
+    assert links.index(db, ["0119"])["0119"].ip == "10.0.0.1"
+
+    links.invalidate()
+    assert links.index(db, ["0119"])["0119"].ip == "10.0.0.99"
+
+
+def test_indice_refaz_quando_aparece_ramal_novo(db) -> None:
+    """Ramal que entra no PBX depois do último ciclo não pode ficar sem vínculo
+    até o TTL vencer."""
+    from middleware_monitor.domain.mqtt import links
+
+    links.invalidate()
+    db.add(Device(name="0119", ip="10.0.0.1", created_at=BASE, updated_at=BASE))
+    db.commit()
+    links.index(db, ["0119"])
+
+    db.add(Device(name="0120", ip="10.0.0.2", created_at=BASE, updated_at=BASE))
+    db.commit()
+    assert links.index(db, ["0119", "0120"])["0120"].ip == "10.0.0.2"

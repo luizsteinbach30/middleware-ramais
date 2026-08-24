@@ -5,6 +5,24 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 ## [Não publicado]
 
 ### Added
+- **Painel ao vivo deixou de ser ilha.** O cartão do ramal em `/mqtt-painel`
+  mostrava estado e pouco mais; agora traz atalhos para **o telefone**
+  (`/devices/{id}`, com IP, MAC, modelo e servidor USCall no tooltip) e para **o
+  ambiente do Configurador** que provisiona a linha, além de um selo vermelho
+  *config com erro* quando a última aplicação naquela linha falhou — que é o que
+  responde "esse ramal está indisponível porque a config caiu?". Vínculo que não
+  existe não vira link morto: some. O índice ramal → device/ambiente tem cache de
+  30 s (`domain/mqtt/links.py`), porque a tela recarrega a cada 2,5 s e a
+  instalação real tem ~800 ramais publicando.
+- **Hora automática nos telefones Intelbras V-series.** O adapter passou a
+  emitir a seção `<date>` (NTP e fuso), lida do **export de fábrica** do próprio
+  aparelho (V3501 e V5501). Com HTEK e Yealink já cobertos, faltam agora só
+  Intelbras S3002 e FlyingVoice P10, que dependem de bancada.
+  ⚠️ `TimeZone` é id de tabela do firmware, não offset: nos dois exports vem
+  `-12` para `UTC-3`. Só esse par é emitido; em qualquer outro fuso vai apenas o
+  NTP, com aviso no log. E a mudança faz **toda linha Intelbras V aparecer uma
+  vez como desatualizada** — é o esperado (o telefone precisa receber a hora),
+  mas não é silencioso.
 - **Backup e restauração** — tela nova em `/system/backup` (menu **Backup**),
   com dois níveis, porque migrar e recuperar são problemas diferentes:
   - **Pacote portável de configuração** (`.mwrbak`): configurações do sistema
@@ -74,6 +92,22 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   conversa que nunca existiu.
 
 ### Fixed
+- **O `.exe` não cai mais quando o Windows esvazia a pasta de extração.**
+  Relatado em campo: `TemplateNotFound: 'system_updates.html'` com o arquivo
+  comprovadamente dentro do executável — o diretório temporário do PyInstaller
+  tinha perdido o arquivo em tempo de execução (antivírus, limpeza de `%TEMP%`
+  ou update parcial). Agora, no boot do `.exe`, templates e estáticos vão para
+  memória e servem de fallback quando o disco falha; o disco continua sendo a
+  fonte. Sem a metade dos estáticos a tela responderia sem CSS nem JS, que para
+  o operador é a mesma coisa que estar fora.
+  Junto vai o diagnóstico que faltava: uma sonda de 15 em 15 minutos grava
+  `recursos_do_bundle_sumiram` **na hora** em que os arquivos somem, em vez de o
+  fato aparecer só quando alguém abre a tela. A correção de raiz (empacotar em
+  *onedir*) muda o formato de distribuição e continua em aberto.
+- **Documentação do Action URI do Yealink era falsa.** O ADR-0004 e o guia de
+  homologação afirmavam que o template provisiona a "Action URI Allow IP List";
+  não provisiona, e nunca provisionou. O erro 403 do `normalize` agora diz onde
+  liberar o IP (Features → Remote Control) em vez de mandar conferir a senha.
 - **Exportar quebrava se um segredo em repouso não abrisse.** Banco vindo de
   outra máquina ou `APP_SECRET_KEY` trocado deixavam o token do USCall e a senha
   do broker ilegíveis, e a exportação inteira caía com erro 500 — justamente no

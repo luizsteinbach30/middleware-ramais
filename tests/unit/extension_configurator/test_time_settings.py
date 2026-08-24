@@ -147,6 +147,13 @@ def test_resolucao_e_estavel_entre_chamadas() -> None:
         assert ts.resolve({}, {}) == primeira
 
 
+# Modelos cujo payload mudou de propósito nesta entrega, ao ganhar o
+# provisionamento de hora que não tinham. Ver o teste logo abaixo.
+MODELOS_QUE_GANHARAM_HORA = (
+    "Intelbras V3001", "Intelbras V3101", "Intelbras V3501", "Intelbras V5501",
+)
+
+
 def test_payload_de_ambiente_legado_e_identico_byte_a_byte() -> None:
     """A garantia central desta entrega, para **todos** os modelos suportados.
 
@@ -189,6 +196,8 @@ def test_payload_de_ambiente_legado_e_identico_byte_a_byte() -> None:
 
     divergentes = []
     for modelo in PHONE_MODELS:
+        if modelo in MODELOS_QUE_GANHARAM_HORA:
+            continue
         adapter = adapter_for(modelo)
         antes = adapter.generate_config(template_v280(cfg), row)
         depois = adapter.generate_config(build_template(cfg), row)
@@ -196,3 +205,38 @@ def test_payload_de_ambiente_legado_e_identico_byte_a_byte() -> None:
             divergentes.append(modelo)
 
     assert not divergentes, f"payload mudou em: {divergentes}"
+
+
+def test_intelbras_v_series_muda_de_proposito_ao_ganhar_a_hora() -> None:
+    """A exceção da garantia acima, e ela é intencional.
+
+    O V-series não provisionava hora nenhuma; passou a emitir `<date>` com NTP e
+    fuso. O payload **tem** de mudar — é o que faz o telefone receber a hora — e
+    o efeito colateral é conhecido: toda linha Intelbras V aparece uma vez como
+    desatualizada e é reaplicada. Este teste existe para que essa mudança seja
+    uma decisão registrada, e não uma surpresa no cliente.
+    """
+    from middleware_monitor.domain.extension_configurator.defaults import (
+        default_config_padrao,
+    )
+    from middleware_monitor.domain.extension_configurator.service import (
+        adapter_for,
+        build_row,
+        build_template,
+    )
+
+    class _Linha:
+        numero_ramal = "1001"
+        senha_sip = "s3nh4"
+        servidor_sip = "10.0.0.1"
+        nome_visivel = "Recepcao"
+        user_auth = "1001"
+        numero_abreviado = "800"
+
+    cfg = default_config_padrao()
+    row = build_row(_Linha(), cfg)  # type: ignore[arg-type]
+    for modelo in MODELOS_QUE_GANHARAM_HORA:
+        xml = adapter_for(modelo).generate_config(build_template(cfg), row).decode("utf-8")
+        assert "<date>" in xml, modelo
+        assert "<SNTPServer>a.ntp.br</SNTPServer>" in xml, modelo
+        assert "<TimeZoneName>UTC-3</TimeZoneName>" in xml, modelo

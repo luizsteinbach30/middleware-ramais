@@ -387,7 +387,13 @@ class YealinkAdapter(VendorAdapter):
     ) -> None:
         resp = await cli.get(f"https://{ip}/servlet?key={key}", auth=auth)
         if resp.status_code in (401, 403):
+            # 403 aqui quase sempre é o gate de IP, não credencial: o middleware
+            # NÃO provisiona essa lista (o template não emite `features.*`), então
+            # a mensagem precisa dizer onde liberar — senão o operador vai
+            # procurar senha errada.
             raise VendorAuthError(
-                f"Yealink: Action URI recusado ({resp.status_code}) — "
-                "verifique credencial e a lista de IP confiável do aparelho"
+                f"Yealink: Action URI recusado ({resp.status_code}). Confira a "
+                "credencial web e, no telefone, Features → Remote Control → "
+                "'Action URI Allow IP List': o IP do middleware precisa estar "
+                "liberado (o provisionamento não mexe nessa lista)"
             )

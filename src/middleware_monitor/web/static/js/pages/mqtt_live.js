@@ -105,6 +105,53 @@ function visiveis(d) {
   });
 }
 
+// Só o erro vira selo. `ultimo_status` é o resultado cru da última aplicação
+// ("ok" ou "erro"), não o status derivado da tela do ambiente — que exige gerar
+// o XML da linha para comparar hash, caro demais para um painel que recarrega a
+// cada 2,5 s. E config em dia é o esperado: selo verde em todo cartão vira
+// ruído, mesmo critério do "sem msg há X".
+const APLICACAO_ALERTA = {
+  erro: ['config com erro', 'text-red-300 ring-red-500/40 bg-red-500/10'],
+};
+
+function chip(href, texto, titulo, classe = '') {
+  const cls = `inline-flex items-center px-1.5 py-0.5 rounded ring-1 ring-inset text-[10px] max-w-full truncate ${
+    classe || 'text-gray-400 ring-gray-700 hover:text-blue-300 hover:ring-blue-500/40'}`;
+  const t = titulo ? ` title="${esc(titulo)}"` : '';
+  return href
+    ? `<a href="${href}" class="${cls}"${t}>${esc(texto)}</a>`
+    : `<span class="${cls}"${t}>${esc(texto)}</span>`;
+}
+
+// Onde o cartão deixa de ser ilha: daqui se chega no telefone, no ambiente que
+// o provisiona e no servidor de onde ele veio. Vínculo que não existe não vira
+// link morto — some.
+function atalhos(e) {
+  const partes = [];
+  if (e.device_id) {
+    const detalhe = [
+      e.ip && `IP ${e.ip}`,
+      e.mac && `MAC ${e.mac}`,
+      e.model,
+      e.uscall_server && `USCall: ${e.uscall_server}`,
+    ].filter(Boolean).join(' · ');
+    partes.push(chip(`/devices/${e.device_id}`, 'telefone', detalhe || 'abrir o device'));
+  }
+  if (e.environment_id) {
+    partes.push(chip(
+      `/extension-configurator/environments/${encodeURIComponent(e.environment_id)}`,
+      e.environment_nome || e.environment_id,
+      'ambiente do Configurador que provisiona este ramal',
+    ));
+  }
+  const alerta = APLICACAO_ALERTA[e.line_status];
+  if (alerta) {
+    partes.push(chip(null, alerta[0], e.line_error || 'última aplicação de configuração', alerta[1]));
+  }
+  if (!partes.length) return '';
+  return `<div class="mt-1.5 flex flex-wrap items-center gap-1">${partes.join('')}</div>`;
+}
+
 function pintarGrade(d) {
   const itens = visiveis(d);
   el('ml-grid-count').textContent = itens.length === d.extensions.length
@@ -142,6 +189,7 @@ function pintarGrade(d) {
         <span class="tabular-nums">há ${duracao(e.seconds_in_status)}</span>
         ${rede}
       </div>
+      ${atalhos(e)}
     </div>`;
   }).join('');
 }

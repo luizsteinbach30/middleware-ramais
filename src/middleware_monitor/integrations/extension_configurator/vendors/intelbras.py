@@ -47,6 +47,8 @@ from xml.sax.saxutils import escape as xml_escape
 
 import httpx
 
+from middleware_monitor.core.logging import get_logger
+
 from .base import (
     ACTION_NORMALIZE,
     ActionResult,
@@ -67,6 +69,14 @@ def _xml_escape_password(s: str) -> str:
 
 
 _TEMPLATE_PATH = Path(__file__).parent / "intelbras_template.xml"
+
+log = get_logger("extension_configurator.intelbras")
+
+# Fuso -> (TimeZone, TimeZoneName) do firmware V-series. Lido do export de
+# fabrica do V3501 e do V5501: nos dois, TimeZone=-12 com TimeZoneName=UTC-3 —
+# o campo numerico e id de tabela do firmware, nao o offset. So o par
+# comprovado entra aqui; ver _render_date.
+_TIMEZONE_IDS: dict[int, tuple[str, str]] = {-180: ("-12", "UTC-3")}
 
 
 def _md5(s: str) -> str:
@@ -260,8 +270,46 @@ class IntelbrasAdapter(VendorAdapter):
             "keylock_timeout": keylock_timeout,
             "dss_keys_xml": dss_xml,
             "web_admin_xml": self._render_web_admin(template),
+            "date_xml": self._render_date(template),
         }
         return _TEMPLATE_PATH.read_text(encoding="utf-8").format_map(ctx).encode("utf-8")
+
+    @staticmethod
+    def _render_date(template: dict[str, Any]) -> str:
+        """Renderiza ``<date>`` com NTP e fuso, ou vazio quando não dá.
+
+        Nomes e seção lidos do **export de fábrica** do próprio aparelho
+        (V3501 e V5501): é a fonte canônica deste firmware, e não a página web.
+
+        O fuso é o cuidado aqui: nos dois exports ``TimeZone`` vem ``-12`` com
+        ``TimeZoneName`` ``UTC-3``, ou seja, o campo numérico é um **id de
+        tabela do firmware**, não o offset. Só o par comprovado é emitido —
+        chutar id colocaria o telefone em outro fuso sem ninguém perceber, que
+        é pior do que deixar como está. Fuso desconhecido: manda só o NTP.
+
+        Devolver string vazia (em vez de levantar) é deliberado: este método
+        roda dentro de ``compute_statuses``, e uma exceção aqui derrubaria o
+        cálculo de status da planilha inteira — mesmo motivo do HTEK.
+        """
+        ntp = str(template.get("ntp_server") or "").strip()
+        offset = template.get("timezone_offset_minutes")
+        par = _TIMEZONE_IDS.get(offset) if isinstance(offset, int) else None
+        if par is None and offset is not None:
+            log.warning(
+                "intelbras_timezone_desconhecido",
+                timezone=template.get("timezone"), offset=offset,
+            )
+        linhas: list[str] = []
+        if ntp:
+            linhas.append("        <EnableSNTP>1</EnableSNTP>")
+            linhas.append(f"        <SNTPServer>{xml_escape(ntp)}</SNTPServer>")
+        if par is not None:
+            linhas.append(f"        <TimeZone>{par[0]}</TimeZone>")
+            linhas.append(f"        <TimeZoneName>{par[1]}</TimeZoneName>")
+        if not linhas:
+            return ""
+        corpo = "\n".join(linhas)
+        return f"    <date>\n{corpo}\n    </date>"
 
     @staticmethod
     def _render_web_admin(template: dict[str, Any]) -> str:

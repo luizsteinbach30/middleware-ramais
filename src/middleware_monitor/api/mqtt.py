@@ -12,7 +12,6 @@ import re
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.api.deps import (
@@ -22,11 +21,11 @@ from middleware_monitor.api.deps import (
     require_csrf,
 )
 from middleware_monitor.core.logging import get_logger
-from middleware_monitor.core.models import Device, MqttBroker, MqttMessage, User
+from middleware_monitor.core.models import MqttBroker, MqttMessage, User
 from middleware_monitor.core.time import as_local_str, iso_utc
 from middleware_monitor.domain.config.repository import load_config
 from middleware_monitor.domain.mqtt import calls as calls_domain
-from middleware_monitor.domain.mqtt import realtime
+from middleware_monitor.domain.mqtt import links, realtime
 from middleware_monitor.domain.mqtt import repository as repo
 from middleware_monitor.domain.mqtt.address import (
     normalize_topic_filter,
@@ -433,26 +432,24 @@ def live(
     dados = ing.live()
 
     ramais = [str(e["ramal"]) for e in dados["extensions"]]
-    devices: dict[str, tuple[int, str | None, str]] = {}
-    if ramais:
-        devices = {
-            nome: (dev_id, ip, net)
-            for dev_id, nome, ip, net in db.execute(
-                select(Device.id, Device.name, Device.ip, Device.network_status).where(
-                    Device.name.in_(ramais)
-                )
-            ).all()
-        }
+    vinculos = links.index(db, ramais) if ramais else {}
 
     extensoes = []
     for e in dados["extensions"]:
-        dev = devices.get(str(e["ramal"]))
+        v = vinculos.get(str(e["ramal"]), links.VAZIO)
         extensoes.append(
             LiveExtension(
                 **e,
-                device_id=dev[0] if dev else None,
-                ip=dev[1] if dev else None,
-                network_status=dev[2] if dev else "unknown",
+                device_id=v.device_id,
+                ip=v.ip,
+                network_status=v.network_status,
+                mac=v.mac,
+                model=v.model,
+                uscall_server=v.uscall_server,
+                environment_id=v.environment_id,
+                environment_nome=v.environment_nome,
+                line_status=v.line_status,
+                line_error=v.line_error,
             )
         )
 
