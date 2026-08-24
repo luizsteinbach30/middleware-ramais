@@ -177,10 +177,10 @@ def _decode(blob: str, passphrase: str) -> dict[str, Any]:
 
 @router.get("/files")
 def list_files(_user: User = Depends(get_current_user)) -> dict[str, Any]:
-    arquivos = [b.as_dict() for b in snap.list_backups()]
+    arquivos = snap.list_backups()
     return {
-        "files": arquivos,
-        "total_bytes": sum(int(a["size_bytes"]) for a in arquivos),
+        "files": [b.as_dict() for b in arquivos],
+        "total_bytes": sum(b.size_bytes for b in arquivos),
         "dir": str(get_settings().backups_dir),
     }
 

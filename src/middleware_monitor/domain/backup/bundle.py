@@ -292,17 +292,21 @@ def _apply_config(db: DBSession, cfg: dict[str, Any], *, mode: str, user_id: int
         if not isinstance(item, dict) or not item.get("nome"):
             continue
         nome = str(item["nome"])
-        dados = {
-            "host": str(item.get("host") or ""),
-            "token_plain": str(item.get("token") or ""),
-            "verify_ssl": bool(item.get("verify_ssl", True)),
-            "enabled": bool(item.get("enabled", True)),
-        }
+        host = str(item.get("host") or "")
+        token = str(item.get("token") or "")
+        verify_ssl = bool(item.get("verify_ssl", True))
+        habilitado = bool(item.get("enabled", True))
         existente = atuais.get(nome)
         if existente is None:
-            uscall_repo.create_server(db, nome=nome, **dados)
+            uscall_repo.create_server(
+                db, nome=nome, host=host, token_plain=token,
+                verify_ssl=verify_ssl, enabled=habilitado,
+            )
         else:
-            uscall_repo.update_server(db, existente, nome=nome, **dados)
+            uscall_repo.update_server(
+                db, existente, nome=nome, host=host, token_plain=token,
+                verify_ssl=verify_ssl, enabled=habilitado,
+            )
         n_srv += 1
 
     brokers = cfg.get("mqtt_brokers") or []
@@ -315,29 +319,31 @@ def _apply_config(db: DBSession, cfg: dict[str, Any], *, mode: str, user_id: int
         if not isinstance(item, dict) or not item.get("nome"):
             continue
         nome = str(item["nome"])
-        dados = {
+        ws_path = str(item["ws_path"]) if item.get("ws_path") else None
+        fingerprint = str(item["tls_fingerprint"]) if item.get("tls_fingerprint") else None
+        campos_broker: dict[str, Any] = {
             "address_input": str(item.get("address_input") or ""),
             "host": str(item.get("host") or ""),
-            "port": int(item.get("port") or 1883),
+            "port": int(str(item.get("port") or 1883)),
             "transport": str(item.get("transport") or "tcp"),
             "tls": bool(item.get("tls", False)),
-            "ws_path": item.get("ws_path") or None,
+            "ws_path": ws_path,
             "username": str(item.get("username") or ""),
             "password_plain": str(item.get("password") or ""),
             "tls_verify": bool(item.get("tls_verify", True)),
-            "tls_fingerprint": item.get("tls_fingerprint") or None,
+            "tls_fingerprint": fingerprint,
             "topics": [str(t) for t in (item.get("topics") or [])],
-            "qos": int(item.get("qos") or 1),
+            "qos": int(str(item.get("qos") or 1)),
             "clean_session": bool(item.get("clean_session", False)),
             "client_id": str(item.get("client_id") or ""),
-            "max_payload_kb": int(item.get("max_payload_kb") or 0),
+            "max_payload_kb": int(str(item.get("max_payload_kb") or 0)),
             "enabled": bool(item.get("enabled", True)),
         }
         existente_b = atuais_b.get(nome)
         if existente_b is None:
-            mqtt_repo.create_broker(db, nome=nome, **dados)
+            mqtt_repo.create_broker(db, nome=nome, **campos_broker)
         else:
-            mqtt_repo.update_broker(db, existente_b, nome=nome, **dados)
+            mqtt_repo.update_broker(db, existente_b, nome=nome, **campos_broker)
         n_brk += 1
 
     return {"chaves": chaves, "servidores_uscall": n_srv, "brokers_mqtt": n_brk}
