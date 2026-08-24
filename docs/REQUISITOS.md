@@ -866,30 +866,51 @@ Não foi feito agora por dois motivos: exige bancada para confirmar o nome da
 chave no firmware, e acrescentar linha ao template muda o hash de **todas** as
 linhas Yealink — toda a base apareceria como desatualizada de uma vez.
 
-### 15.6 Revisão de arquitetura e desempenho
+### 15.6 Revisão de arquitetura e desempenho — etapa 1 (medição) concluída
 
-Pedido do dono em 2026-08-24, para depois das pendências acima: **rever a
-arquitetura e otimizar o sistema para ficar rápido e ágil**. Ainda não há
-diagnóstico — o primeiro passo é medir, não mexer. Pontos que já se sabem
-suspeitos, para a medição começar por eles:
+Pedido do dono em 2026-08-24: **rever a arquitetura e otimizar o sistema para
+ficar rápido e ágil**. A primeira etapa era medir, não mexer, e está entregue:
+`scripts/perf_baseline.py` (ferramenta, versionada para poder repetir a medição)
+e [`docs/design/PERF_BASELINE.md`](design/PERF_BASELINE.md) (o retrato de
+2026-08-24, sobre o banco real: 1.930 devices, 910 ramais publicando).
 
-- **Banco único SQLite com o ledger dentro.** `mqtt_messages` domina o volume
-  (medido: 58 MB de banco, ~4 MB comprimidos, a maior parte ledger) e divide o
-  arquivo com tudo o mais. Toda consulta de tela concorre com a escrita do
-  coletor.
-- **Coleta e ping no mesmo intervalo.** `collect_extensions` e `monitor_devices`
-  compartilham `webhook_interval_minutes`; com 1930 devices, a varredura de rede
-  é o job mais pesado do sistema.
-- **Telas que carregam tudo.** `/devices` traz o cadastro inteiro; o painel ao
-  vivo casa ramal↔device a cada chamada.
-- **Reconstrução de chamadas a cada 60 s**, hoje barata (426 ms para 11 mil
-  transições), mas que cresce com o movimento do PBX.
-- **Retenção diária única.** A poda roda uma vez por dia e pode ficar cara;
-  `VACUUM` nunca é executado sozinho, então o arquivo não encolhe.
+**Nada foi otimizado ainda** — de propósito. O que a medição mudou é a lista de
+alvos, porque três das cinco suspeitas não sobreviveram ao número:
 
-Entregável esperado da primeira etapa: medição com número (tempo de resposta
-por tela, duração de cada job, tamanho por tabela) antes de qualquer mudança de
-arquitetura.
+| Suspeita original | Veredito medido |
+|---|---|
+| Ledger dentro do banco único | **confirmada** — 73,5% dos dados; projeção de 31 MB em regime |
+| Ping de 1930 devices é o job mais pesado | **não medida, e não *mensurável* hoje** (ver abaixo); e o intervalo é de 3 h, não de minutos |
+| Telas que carregam tudo | **refutada** — `/devices` pagina no banco; a pior tela soma 33 ms de servidor |
+| Reconstrução de chamadas a cada 60 s | **refutada** — 11–31 ms no caminho real |
+| Retenção cara; `VACUUM` nunca roda | **metade** — a poda é barata; o `VACUUM` ausente custa 24,4 MB (44% do arquivo), recuperáveis em 240 ms |
+
+Dois achados que não estavam na lista:
+
+⚠️ **O maior custo do caminho de request não era banco, era template.**
+`web/pages.py:get_templates()` monta um `Jinja2Templates` novo a cada request, e
+com ele um cache de compilação novo: toda tela recompila o template do zero,
+toda vez. Medido, memorizando a mesma função: `/devices` cai de 9,8 ms para
+2,2 ms (−77%), `/config` de 11,7 ms para 2,2 ms (−82%).
+
+⚠️ **A duração de um job bem-sucedido não é gravada em lugar nenhum.**
+`collect_extensions` e `monitor_devices` calculam `duration_ms` e mandam para o
+`log`, que só vai para o stdout; `system_logs` guarda apenas WARNING e ERROR. No
+`.exe`, em campo, ninguém lê esse stdout. E `core/metrics.py` declara oito
+instrumentos Prometheus que **nenhuma linha do código alimenta**. Enquanto isso
+não mudar, "duração de cada job" não fecha para os dois jobs de rede.
+
+**Etapa 2 — na ordem que os números sustentam** (detalhe e ressalva de cada item
+no `PERF_BASELINE.md` §5):
+
+1. memorizar o `Jinja2Templates` — ~8 ms a menos em toda tela;
+2. `VACUUM` após a retenção — devolve 24,4 MB por 240 ms;
+3. tirar o `SUM(payload_bytes)` da carga de `/api/mqtt/status` — 10,8 ms de
+   varredura da tabela inteira, 2/3 do custo da requisição mais cara do sistema;
+4. persistir duração de job, sem o que a §15.6 não fecha nem se diagnostica campo;
+5. separar o ledger do banco principal — **os números ainda não justificam**.
+   Nenhuma tela passa de 33 ms; o que justificaria é contenção sob escrita, que a
+   medição atual não cobre (roda com a ingestão parada). Medir isso primeiro.
 
 ---
 

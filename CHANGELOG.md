@@ -90,6 +90,29 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   Armadilha tratada: `Indisponivel` ecoa o `uniqueid` da chamada anterior por
   minutos: herdá-lo grudaria pernas de chamadas diferentes e mostraria uma
   conversa que nunca existiu.
+- **Medição-base de desempenho** (`scripts/perf_baseline.py` +
+  `docs/design/PERF_BASELINE.md`) — primeira etapa da revisão de arquitetura, que
+  era medir antes de mexer. Tamanho real por tabela e por índice, duração de cada
+  job e tempo de servidor de cada tela, sobre o banco real (1.930 devices, 910
+  ramais publicando). A ferramenta é versionada porque o valor de uma
+  medição-base é poder repeti-la depois de cada mudança; ela roda sempre sobre
+  uma cópia, com brokers e servidores desabilitados nela — senão a medição
+  conecta no EMQX do cliente com o `client_id` da produção.
+
+  Nada foi otimizado ainda, e o número desmentiu parte do que se suspeitava:
+  nenhuma tela passa de **33 ms** de servidor, `/devices` pagina no banco e a
+  reconstrução de chamadas custa 11–31 ms no caminho que roda de verdade. O que
+  apareceu no lugar: **44% do arquivo do banco é espaço livre** que a poda nunca
+  devolve (24,4 MB, recuperáveis com um `VACUUM` de 240 ms); o **maior custo do
+  caminho de request é recompilação de template** — um `Jinja2Templates` novo por
+  request custa ~8 ms em toda tela; e a requisição mais cara do sistema
+  (`/api/mqtt/status`, 16 ms) é 2/3 varredura da tabela inteira do ledger para
+  somar `payload_bytes`.
+
+  Achado que atrapalha o próprio diagnóstico: **a duração de um job
+  bem-sucedido não é gravada em lugar nenhum** — vai só para o stdout, e
+  `system_logs` guarda apenas WARNING e ERROR. É por isso que `collect_extensions`
+  e `monitor_devices`, os dois jobs mais suspeitos, seguem sem número.
 
 ### Fixed
 - **O `.exe` não cai mais quando o Windows esvazia a pasta de extração.**
