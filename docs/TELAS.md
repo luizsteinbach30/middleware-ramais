@@ -847,9 +847,14 @@ cópia do banco inteiro. Menu **Backup**, abaixo de Atualizações. Só admin.
    passphrase e o botão que baixa o `.mwrbak`. O texto avisa que o arquivo
    carrega senhas e que sem a passphrase não há como abri-lo.
 3. **Importar configuração** — arquivo + passphrase → *Analisar arquivo*.
-   A análise mostra quando foi gerado, por qual versão, e o que existe em cada
-   seção (contagens e os nomes dos ambientes); só então aparecem as seções a
-   restaurar, o modo e o botão de aplicar.
+   A análise **compara com o que está no banco** e devolve, por grupo
+   (configurações, servidores USCall, brokers MQTT, ambientes, usuários,
+   devices): quantos itens estão iguais (ignorados), quantos são novos, quantos
+   estão em conflito e quantos existem só no sistema. Cada conflito é uma linha
+   expansível com uma tabela *campo · no sistema · no arquivo* e o par de
+   botões **Manter atual** / **Usar do arquivo**; grupos com mais de um
+   conflito ganham a escolha em massa (*todos: manter* / *todos: do arquivo*).
+   Só então aparecem as seções a restaurar, o modo e o botão de aplicar.
 4. **Backup automático do banco** — liga/desliga, horário (no relógio do
    servidor, com o fuso ao lado), cópias a manter, espaço máximo em MB,
    passphrase do pacote automático (com botão próprio para remover) e o
@@ -865,8 +870,17 @@ cópia do banco inteiro. Menu **Backup**, abaixo de Atualizações. Só admin.
   também recusa.
 - *Restaurar* não aparece em arquivo de configuração (`.mwrbak`) — esse entra
   pelo fluxo de importação, que é outro caminho e outro risco.
-- O modo **Substituir** descreve em vermelho o que apaga, e pede confirmação
-  antes de aplicar. **Mesclar** é o padrão.
+- O modo **Substituir** descreve em vermelho o que apaga, e a confirmação diz
+  **quantos** itens de cada grupo serão removidos. **Mesclar** é o padrão.
+- Valor de segredo (token, senha de broker, hash de senha) **nunca** aparece na
+  comparação: o campo mostra `••••` dos dois lados e só informa que difere.
+- O lado marcado por padrão é o do arquivo — menos em **Usuários**, onde é o
+  atual: restaurar não pode trocar a senha de quem está operando sem que a
+  pessoa mande.
+- Grupo com muitos conflitos lista os primeiros 200 e avisa: os demais seguem a
+  escolha em massa do grupo.
+- Depois de aplicar, a tela recompara sozinha — o que aparece é o estado depois
+  da restauração, não o de antes.
 - Restaurar banco e apagar arquivo pedem confirmação com o nome do arquivo no
   texto.
 - Um backup gerado por versão mais nova do middleware é recusado na validação,
@@ -878,7 +892,8 @@ cópia do banco inteiro. Menu **Backup**, abaixo de Atualizações. Só admin.
 | Recurso | Método | Path |
 |---|---|---|
 | Exportar configuração | POST | `/api/backup/export` |
-| Analisar pacote | POST | `/api/backup/inspect` |
+| Comparar pacote com o sistema | POST | `/api/backup/diff` |
+| Resumir pacote (sem comparar) | POST | `/api/backup/inspect` |
 | Importar configuração | POST | `/api/backup/import` |
 | Gerar snapshot | POST | `/api/backup/snapshot` |
 | Listar arquivos | GET | `/api/backup/files` |

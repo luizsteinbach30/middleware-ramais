@@ -109,18 +109,21 @@
       <div id="bk-import-preview" class="hidden space-y-4 border-t border-gray-700 pt-4">
         <div id="bk-import-summary" class="text-xs text-gray-300 space-y-1"></div>
         <div>
-          <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-2">O que restaurar</div>
-          <div id="bk-import-sections" class="space-y-1.5"></div>
+          <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-2">
+            O que restaurar
+            <span class="normal-case tracking-normal text-gray-600">— o que já está igual é ignorado</span>
+          </div>
+          <div id="bk-import-sections" class="space-y-3"></div>
         </div>
         <div>
           <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-2">Como aplicar</div>
           <label class="flex items-start gap-2.5 text-sm text-gray-300">
             <input type="radio" name="bk-mode" value="merge" checked class="mt-0.5 accent-blue-500">
-            <span>Mesclar<span class="block text-[11px] text-gray-500">nada é apagado; ambientes entram como novos e a configuração é sobrescrita chave a chave</span></span>
+            <span>Mesclar<span class="block text-[11px] text-gray-500">nada é apagado; o que existe só no sistema fica como está</span></span>
           </label>
           <label class="flex items-start gap-2.5 text-sm text-gray-300 mt-1.5">
             <input type="radio" name="bk-mode" value="replace" class="mt-0.5 accent-blue-500">
-            <span>Substituir<span class="block text-[11px] text-red-300/80">apaga os ambientes atuais (com o histórico de aplicação deles), os servidores USCall e os brokers MQTT, e recria a partir do arquivo</span></span>
+            <span>Substituir<span class="block text-[11px] text-red-300/80">além do acima, <strong>apaga</strong> os ambientes, servidores USCall e brokers MQTT que só existem no sistema (aparecem marcados abaixo)</span></span>
           </label>
         </div>
         <button id="bk-import" class="w-full inline-flex items-center justify-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-2 text-sm">

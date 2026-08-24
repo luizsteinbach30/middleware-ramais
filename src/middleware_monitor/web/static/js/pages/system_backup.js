@@ -65,6 +65,16 @@ async function exportar() {
 }
 
 // ------------------------------------------------------------- importar
+//
+// Importar são duas etapas: comparar e decidir. A classificação vem pronta do
+// servidor (`/api/backup/diff`) — igual, novo ou conflito — e é ela que governa
+// a tela: o que já está igual vira contagem e sai do caminho; só o que diverge
+// pede escolha.
+
+// Escolhas do operador: chave -> 'atual' | 'arquivo'. A chave é de um item
+// (`grupo:id`) ou de um grupo inteiro, que vale de padrão para os itens que a
+// tela não lista um a um.
+const decisoes = new Map();
 
 async function analisar() {
   const file = $('bk-import-file').files[0];
@@ -75,10 +85,14 @@ async function analisar() {
   btn.disabled = true;
   try {
     const blob = await file.text();
-    const resumo = await api('/api/backup/inspect', { method: 'POST', body: { blob, passphrase } });
-    pacote = { blob, passphrase, resumo };
-    renderPreview(resumo);
-    toast.success('Arquivo lido');
+    const comparacao = await api('/api/backup/diff', { method: 'POST', body: { blob, passphrase } });
+    pacote = { blob, passphrase, comparacao };
+    decisoes.clear();
+    renderComparacao(comparacao);
+    const conflitos = Object.values(comparacao.groups || {}).reduce((n, g) => n + g.conflitos_total, 0);
+    toast.success(conflitos
+      ? `${conflitos} item(ns) em conflito para você decidir`
+      : 'Arquivo lido — nenhum conflito');
   } catch (e) {
     pacote = null;
     $('bk-import-preview').classList.add('hidden');
@@ -88,30 +102,127 @@ async function analisar() {
   }
 }
 
-function descreveSecao(chave, dados) {
-  if (chave === 'config') {
-    return `${dados.chaves} chave(s), ${dados.servidores_uscall} servidor(es) USCall, ${dados.brokers_mqtt} broker(s) MQTT`;
-  }
-  if (chave === 'environments') {
-    const nomes = (dados.nomes || []).join(', ');
-    return `${dados.ambientes} ambiente(s), ${dados.linhas} linha(s)${nomes ? ` — ${nomes}` : ''}`;
-  }
-  if (chave === 'users') return `${dados.usuarios} usuário(s)`;
-  if (chave === 'devices') return `${dados.devices} device(s)`;
-  return '';
+function esc(texto) {
+  return String(texto ?? '').replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
 }
 
-function renderPreview(resumo) {
-  const secoes = resumo.sections || {};
+function contagens(g) {
+  const partes = [];
+  if (g.novos_total) partes.push(`<span class="text-green-300">${g.novos_total} novo(s)</span>`);
+  if (g.conflitos_total) partes.push(`<span class="text-yellow-300">${g.conflitos_total} em conflito</span>`);
+  if (g.identicos) partes.push(`${g.identicos} igual(is), ignorado(s)`);
+  if (g.ausentes_total) {
+    partes.push(g.removable
+      ? `<span class="text-red-300/80">${g.ausentes_total} só no sistema (apagado(s) em "substituir")</span>`
+      : `${g.ausentes_total} só no sistema (mantido(s))`);
+  }
+  return partes.join(' · ') || 'nada a fazer';
+}
+
+function botaoLado(chave, lado, rotulo, ativo) {
+  const cls = ativo
+    ? 'bg-blue-500/20 text-blue-200 ring-blue-500/50'
+    : 'bg-gray-900 text-gray-400 ring-gray-700 hover:text-gray-200';
+  return `<button type="button" data-decisao="${esc(chave)}" data-lado="${lado}"
+    class="px-2 py-0.5 rounded-md text-[11px] font-medium ring-1 ring-inset transition-colors ${cls}">${rotulo}</button>`;
+}
+
+function renderConflito(grupoChave, g, c) {
+  const lado = decisoes.get(c.key) || decisoes.get(grupoChave) || g.default_side;
+  const campos = c.campos.map((f) => `
+    <tr class="align-top">
+      <td class="py-0.5 pr-3 text-gray-500 whitespace-nowrap">${esc(f.campo)}</td>
+      <td class="py-0.5 pr-3 text-gray-300 break-all">${esc(f.atual)}</td>
+      <td class="py-0.5 text-blue-200 break-all">${esc(f.arquivo)}</td>
+    </tr>`).join('');
+  return `
+    <details class="rounded-lg bg-gray-900/60 ring-1 ring-gray-700/70 px-3 py-2">
+      <summary class="flex items-center justify-between gap-3 cursor-pointer list-none">
+        <span class="text-xs text-gray-200 break-all">${esc(c.label)}</span>
+        <span class="shrink-0 flex items-center gap-1">
+          ${botaoLado(c.key, 'atual', 'Manter atual', lado === 'atual')}
+          ${botaoLado(c.key, 'arquivo', 'Usar do arquivo', lado === 'arquivo')}
+        </span>
+      </summary>
+      <table class="w-full text-[11px] mt-2 border-t border-gray-800 pt-1">
+        <thead><tr class="text-gray-600">
+          <th class="text-left font-medium py-1">campo</th>
+          <th class="text-left font-medium py-1">no sistema</th>
+          <th class="text-left font-medium py-1">no arquivo</th>
+        </tr></thead>
+        <tbody>${campos}</tbody>
+      </table>
+    </details>`;
+}
+
+function renderGrupo(chave, g) {
+  const conflitos = g.conflitos.map((c) => renderConflito(chave, g, c)).join('');
+  const truncado = g.conflitos_total > g.conflitos.length
+    ? `<div class="text-[11px] text-gray-500 mt-1">mostrando ${g.conflitos.length} de ${g.conflitos_total}; os demais seguem a escolha do grupo</div>`
+    : '';
+  const massa = g.conflitos_total > 1
+    ? `<span class="shrink-0 flex items-center gap-1">
+         ${botaoLado(chave, 'atual', 'todos: manter', decisoes.get(chave) === 'atual')}
+         ${botaoLado(chave, 'arquivo', 'todos: do arquivo', decisoes.get(chave) === 'arquivo')}
+       </span>`
+    : '';
+  return `
+    <div class="pl-6 py-1">
+      <div class="flex items-start justify-between gap-3">
+        <div class="text-xs text-gray-300">${esc(g.label)}
+          <span class="block text-[11px] text-gray-500">${contagens(g)}</span></div>
+        ${massa}
+      </div>
+      ${conflitos ? `<div class="space-y-1.5 mt-1.5">${conflitos}</div>${truncado}` : ''}
+    </div>`;
+}
+
+function renderComparacao(comparacao) {
+  const grupos = comparacao.groups || {};
   $('bk-import-summary').innerHTML = `
-    <div>Gerado em <strong class="text-gray-100">${fmtTs(resumo.generated_at)}</strong>
-    pela versão <strong class="text-gray-100">${resumo.app_version || '—'}</strong>.</div>`;
-  $('bk-import-sections').innerHTML = Object.entries(secoes).map(([chave, dados]) => `
-    <label class="flex items-start gap-2.5 text-sm text-gray-300">
-      <input type="checkbox" value="${chave}" checked class="mt-0.5 accent-blue-500">
-      <span>${SECOES[chave] || chave}<span class="block text-[11px] text-gray-500">${descreveSecao(chave, dados)}</span></span>
-    </label>`).join('') || '<div class="text-xs text-gray-500">O arquivo não traz nenhuma seção.</div>';
+    <div>Gerado em <strong class="text-gray-100">${fmtTs(comparacao.generated_at)}</strong>
+    pela versão <strong class="text-gray-100">${esc(comparacao.app_version) || '—'}</strong>.</div>`;
+
+  const porSecao = new Map();
+  for (const [chave, g] of Object.entries(grupos)) {
+    if (!porSecao.has(g.section)) porSecao.set(g.section, []);
+    porSecao.get(g.section).push([chave, g]);
+  }
+  $('bk-import-sections').innerHTML = [...porSecao.entries()].map(([secao, itens]) => `
+    <div class="rounded-lg ring-1 ring-gray-700/70 p-2">
+      <label class="flex items-center gap-2.5 text-sm text-gray-200">
+        <input type="checkbox" value="${secao}" checked class="accent-blue-500">
+        <span>${SECOES[secao] || secao}</span>
+      </label>
+      ${itens.map(([chave, g]) => renderGrupo(chave, g)).join('')}
+    </div>`).join('')
+    || '<div class="text-xs text-gray-500">O arquivo não traz nenhuma seção.</div>';
+
+  $('bk-import-sections').querySelectorAll('button[data-decisao]').forEach((b) => {
+    b.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      const chave = b.dataset.decisao;
+      // Escolha de grupo zera as de item: o operador acabou de dizer o que vale
+      // para todos, e deixar decisões antigas por baixo enganaria a tela.
+      if (!chave.includes(':')) {
+        [...decisoes.keys()].filter((k) => k.startsWith(`${chave}:`)).forEach((k) => decisoes.delete(k));
+      }
+      decisoes.set(chave, b.dataset.lado);
+      renderComparacao(pacote.comparacao);
+    });
+  });
   $('bk-import-preview').classList.remove('hidden');
+}
+
+async function recomparar() {
+  if (!pacote) return;
+  pacote.comparacao = await api('/api/backup/diff', {
+    method: 'POST', body: { blob: pacote.blob, passphrase: pacote.passphrase },
+  });
+  decisoes.clear();
+  renderComparacao(pacote.comparacao);
 }
 
 async function importar() {
@@ -120,10 +231,12 @@ async function importar() {
   const mode = document.querySelector('input[name=bk-mode]:checked').value;
   if (!sections.length) { toast.error('Escolha ao menos uma seção'); return; }
   if (mode === 'replace') {
-    const alvos = sections.filter((s) => s === 'environments' || s === 'config');
-    if (alvos.length && !confirm(
-      'Substituir apaga os ambientes atuais e o histórico de aplicação deles, '
-      + 'além dos servidores USCall e brokers MQTT, recriando tudo a partir do arquivo. Continuar?',
+    const apagaveis = Object.values(pacote.comparacao.groups || {})
+      .filter((g) => g.removable && g.ausentes_total && sections.includes(g.section))
+      .map((g) => `${g.ausentes_total} de ${g.label.toLowerCase()}`);
+    if (apagaveis.length && !confirm(
+      `Substituir vai APAGAR o que só existe no sistema: ${apagaveis.join(', ')}.\n\n`
+      + 'No caso dos ambientes, o histórico de aplicação deles vai junto. Continuar?',
     )) return;
   }
   const btn = $('bk-import');
@@ -131,10 +244,23 @@ async function importar() {
   try {
     const r = await api('/api/backup/import', {
       method: 'POST',
-      body: { blob: pacote.blob, passphrase: pacote.passphrase, sections, mode },
+      body: {
+        blob: pacote.blob,
+        passphrase: pacote.passphrase,
+        sections,
+        mode,
+        decisions: Object.fromEntries(decisoes),
+      },
     });
-    const partes = Object.entries(r.applied).map(([k, v]) => `${SECOES[k] || k}: ${Object.entries(v).map(([a, b]) => `${b} ${a}`).join(', ')}`);
-    toast.success('Configuração restaurada — ' + partes.join(' · '));
+    const total = (campo) => Object.values(r.applied).reduce((n, g) => n + g[campo], 0);
+    toast.success(
+      `Restaurado — ${total('novos')} novo(s), ${total('atualizados')} atualizado(s), `
+      + `${total('identicos')} já igual(is), ${total('mantidos')} mantido(s), `
+      + `${total('removidos')} removido(s)`,
+    );
+    // O que era conflito agora está resolvido: a tela tem de mostrar o estado
+    // depois da aplicação, não o de antes.
+    await recomparar();
   } catch (e) {
     toast.error('Falha ao restaurar: ' + e.message);
   } finally {

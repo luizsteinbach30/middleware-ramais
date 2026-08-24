@@ -8,6 +8,7 @@ entre exportar e importar e o que prova isso.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -114,7 +115,7 @@ def test_roundtrip_cifrado_com_troca_de_chave_da_instalacao(
     data = bundle_mod.parse(decrypt_export(blob, "frase-forte"))
     relatorio = bundle_mod.apply(db, data, mode="merge")
 
-    assert relatorio["applied"]["environments"] == {"ambientes": 1, "linhas": 2}
+    assert relatorio["applied"]["environments"]["novos"] == 1
     (srv,) = uscall_repo.list_servers(db)
     # recifrado com a chave NOVA e legível nela
     assert uscall_repo.load_server_token(srv) == "tok-123"
@@ -139,6 +140,8 @@ def test_replace_troca_ambientes_e_preserva_o_identificador(db: Session) -> None
 
 
 def test_merge_nao_apaga_o_que_ja_existe(db: Session) -> None:
+    """O que só existe no destino continua lá; e o ambiente que veio no arquivo
+    reconhece o mesmo id em vez de virar uma cópia."""
     _povoar(db)
     data = bundle_mod.build(db, ("environments",))
     ec_repo.create_environment(db, nome="Antigo", modelo_telefone="HTEK UC912")
@@ -146,10 +149,10 @@ def test_merge_nao_apaga_o_que_ja_existe(db: Session) -> None:
 
     bundle_mod.apply(db, data, sections=("environments",), mode="merge")
     nomes = sorted(e.nome for e in ec_repo.list_environments(db))
-    assert nomes == ["Antigo", "Loja 14", "Loja 14"]
+    assert nomes == ["Antigo", "Loja 14"]
 
 
-def test_usuario_existente_nunca_e_apagado_nem_rebaixado_em_merge(db: Session) -> None:
+def test_usuario_existente_nao_e_sobrescrito_sem_decisao(db: Session) -> None:
     _povoar(db)
     data = bundle_mod.build(db, ("users",))
     # o destino tem outro admin, com senha própria
@@ -165,7 +168,10 @@ def test_usuario_existente_nunca_e_apagado_nem_rebaixado_em_merge(db: Session) -
     assert usuarios["admin"].password_hash == "hash-do-destino"
 
 
-def test_replace_atualiza_hash_de_usuario_existente(db: Session) -> None:
+def test_conta_de_acesso_so_muda_com_decisao_explicita(db: Session) -> None:
+    """Nem o modo `replace` troca a senha de quem já está no sistema por conta
+    própria: o padrão do grupo `users` é manter o atual, porque o padrão errado
+    aqui tranca o operador para fora da instalação."""
     db.add(User(username="admin", password_hash="hash-antigo", role="admin", created_at=_agora()))
     db.commit()
     data = bundle_mod.build(db, ("users",))
@@ -173,6 +179,12 @@ def test_replace_atualiza_hash_de_usuario_existente(db: Session) -> None:
     db.commit()
 
     bundle_mod.apply(db, data, sections=("users",), mode="replace")
+    assert db.query(User).one().password_hash == "hash-local"
+
+    bundle_mod.apply(
+        db, data, sections=("users",), mode="merge",
+        decisions={"users:admin": "arquivo"},
+    )
     assert db.query(User).one().password_hash == "hash-antigo"
 
 
@@ -203,3 +215,123 @@ def test_resumo_para_a_tela(db: Session) -> None:
     assert resumo["environments"] == {"ambientes": 1, "linhas": 2, "nomes": ["Loja 14"]}
     assert resumo["config"]["servidores_uscall"] == 1
     assert resumo["users"]["usuarios"] == 1
+
+
+# ------------------------------------------------ comparacao antes de aplicar
+
+
+def test_diff_separa_novo_identico_e_conflito(db: Session) -> None:
+    _povoar(db)
+    data = bundle_mod.build(db)
+
+    # o destino muda uma coisa de cada tipo
+    (srv,) = uscall_repo.list_servers(db)
+    uscall_repo.update_server(db, srv, host="https://outro.exemplo")
+    db.add(AppConfig(key="so_no_banco", value="x", is_secret=False, updated_at=_agora()))
+    db.commit()
+
+    resultado = bundle_mod.diff(db, data)
+    grupos = resultado["groups"]
+
+    kv = grupos["config.app_config"]
+    assert kv["identicos"] == 2          # ping_timeout_ms e o token do webhook
+    assert kv["novos_total"] == 0
+    assert [a["id"] for a in kv["ausentes"]] == ["so_no_banco"]
+
+    servidores = grupos["config.uscall_servers"]
+    assert servidores["conflitos_total"] == 1
+    (conflito,) = servidores["conflitos"]
+    assert conflito["key"] == "config.uscall_servers:PBX Matriz"
+    campos = {c["campo"]: c for c in conflito["campos"]}
+    assert campos["host"]["atual"] == "https://outro.exemplo"
+    assert campos["host"]["arquivo"] == "https://pbx.exemplo"
+
+
+def test_diff_nao_mostra_o_valor_de_segredo_nenhum(db: Session) -> None:
+    """A comparação diz que o token difere; dizer qual é o token seria entregar
+    pela tela o que o envelope cifrado protege."""
+    _povoar(db)
+    data = bundle_mod.build(db)
+    (srv,) = uscall_repo.list_servers(db)
+    uscall_repo.update_server(db, srv, token_plain="outro-token")
+    db.commit()
+
+    (conflito,) = bundle_mod.diff(db, data)["groups"]["config.uscall_servers"]["conflitos"]
+    (campo,) = [c for c in conflito["campos"] if c["campo"] == "token"]
+    assert campo["secreto"] is True
+    assert campo["atual"] == "••••" and campo["arquivo"] == "••••"
+    assert "outro-token" not in json.dumps(conflito, ensure_ascii=False)
+    assert "tok-123" not in json.dumps(conflito, ensure_ascii=False)
+
+
+def test_diff_de_ambiente_resume_config_e_ramais(db: Session) -> None:
+    _povoar(db)
+    data = bundle_mod.build(db, ("environments",))
+    env = ec_repo.list_environments(db)[0]
+    ec_repo.update_environment(db, env, config_padrao={"sip_server": "10.0.0.9"})
+    ec_repo.save_lines(db, env, [
+        {"ip": "192.168.0.48", "numero_ramal": "1401", "nome_visivel": "Recepcao"},
+    ])
+    db.commit()
+
+    (conflito,) = bundle_mod.diff(db, data)["groups"]["environments"]["conflitos"]
+    campos = {c["campo"]: c for c in conflito["campos"]}
+    assert campos["config: sip_server"]["atual"] == "10.0.0.9"
+    assert "1 só no arquivo" in campos["ramais"]["arquivo"]
+
+
+def test_item_identico_nao_vira_escrita(db: Session) -> None:
+    _povoar(db)
+    data = bundle_mod.build(db)
+
+    relatorio = bundle_mod.apply(db, data)["applied"]
+
+    for grupo in ("config.app_config", "config.uscall_servers", "environments", "devices"):
+        assert relatorio[grupo]["atualizados"] == 0, grupo
+        assert relatorio[grupo]["novos"] == 0, grupo
+        assert relatorio[grupo]["identicos"] > 0, grupo
+
+
+def test_decisao_manter_o_atual_preserva_o_valor_local(db: Session) -> None:
+    _povoar(db)
+    data = bundle_mod.build(db)
+    (srv,) = uscall_repo.list_servers(db)
+    uscall_repo.update_server(db, srv, host="https://local.exemplo")
+    db.commit()
+
+    relatorio = bundle_mod.apply(
+        db, data, decisions={"config.uscall_servers:PBX Matriz": "atual"},
+    )["applied"]
+
+    assert relatorio["config.uscall_servers"]["mantidos"] == 1
+    assert relatorio["config.uscall_servers"]["atualizados"] == 0
+    assert uscall_repo.list_servers(db)[0].host == "https://local.exemplo"
+
+
+def test_sem_decisao_o_arquivo_vence_o_conflito(db: Session) -> None:
+    _povoar(db)
+    data = bundle_mod.build(db)
+    (srv,) = uscall_repo.list_servers(db)
+    uscall_repo.update_server(db, srv, host="https://local.exemplo")
+    db.commit()
+
+    relatorio = bundle_mod.apply(db, data)["applied"]
+
+    assert relatorio["config.uscall_servers"]["atualizados"] == 1
+    assert uscall_repo.list_servers(db)[0].host == "https://pbx.exemplo"
+
+
+def test_decisao_com_lado_invalido_e_recusada(db: Session) -> None:
+    with pytest.raises(bundle_mod.BundleError):
+        bundle_mod.apply(db, bundle_mod.build(db), decisions={"users:admin": "sei-la"})
+
+
+def test_secao_ausente_no_arquivo_nao_apaga_nada_em_replace(db: Session) -> None:
+    """Export só de ambientes não pode levar embora os servidores do destino."""
+    _povoar(db)
+    data = bundle_mod.build(db, ("environments",))
+
+    bundle_mod.apply(db, data, sections=bundle_mod.SECTIONS, mode="replace")
+
+    assert len(uscall_repo.list_servers(db)) == 1
+    assert len(mqtt_repo.list_brokers(db)) == 1

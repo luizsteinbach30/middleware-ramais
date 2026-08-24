@@ -312,17 +312,26 @@ hora do aperto:
    O arquivo carrega o token do USCall, a senha do broker e a senha SIP de cada
    ramal — é por isso que é cifrado.
 3. No outro sistema, em **Importar configuração**, selecione o arquivo, informe
-   a passphrase e clique em *Analisar arquivo*. A tela mostra o que existe
-   dentro antes de qualquer mudança.
-4. Escolha as seções e o modo:
-   - **Mesclar** — nada é apagado. Ambientes entram como novos (nome repetido
-     ganha um sufixo), a configuração é sobrescrita chave a chave, servidores e
-     brokers de mesmo nome são atualizados.
-   - **Substituir** — apaga os ambientes atuais (e o histórico de aplicação
-     deles), os servidores USCall e os brokers MQTT, e recria a partir do
-     arquivo, preservando os identificadores originais dos ambientes.
-5. Usuários nunca são apagados na importação: os que faltam são criados, e em
-   *Substituir* os existentes têm a senha e o perfil atualizados.
+   a passphrase e clique em *Analisar arquivo*.
+4. **Resolva os conflitos.** A tela compara o arquivo com o que já existe e
+   separa em três:
+   - *igual* — some do caminho, vira só uma contagem, e não é gravado de novo;
+   - *novo* — entra;
+   - *em conflito* — abre com uma tabela mostrando, campo a campo, o que está
+     **no sistema** e o que está **no arquivo**; você escolhe *Manter atual* ou
+     *Usar do arquivo*. Se forem muitos, dá para decidir o grupo inteiro de uma
+     vez pelos botões *todos: manter* / *todos: do arquivo*.
+
+   O padrão é o arquivo, exceto em **Usuários**, onde é o que já está no
+   sistema — restaurar não troca a senha de quem está operando sem você mandar.
+   Valor de senha ou token não aparece na comparação: a tela só diz que difere.
+5. Escolha as seções e o modo:
+   - **Mesclar** — nada é apagado. O que existe só no sistema continua lá.
+   - **Substituir** — além disso, **apaga** os ambientes, servidores USCall e
+     brokers MQTT que existem só no sistema (a confirmação diz quantos são).
+     Ambiente apagado leva junto o histórico de aplicação dele.
+6. Usuários e devices nunca são apagados na importação, em modo nenhum: os que
+   faltam são criados, e os existentes só mudam se você decidir pelo arquivo.
 
 ### Recuperar a instalação
 
@@ -345,6 +354,12 @@ hora do aperto:
 ### Perguntas que aparecem
 
 - **Perdi a passphrase do `.mwrbak`.** Não há recuperação. Gere um novo export.
+- **Importei e não mudou nada.** Provavelmente estava tudo igual — a tela mostra
+  quantos itens foram ignorados por já baterem com o arquivo. Reimportar o mesmo
+  pacote duas vezes não faz nada na segunda vez.
+- **Restaurei mas o conflito continua na lista.** Se você escolheu *Manter
+  atual*, o sistema segue diferente do arquivo de propósito — é isso que a
+  linha está dizendo.
 - **O backup é de uma versão mais nova do middleware.** A restauração é
   recusada: o banco traria um schema que a versão instalada não sabe ler.
   Atualize o middleware primeiro.

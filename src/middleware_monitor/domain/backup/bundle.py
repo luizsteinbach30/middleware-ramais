@@ -1,4 +1,4 @@
-"""Pacote portavel de configuracao (``.mwrbak``): montagem e aplicacao.
+"""Pacote portavel de configuracao (``.mwrbak``): montagem, comparacao e aplicacao.
 
 O pacote leva **configuracao**, nunca historico: o que precisa existir para
 outra instalacao operar igual a esta. Sao quatro secoes independentes, cada uma
@@ -20,6 +20,17 @@ broker e senha SIP de cada ramal em claro. Em claro porque a cifra local
 outra chave e nao decifraria nada. A protecao passa a ser a passphrase do
 envelope (``core.export_crypto``), e por isso a API nao aceita exportar sem uma.
 
+**Importar nao sobrescreve calado.** Antes de aplicar, :func:`diff` compara item
+a item o que esta no arquivo com o que esta no banco e classifica cada um em
+*novo*, *identico* ou *conflito*. Identico nao vira escrita nenhuma — nao ha o
+que decidir quando os dois lados dizem a mesma coisa. Conflito vai para a tela
+com os dois valores lado a lado, e a decisao do operador (``atual`` ou
+``arquivo``) volta em :func:`apply`.
+
+Os dois lados da comparacao saem da **mesma** funcao :func:`build`: o que se
+compara e exatamente o que se aplica, sem um segundo mapeamento para
+divergir do primeiro.
+
 O ``schema_version`` e o portao de compatibilidade: pacote de versao diferente
 e recusado inteiro, em vez de importado pela metade.
 """
@@ -34,7 +45,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.core.crypto import SecretBox
-from middleware_monitor.core.models import AppConfig, Device, ExtensionEnvironment, User
+from middleware_monitor.core.models import (
+    AppConfig,
+    Device,
+    ExtensionEnvironment,
+    MqttBroker,
+    UscallServer,
+    User,
+)
 from middleware_monitor.domain.backup.settings import LOCAL_ONLY_KEYS
 from middleware_monitor.domain.extension_configurator import repository as ec_repo
 from middleware_monitor.domain.mqtt import repository as mqtt_repo
@@ -47,10 +65,61 @@ SCHEMA_VERSION = 1
 SECTIONS: tuple[str, ...] = ("config", "environments", "users", "devices")
 MODES: tuple[str, ...] = ("merge", "replace")
 
+# Grupos comparaveis. A secao "config" tem tres listas independentes dentro, e
+# o operador decide conflito por item — entao a comparacao trabalha no nivel do
+# grupo, nao da secao.
+GROUPS: tuple[str, ...] = (
+    "config.app_config",
+    "config.uscall_servers",
+    "config.mqtt_brokers",
+    "environments",
+    "users",
+    "devices",
+)
+GROUP_SECTION: dict[str, str] = {g: g.split(".")[0] for g in GROUPS}
+GROUP_LABEL: dict[str, str] = {
+    "config.app_config": "Configurações do sistema",
+    "config.uscall_servers": "Servidores USCall",
+    "config.mqtt_brokers": "Brokers MQTT",
+    "environments": "Ambientes do Configurador",
+    "users": "Usuários",
+    "devices": "Devices monitorados",
+}
+_ID_FIELD: dict[str, str] = {
+    "config.app_config": "key",
+    "config.uscall_servers": "nome",
+    "config.mqtt_brokers": "nome",
+    "environments": "id",
+    "users": "username",
+    "devices": "name",
+}
+# Campos cujo VALOR nunca aparece na comparacao — a tela diz que difere, e nada
+# mais. Mostrar token e hash de senha lado a lado seria vazar pela janela o que
+# o envelope cifrado protege.
+_SECRET_FIELDS: dict[str, frozenset[str]] = {
+    "config.uscall_servers": frozenset({"token"}),
+    "config.mqtt_brokers": frozenset({"password"}),
+    "users": frozenset({"password_hash"}),
+}
+# Grupos que o modo `replace` pode esvaziar. Usuario e device ficam de fora de
+# proposito: apagar conta trava o acesso, e device a coleta recria sozinha.
+_REPLACEABLE: frozenset[str] = frozenset(
+    {"config.uscall_servers", "config.mqtt_brokers", "environments"}
+)
+# Lado que vence um conflito quando o operador nao decidiu. Restaurar backup
+# quer dizer "traga o que esta no arquivo" — menos para conta de acesso, onde o
+# padrao errado tranca o operador para fora da propria instalacao.
+_DEFAULT_SIDE: dict[str, str] = {"users": "atual"}
+SIDES: tuple[str, ...] = ("atual", "arquivo")
+
 _LINE_FIELDS = (
     "ip", "numero_ramal", "user_auth", "senha_sip",
     "servidor_sip", "numero_abreviado", "nome_visivel",
 )
+# Teto de itens detalhados por grupo na resposta do diff. Com 1930 devices, uma
+# lista completa de conflitos seria impossivel de ler e cara de trafegar; o
+# resto se resolve pela decisao em massa do grupo.
+_MAX_DETALHES = 200
 
 
 class BundleError(Exception):
@@ -81,7 +150,50 @@ def normalize_sections(raw: object) -> tuple[str, ...]:
     return escolhidas
 
 
+def normalize_decisions(raw: object) -> dict[str, str]:
+    """Decisoes de conflito: ``{"<grupo>:<id>": "atual"|"arquivo"}``.
+
+    A chave pode ser o **grupo inteiro** (sem ``:id``), e ai vale como padrao
+    daquele grupo — e o que permite decidir de uma vez um grupo com centenas de
+    itens, que a tela nem lista item a item. Decisao de item vence a do grupo,
+    que vence o padrao do sistema.
+
+    Chave desconhecida e ignorada; lado invalido e erro, porque um typo que
+    virasse silenciosamente o padrao decidiria sozinho o que o operador quis
+    decidir.
+    """
+    if not raw:
+        return {}
+    if not isinstance(raw, dict):
+        raise BundleError("decisoes em formato invalido")
+    out: dict[str, str] = {}
+    for chave, lado in raw.items():
+        texto = str(lado)
+        if texto not in SIDES:
+            raise BundleError(f"decisao invalida para {chave!r}: {texto!r}")
+        out[str(chave)] = texto
+    return out
+
+
 # --------------------------------------------------------------- montagem
+
+
+# Segredo que não abre vira "" em vez de derrubar a exportação. Acontece de
+# verdade: banco restaurado de outra máquina, ou APP_SECRET_KEY trocado — e é
+# justamente nesse estado que o operador mais precisa conseguir tirar a
+# configuração de dentro do sistema.
+def _token_do_servidor(srv: UscallServer) -> str:
+    try:
+        return uscall_repo.load_server_token(srv) or ""
+    except ValueError:
+        return ""
+
+
+def _senha_do_broker(broker: MqttBroker) -> str:
+    try:
+        return mqtt_repo.load_broker_password(broker)
+    except ValueError:
+        return ""
 
 
 def _build_config(db: DBSession) -> dict[str, Any]:
@@ -103,7 +215,7 @@ def _build_config(db: DBSession) -> dict[str, Any]:
         {
             "nome": s.nome,
             "host": s.host,
-            "token": uscall_repo.load_server_token(s) or "",
+            "token": _token_do_servidor(s),
             "verify_ssl": s.verify_ssl,
             "enabled": s.enabled,
         }
@@ -119,7 +231,7 @@ def _build_config(db: DBSession) -> dict[str, Any]:
             "tls": b.tls,
             "ws_path": b.ws_path,
             "username": b.username,
-            "password": mqtt_repo.load_broker_password(b),
+            "password": _senha_do_broker(b),
             "tls_verify": b.tls_verify,
             "tls_fingerprint": b.tls_fingerprint,
             "topics": mqtt_repo.broker_topics(b),
@@ -225,7 +337,7 @@ def parse(raw: bytes) -> dict[str, Any]:
 
 
 def summarize(data: dict[str, Any]) -> dict[str, Any]:
-    """Resumo do que ha no pacote — o que a tela mostra antes de restaurar."""
+    """Resumo do que ha no pacote, sem olhar o banco."""
     secoes = data.get("sections") or {}
     resumo: dict[str, Any] = {}
     if isinstance(secoes.get("config"), dict):
@@ -253,202 +365,389 @@ def summarize(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# --------------------------------------------------------------- comparacao
+
+
+def _itens(secoes: dict[str, Any], grupo: str) -> list[dict[str, Any]]:
+    if grupo.startswith("config."):
+        cfg = secoes.get("config")
+        if not isinstance(cfg, dict):
+            return []
+        bruto = cfg.get(grupo.split(".", 1)[1])
+    else:
+        bruto = secoes.get(grupo)
+    if not isinstance(bruto, list):
+        return []
+    return [it for it in bruto if isinstance(it, dict)]
+
+
+def _tem_grupo(secoes: dict[str, Any], grupo: str) -> bool:
+    """A secao veio no pacote? Secao ausente não é secao vazia — sem isto, um
+    export só de ambientes apagaria os servidores no modo `replace`."""
+    if grupo.startswith("config."):
+        cfg = secoes.get("config")
+        return isinstance(cfg, dict) and isinstance(cfg.get(grupo.split(".", 1)[1]), list)
+    return isinstance(secoes.get(grupo), list)
+
+
+def _indexar(secoes: dict[str, Any], grupo: str) -> dict[str, dict[str, Any]]:
+    campo = _ID_FIELD[grupo]
+    out: dict[str, dict[str, Any]] = {}
+    for item in _itens(secoes, grupo):
+        ident = str(item.get(campo) or "").strip()
+        if not ident:
+            continue
+        if grupo == "config.app_config" and ident in LOCAL_ONLY_KEYS:
+            continue
+        out[ident] = item
+    return out
+
+
+def _fmt(valor: Any) -> str:
+    if valor is None or valor == "":
+        return "(vazio)"
+    if isinstance(valor, bool):
+        return "sim" if valor else "não"
+    if isinstance(valor, (list, tuple)):
+        return ", ".join(str(v) for v in valor) or "(vazio)"
+    if isinstance(valor, dict):
+        return json.dumps(valor, ensure_ascii=False)[:120]
+    texto = str(valor)
+    return texto if len(texto) <= 120 else texto[:117] + "…"
+
+
+def _campo_dif(grupo: str, campo: str, atual: Any, arquivo: Any) -> dict[str, Any]:
+    if campo in _SECRET_FIELDS.get(grupo, frozenset()):
+        return {
+            "campo": campo,
+            "atual": "••••" if atual else "(vazio)",
+            "arquivo": "••••" if arquivo else "(vazio)",
+            "secreto": True,
+        }
+    return {"campo": campo, "atual": _fmt(atual), "arquivo": _fmt(arquivo), "secreto": False}
+
+
+def _resumo_linhas(atual: list[Any], arquivo: list[Any]) -> dict[str, Any] | None:
+    """Compara as linhas de um ambiente em números, não linha a linha: quem
+    decide um ambiente decide o conjunto, e uma planilha de 60 ramais não cabe
+    numa tela de comparação."""
+    def indexar(linhas: list[Any]) -> dict[str, dict[str, Any]]:
+        out: dict[str, dict[str, Any]] = {}
+        for i, ln in enumerate(linhas):
+            if not isinstance(ln, dict):
+                continue
+            out[str(ln.get("numero_ramal") or f"#{i + 1}")] = ln
+        return out
+
+    ia, ib = indexar(atual), indexar(arquivo)
+    novas = [k for k in ib if k not in ia]
+    sumidas = [k for k in ia if k not in ib]
+    mudadas = [k for k in ib if k in ia and ia[k] != ib[k]]
+    if not (novas or sumidas or mudadas):
+        return None
+    partes_arquivo = [f"{len(ib)} linha(s)"]
+    if novas:
+        partes_arquivo.append(f"{len(novas)} só no arquivo")
+    if mudadas:
+        partes_arquivo.append(f"{len(mudadas)} diferente(s)")
+    partes_atual = [f"{len(ia)} linha(s)"]
+    if sumidas:
+        partes_atual.append(f"{len(sumidas)} só no sistema")
+    return {
+        "campo": "ramais",
+        "atual": " · ".join(partes_atual),
+        "arquivo": " · ".join(partes_arquivo),
+        "secreto": False,
+    }
+
+
+def _dif_ambiente(atual: dict[str, Any], arquivo: dict[str, Any]) -> list[dict[str, Any]]:
+    campos: list[dict[str, Any]] = []
+    for campo in ("nome", "modelo_telefone"):
+        if atual.get(campo) != arquivo.get(campo):
+            campos.append(_campo_dif("environments", campo, atual.get(campo), arquivo.get(campo)))
+    cfg_a: dict[str, Any] = atual.get("config_padrao") or {}
+    cfg_b: dict[str, Any] = arquivo.get("config_padrao") or {}
+    if not isinstance(cfg_a, dict):
+        cfg_a = {}
+    if not isinstance(cfg_b, dict):
+        cfg_b = {}
+    divergentes = sorted(k for k in set(cfg_a) | set(cfg_b) if cfg_a.get(k) != cfg_b.get(k))
+    for chave in divergentes[:12]:
+        campos.append(_campo_dif(
+            "environments", f"config: {chave}", cfg_a.get(chave), cfg_b.get(chave),
+        ))
+    if len(divergentes) > 12:
+        campos.append({
+            "campo": "config: (demais)",
+            "atual": f"e mais {len(divergentes) - 12} campo(s)",
+            "arquivo": ", ".join(divergentes[12:18]) + "…",
+            "secreto": False,
+        })
+    linhas_a = atual.get("lines")
+    linhas_b = arquivo.get("lines")
+    linhas = _resumo_linhas(
+        linhas_a if isinstance(linhas_a, list) else [],
+        linhas_b if isinstance(linhas_b, list) else [],
+    )
+    if linhas:
+        campos.append(linhas)
+    return campos
+
+
+def _diferencas(grupo: str, atual: dict[str, Any], arquivo: dict[str, Any]) -> list[dict[str, Any]]:
+    if grupo == "environments":
+        return _dif_ambiente(atual, arquivo)
+    ident = _ID_FIELD[grupo]
+    campos: list[dict[str, Any]] = []
+    for campo in sorted(set(atual) | set(arquivo)):
+        if campo == ident:
+            continue
+        if atual.get(campo) != arquivo.get(campo):
+            campos.append(_campo_dif(grupo, campo, atual.get(campo), arquivo.get(campo)))
+    return campos
+
+
+def _rotulo(grupo: str, item: dict[str, Any], ident: str) -> str:
+    if grupo == "environments":
+        return f"{item.get('nome') or ident} ({ident})"
+    return ident
+
+
+def diff(
+    db: DBSession, data: dict[str, Any], sections: tuple[str, ...] = SECTIONS,
+) -> dict[str, Any]:
+    """Compara o pacote com o estado atual, grupo a grupo.
+
+    Devolve, por grupo: quantos itens são novos, quantos estão idênticos (que
+    não viram escrita nenhuma) e a lista de conflitos com os campos que
+    divergem. O que só existe no banco aparece em ``ausentes`` — informação que
+    só muda alguma coisa no modo ``replace``, onde esses itens são apagados.
+    """
+    secoes_arquivo = data.get("sections") or {}
+    atual = build(db, sections)["sections"]
+    grupos: dict[str, Any] = {}
+    for grupo in GROUPS:
+        if GROUP_SECTION[grupo] not in sections or not _tem_grupo(secoes_arquivo, grupo):
+            continue
+        do_arquivo = _indexar(secoes_arquivo, grupo)
+        do_banco = _indexar(atual, grupo)
+        novos: list[dict[str, Any]] = []
+        conflitos: list[dict[str, Any]] = []
+        identicos = 0
+        for ident, item in do_arquivo.items():
+            existente = do_banco.get(ident)
+            if existente is None:
+                novos.append({"id": ident, "label": _rotulo(grupo, item, ident)})
+            elif existente == item:
+                identicos += 1
+            else:
+                conflitos.append({
+                    "key": f"{grupo}:{ident}",
+                    "id": ident,
+                    "label": _rotulo(grupo, item, ident),
+                    "campos": _diferencas(grupo, existente, item),
+                })
+        ausentes = [
+            {"id": ident, "label": _rotulo(grupo, do_banco[ident], ident)}
+            for ident in do_banco
+            if ident not in do_arquivo
+        ]
+        grupos[grupo] = {
+            "label": GROUP_LABEL[grupo],
+            "section": GROUP_SECTION[grupo],
+            "default_side": _DEFAULT_SIDE.get(grupo, "arquivo"),
+            "removable": grupo in _REPLACEABLE,
+            "identicos": identicos,
+            "novos": novos[:_MAX_DETALHES],
+            "novos_total": len(novos),
+            "conflitos": conflitos[:_MAX_DETALHES],
+            "conflitos_total": len(conflitos),
+            "ausentes": ausentes[:_MAX_DETALHES],
+            "ausentes_total": len(ausentes),
+        }
+    return {
+        "generated_at": data.get("generated_at", ""),
+        "app_version": data.get("app_version", ""),
+        "groups": grupos,
+    }
+
+
 # --------------------------------------------------------------- aplicacao
 
 
-def _apply_config(db: DBSession, cfg: dict[str, Any], *, mode: str, user_id: int | None) -> dict[str, int]:
-    agora = _now()
-    existentes = {row.key: row for row in db.scalars(select(AppConfig)).all()}
-    chaves = 0
-    for item in cfg.get("app_config") or []:
-        if not isinstance(item, dict) or not item.get("key"):
-            continue
-        key = str(item["key"])
-        if key in LOCAL_ONLY_KEYS:
-            continue
-        secreto = bool(item.get("is_secret"))
-        valor = str(item.get("value") or "")
-        guardado = _box().encrypt(valor) if (secreto and valor) else valor
-        row = existentes.get(key)
-        if row is None:
-            db.add(AppConfig(
-                key=key, value=guardado, is_secret=secreto,
-                updated_at=agora, updated_by=user_id,
-            ))
-        else:
-            row.value = guardado
-            row.is_secret = secreto
-            row.updated_at = agora
-            row.updated_by = user_id
-        chaves += 1
-
-    servidores = cfg.get("uscall_servers") or []
-    if mode == "replace" and servidores:
-        for s in uscall_repo.list_servers(db):
-            uscall_repo.delete_server(db, s.id)
-    atuais = {s.nome: s for s in uscall_repo.list_servers(db)}
-    n_srv = 0
-    for item in servidores:
-        if not isinstance(item, dict) or not item.get("nome"):
-            continue
-        nome = str(item["nome"])
-        host = str(item.get("host") or "")
-        token = str(item.get("token") or "")
-        verify_ssl = bool(item.get("verify_ssl", True))
-        habilitado = bool(item.get("enabled", True))
-        existente = atuais.get(nome)
-        if existente is None:
-            uscall_repo.create_server(
-                db, nome=nome, host=host, token_plain=token,
-                verify_ssl=verify_ssl, enabled=habilitado,
-            )
-        else:
-            uscall_repo.update_server(
-                db, existente, nome=nome, host=host, token_plain=token,
-                verify_ssl=verify_ssl, enabled=habilitado,
-            )
-        n_srv += 1
-
-    brokers = cfg.get("mqtt_brokers") or []
-    if mode == "replace" and brokers:
-        for b in mqtt_repo.list_brokers(db):
-            mqtt_repo.delete_broker(db, b.id)
-    atuais_b = {b.nome: b for b in mqtt_repo.list_brokers(db)}
-    n_brk = 0
-    for item in brokers:
-        if not isinstance(item, dict) or not item.get("nome"):
-            continue
-        nome = str(item["nome"])
-        ws_path = str(item["ws_path"]) if item.get("ws_path") else None
-        fingerprint = str(item["tls_fingerprint"]) if item.get("tls_fingerprint") else None
-        campos_broker: dict[str, Any] = {
-            "address_input": str(item.get("address_input") or ""),
-            "host": str(item.get("host") or ""),
-            "port": int(str(item.get("port") or 1883)),
-            "transport": str(item.get("transport") or "tcp"),
-            "tls": bool(item.get("tls", False)),
-            "ws_path": ws_path,
-            "username": str(item.get("username") or ""),
-            "password_plain": str(item.get("password") or ""),
-            "tls_verify": bool(item.get("tls_verify", True)),
-            "tls_fingerprint": fingerprint,
-            "topics": [str(t) for t in (item.get("topics") or [])],
-            "qos": int(str(item.get("qos") or 1)),
-            "clean_session": bool(item.get("clean_session", False)),
-            "client_id": str(item.get("client_id") or ""),
-            "max_payload_kb": int(str(item.get("max_payload_kb") or 0)),
-            "enabled": bool(item.get("enabled", True)),
-        }
-        existente_b = atuais_b.get(nome)
-        if existente_b is None:
-            mqtt_repo.create_broker(db, nome=nome, **campos_broker)
-        else:
-            mqtt_repo.update_broker(db, existente_b, nome=nome, **campos_broker)
-        n_brk += 1
-
-    return {"chaves": chaves, "servidores_uscall": n_srv, "brokers_mqtt": n_brk}
+def _aplicar_config_kv(db: DBSession, item: dict[str, Any], user_id: int | None) -> None:
+    key = str(item["key"])
+    secreto = bool(item.get("is_secret"))
+    valor = str(item.get("value") or "")
+    guardado = _box().encrypt(valor) if (secreto and valor) else valor
+    row = db.get(AppConfig, key)
+    if row is None:
+        db.add(AppConfig(
+            key=key, value=guardado, is_secret=secreto,
+            updated_at=_now(), updated_by=user_id,
+        ))
+    else:
+        row.value = guardado
+        row.is_secret = secreto
+        row.updated_at = _now()
+        row.updated_by = user_id
 
 
-def _apply_environments(db: DBSession, ambientes: list[Any], *, mode: str) -> dict[str, int]:
-    if mode == "replace":
-        for env in ec_repo.list_environments(db):
-            ec_repo.delete_environment(db, env.id)
-    n_amb = 0
-    n_linhas = 0
-    for item in ambientes:
-        if not isinstance(item, dict):
-            continue
-        nome = str(item.get("nome") or "").strip()
-        modelo = str(item.get("modelo_telefone") or "").strip()
-        if not nome or not modelo:
-            continue
-        env_id = str(item.get("id") or "").strip()
-        if mode == "replace" and env_id and db.get(ExtensionEnvironment, env_id) is None:
-            # Preserva o identificador original — os links salvos pelo operador
-            # (/extension-configurator/environments/<id>) continuam validos.
-            agora = _now()
-            env = ExtensionEnvironment(
-                id=env_id, nome=nome, modelo_telefone=modelo,
-                config_padrao="{}", created_at=agora, updated_at=agora,
-            )
-            db.add(env)
-            db.flush()
-        else:
-            env = ec_repo.create_environment(db, nome=nome, modelo_telefone=modelo)
-        cfg = item.get("config_padrao")
-        if isinstance(cfg, dict):
-            ec_repo.update_environment(db, env, config_padrao=cfg)
-        linhas = [ln for ln in (item.get("lines") or []) if isinstance(ln, dict)]
-        linhas.sort(key=lambda ln: int(ln.get("posicao") or 0))
-        rows = [{f: str(ln.get(f, "") or "") for f in _LINE_FIELDS} for ln in linhas]
-        ec_repo.save_lines(db, env, rows)
-        n_amb += 1
-        n_linhas += len(rows)
-    return {"ambientes": n_amb, "linhas": n_linhas}
+def _aplicar_servidor(db: DBSession, item: dict[str, Any]) -> None:
+    nome = str(item["nome"])
+    host = str(item.get("host") or "")
+    token = str(item.get("token") or "")
+    verify_ssl = bool(item.get("verify_ssl", True))
+    habilitado = bool(item.get("enabled", True))
+    existente = next((s for s in uscall_repo.list_servers(db) if s.nome == nome), None)
+    if existente is None:
+        uscall_repo.create_server(
+            db, nome=nome, host=host, token_plain=token,
+            verify_ssl=verify_ssl, enabled=habilitado,
+        )
+    else:
+        uscall_repo.update_server(
+            db, existente, nome=nome, host=host, token_plain=token,
+            verify_ssl=verify_ssl, enabled=habilitado,
+        )
 
 
-def _apply_users(db: DBSession, usuarios: list[Any], *, mode: str) -> dict[str, int]:
-    """Cria os usuarios que faltam; em ``replace`` tambem atualiza os que ja
-    existem. **Nunca apaga conta** — restauracao que remove o login de quem
-    esta operando deixa a instalacao inacessivel."""
-    atuais = {u.username: u for u in db.scalars(select(User)).all()}
-    criados = 0
-    atualizados = 0
-    for item in usuarios:
-        if not isinstance(item, dict) or not item.get("username") or not item.get("password_hash"):
-            continue
-        username = str(item["username"])
-        existente = atuais.get(username)
-        if existente is None:
-            db.add(User(
-                username=username,
-                password_hash=str(item["password_hash"]),
-                role=str(item.get("role") or "admin"),
-                must_change_password=bool(item.get("must_change_password", False)),
-                created_at=_now(),
-            ))
-            criados += 1
-        elif mode == "replace":
-            existente.password_hash = str(item["password_hash"])
-            existente.role = str(item.get("role") or existente.role)
-            existente.must_change_password = bool(item.get("must_change_password", False))
-            atualizados += 1
-    db.flush()
-    return {"criados": criados, "atualizados": atualizados}
+def _aplicar_broker(db: DBSession, item: dict[str, Any]) -> None:
+    nome = str(item["nome"])
+    ws_path = str(item["ws_path"]) if item.get("ws_path") else None
+    fingerprint = str(item["tls_fingerprint"]) if item.get("tls_fingerprint") else None
+    campos: dict[str, Any] = {
+        "address_input": str(item.get("address_input") or ""),
+        "host": str(item.get("host") or ""),
+        "port": int(str(item.get("port") or 1883)),
+        "transport": str(item.get("transport") or "tcp"),
+        "tls": bool(item.get("tls", False)),
+        "ws_path": ws_path,
+        "username": str(item.get("username") or ""),
+        "password_plain": str(item.get("password") or ""),
+        "tls_verify": bool(item.get("tls_verify", True)),
+        "tls_fingerprint": fingerprint,
+        "topics": [str(t) for t in (item.get("topics") or [])],
+        "qos": int(str(item.get("qos") or 1)),
+        "clean_session": bool(item.get("clean_session", False)),
+        "client_id": str(item.get("client_id") or ""),
+        "max_payload_kb": int(str(item.get("max_payload_kb") or 0)),
+        "enabled": bool(item.get("enabled", True)),
+    }
+    existente = next((b for b in mqtt_repo.list_brokers(db) if b.nome == nome), None)
+    if existente is None:
+        mqtt_repo.create_broker(db, nome=nome, **campos)
+    else:
+        mqtt_repo.update_broker(db, existente, nome=nome, **campos)
 
 
-def _apply_devices(db: DBSession, devices: list[Any]) -> dict[str, int]:
-    """Upsert por nome. Nunca apaga: a coleta REST recria o que existir de
-    verdade, e remover device leva junto ping/vinculo de linha."""
-    atuais = {d.name: d for d in db.scalars(select(Device)).all()}
-    servidores = {s.nome: s.id for s in uscall_repo.list_servers(db)}
-    criados = 0
-    atualizados = 0
-    for item in devices:
-        if not isinstance(item, dict) or not item.get("name"):
-            continue
-        nome = str(item["name"])
-        srv_id = servidores.get(str(item.get("uscall_server") or ""))
-        campos = {
-            "ip": item.get("ip") or None,
-            "mac": item.get("mac") or None,
-            "model": item.get("model") or None,
-            "notes": item.get("notes") or None,
-            "uscall_server_id": srv_id,
-        }
-        existente = atuais.get(nome)
-        if existente is None:
-            agora = _now()
-            db.add(Device(name=nome, created_at=agora, updated_at=agora, **campos))
-            criados += 1
-        else:
-            for k, v in campos.items():
-                if v is not None:
-                    setattr(existente, k, v)
-            existente.updated_at = _now()
-            atualizados += 1
-    db.flush()
-    return {"criados": criados, "atualizados": atualizados}
+def _aplicar_ambiente(db: DBSession, item: dict[str, Any]) -> None:
+    """Cria ou sobrescreve o ambiente **com o id do arquivo**.
+
+    Preservar o identificador mantém válidos os links que o operador já tem
+    (`/extension-configurator/environments/<id>`) e é o que permite reconhecer
+    o mesmo ambiente numa próxima importação — sem isso, cada import criaria
+    uma cópia e nunca haveria conflito para decidir.
+    """
+    nome = str(item.get("nome") or "").strip()
+    modelo = str(item.get("modelo_telefone") or "").strip()
+    if not nome or not modelo:
+        return
+    env_id = str(item.get("id") or "").strip() or ec_repo.generate_slug(nome)
+    env = db.get(ExtensionEnvironment, env_id)
+    if env is None:
+        agora = _now()
+        env = ExtensionEnvironment(
+            id=env_id, nome=nome, modelo_telefone=modelo,
+            config_padrao="{}", created_at=agora, updated_at=agora,
+        )
+        db.add(env)
+        db.flush()
+    else:
+        env.nome = nome
+        env.modelo_telefone = modelo
+    cfg = item.get("config_padrao")
+    if isinstance(cfg, dict):
+        ec_repo.update_environment(db, env, config_padrao=cfg)
+    linhas = [ln for ln in (item.get("lines") or []) if isinstance(ln, dict)]
+    linhas.sort(key=lambda ln: int(ln.get("posicao") or 0))
+    ec_repo.save_lines(
+        db, env, [{f: str(ln.get(f, "") or "") for f in _LINE_FIELDS} for ln in linhas],
+    )
+
+
+def _aplicar_usuario(db: DBSession, item: dict[str, Any]) -> None:
+    username = str(item.get("username") or "")
+    senha_hash = str(item.get("password_hash") or "")
+    if not username or not senha_hash:
+        return
+    existente = db.scalar(select(User).where(User.username == username))
+    if existente is None:
+        db.add(User(
+            username=username,
+            password_hash=senha_hash,
+            role=str(item.get("role") or "admin"),
+            must_change_password=bool(item.get("must_change_password", False)),
+            created_at=_now(),
+        ))
+    else:
+        existente.password_hash = senha_hash
+        existente.role = str(item.get("role") or existente.role)
+        existente.must_change_password = bool(item.get("must_change_password", False))
+
+
+def _aplicar_device(db: DBSession, item: dict[str, Any]) -> None:
+    nome = str(item.get("name") or "")
+    if not nome:
+        return
+    srv_id = next(
+        (s.id for s in uscall_repo.list_servers(db) if s.nome == str(item.get("uscall_server") or "")),
+        None,
+    )
+    campos = {
+        "ip": item.get("ip") or None,
+        "mac": item.get("mac") or None,
+        "model": item.get("model") or None,
+        "notes": item.get("notes") or None,
+        "uscall_server_id": srv_id,
+    }
+    existente = db.scalar(select(Device).where(Device.name == nome))
+    if existente is None:
+        agora = _now()
+        db.add(Device(name=nome, created_at=agora, updated_at=agora, **campos))
+    else:
+        for k, v in campos.items():
+            setattr(existente, k, v)
+        existente.updated_at = _now()
+
+
+def _remover(db: DBSession, grupo: str, ident: str) -> None:
+    if grupo == "config.uscall_servers":
+        alvo = next((s for s in uscall_repo.list_servers(db) if s.nome == ident), None)
+        if alvo is not None:
+            uscall_repo.delete_server(db, alvo.id)
+    elif grupo == "config.mqtt_brokers":
+        broker = next((b for b in mqtt_repo.list_brokers(db) if b.nome == ident), None)
+        if broker is not None:
+            mqtt_repo.delete_broker(db, broker.id)
+    elif grupo == "environments":
+        ec_repo.delete_environment(db, ident)
+
+
+def _aplicar(db: DBSession, grupo: str, item: dict[str, Any], user_id: int | None) -> None:
+    if grupo == "config.app_config":
+        _aplicar_config_kv(db, item, user_id)
+    elif grupo == "config.uscall_servers":
+        _aplicar_servidor(db, item)
+    elif grupo == "config.mqtt_brokers":
+        _aplicar_broker(db, item)
+    elif grupo == "environments":
+        _aplicar_ambiente(db, item)
+    elif grupo == "users":
+        _aplicar_usuario(db, item)
+    elif grupo == "devices":
+        _aplicar_device(db, item)
 
 
 def apply(
@@ -457,34 +756,56 @@ def apply(
     *,
     sections: tuple[str, ...] = SECTIONS,
     mode: str = "merge",
+    decisions: dict[str, str] | None = None,
     user_id: int | None = None,
 ) -> dict[str, Any]:
     """Aplica o pacote ao banco. Tudo em UMA transacao: ou entra inteiro, ou
     nao entra nada — meia restauracao e pior que nenhuma.
 
-    ``merge`` acrescenta sem destruir (ambientes viram novos, config existente e
-    sobrescrita chave a chave); ``replace`` troca ambientes, servidores USCall e
-    brokers MQTT pelo conteudo do arquivo.
+    Item **identico** ao que ja existe nao vira escrita. Item em **conflito**
+    segue a decisao do operador (``{"<grupo>:<id>": "atual"|"arquivo"}``); sem
+    decisao vale o padrao do grupo — ``arquivo``, menos em ``users``.
+
+    ``mode="replace"`` acrescenta uma coisa so: apaga, nos grupos que aceitam,
+    o que existe no banco e nao existe no arquivo.
     """
     if mode not in MODES:
         raise BundleError(f"modo invalido: {mode!r}")
-    secoes = data.get("sections") or {}
-    relatorio: dict[str, Any] = {"mode": mode, "applied": {}}
+    escolhas = normalize_decisions(decisions)
+    secoes_arquivo = data.get("sections") or {}
+    atual = build(db, sections)["sections"]
+    relatorio: dict[str, Any] = {}
     try:
-        if "config" in sections and isinstance(secoes.get("config"), dict):
-            relatorio["applied"]["config"] = _apply_config(
-                db, secoes["config"], mode=mode, user_id=user_id,
-            )
-        if "environments" in sections and isinstance(secoes.get("environments"), list):
-            relatorio["applied"]["environments"] = _apply_environments(
-                db, secoes["environments"], mode=mode,
-            )
-        if "users" in sections and isinstance(secoes.get("users"), list):
-            relatorio["applied"]["users"] = _apply_users(db, secoes["users"], mode=mode)
-        if "devices" in sections and isinstance(secoes.get("devices"), list):
-            relatorio["applied"]["devices"] = _apply_devices(db, secoes["devices"])
+        for grupo in GROUPS:
+            if GROUP_SECTION[grupo] not in sections or not _tem_grupo(secoes_arquivo, grupo):
+                continue
+            do_arquivo = _indexar(secoes_arquivo, grupo)
+            do_banco = _indexar(atual, grupo)
+            padrao = escolhas.get(grupo, _DEFAULT_SIDE.get(grupo, "arquivo"))
+            contagem = {
+                "novos": 0, "atualizados": 0, "identicos": 0,
+                "mantidos": 0, "removidos": 0,
+            }
+            for ident, item in do_arquivo.items():
+                existente = do_banco.get(ident)
+                if existente is None:
+                    _aplicar(db, grupo, item, user_id)
+                    contagem["novos"] += 1
+                elif existente == item:
+                    contagem["identicos"] += 1
+                elif escolhas.get(f"{grupo}:{ident}", padrao) == "atual":
+                    contagem["mantidos"] += 1
+                else:
+                    _aplicar(db, grupo, item, user_id)
+                    contagem["atualizados"] += 1
+            if mode == "replace" and grupo in _REPLACEABLE:
+                for ident in [i for i in do_banco if i not in do_arquivo]:
+                    _remover(db, grupo, ident)
+                    contagem["removidos"] += 1
+            db.flush()
+            relatorio[grupo] = contagem
         db.commit()
     except Exception:
         db.rollback()
         raise
-    return relatorio
+    return {"mode": mode, "applied": relatorio}

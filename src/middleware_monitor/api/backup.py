@@ -70,11 +70,20 @@ class InspectIn(BaseModel):
     passphrase: str = Field(min_length=1)
 
 
+class DiffIn(BaseModel):
+    blob: str
+    passphrase: str = Field(min_length=1)
+    sections: list[str] = Field(default_factory=list)
+
+
 class ImportIn(BaseModel):
     blob: str
     passphrase: str = Field(min_length=1)
     sections: list[str] = Field(default_factory=list)
     mode: str = "merge"
+    # {"<grupo>:<id>": "atual"|"arquivo"} — só para os itens em conflito; o que
+    # não vier segue o padrão do grupo.
+    decisions: dict[str, str] = Field(default_factory=dict)
 
 
 class SettingsIn(BaseModel):
@@ -132,19 +141,36 @@ def inspect_bundle(
     return bundle_mod.summarize(_decode(payload.blob, payload.passphrase))
 
 
+@router.post("/diff", dependencies=[Depends(require_csrf)])
+def diff_bundle(
+    payload: DiffIn = Body(...),
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Compara o pacote com o que esta no banco, item a item.
+
+    E o passo que faz a importacao deixar de sobrescrever calado: o que esta
+    igual nao aparece para decidir (e nao vira escrita), e o que diverge vem
+    com os dois valores lado a lado.
+    """
+    data = _decode(payload.blob, payload.passphrase)
+    return bundle_mod.diff(db, data, _sections(payload.sections))
+
+
 @router.post("/import", dependencies=[Depends(require_csrf)])
 def import_bundle(
     payload: ImportIn = Body(...),
     user: User = Depends(get_current_user),
     db: DBSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Aplica o pacote ao banco (transacao unica)."""
+    """Aplica o pacote ao banco (transacao unica), respeitando as decisoes."""
     data = _decode(payload.blob, payload.passphrase)
     try:
         relatorio = bundle_mod.apply(
             db, data,
             sections=_sections(payload.sections),
             mode=payload.mode,
+            decisions=payload.decisions,
             user_id=user.id,
         )
     except bundle_mod.BundleError as exc:

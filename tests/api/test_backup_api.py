@@ -65,7 +65,7 @@ def test_exportar_e_importar_ambiente_de_volta(client, db: Session) -> None:
         headers={"X-CSRF-Token": csrf},
     )
     assert r.status_code == 200, r.json()
-    assert r.json()["applied"]["environments"] == {"ambientes": 1, "linhas": 1}
+    assert r.json()["applied"]["environments"]["novos"] == 1
     assert [e.nome for e in ec_repo.list_environments(db)] == ["Loja 14"]
 
 
@@ -177,3 +177,84 @@ def test_apagar_backup(client, db: Session) -> None:
 def test_sem_sessao_nao_ha_backup(client, db: Session) -> None:
     assert client.get("/api/backup/files").status_code == 401
     assert client.post("/api/backup/snapshot").status_code in (401, 403)
+
+
+def test_fluxo_de_conflito_pela_api(client, db: Session) -> None:
+    """Exportar, mudar o ambiente no sistema, comparar e escolher qual fica."""
+    csrf = _authed(client, db)
+    env = ec_repo.create_environment(db, nome="Loja 14", modelo_telefone="Intelbras S3002")
+    ec_repo.save_lines(db, env, [{"ip": "192.168.0.48", "numero_ramal": "1401"}])
+    db.commit()
+    blob = client.post(
+        "/api/backup/export",
+        json={"passphrase": "frase", "sections": ["environments"]},
+        headers={"X-CSRF-Token": csrf},
+    ).text
+
+    # o sistema muda depois do export
+    ec_repo.update_environment(db, env, nome="Loja 14 (reformada)")
+    db.commit()
+
+    r = client.post(
+        "/api/backup/diff",
+        json={"blob": blob, "passphrase": "frase", "sections": ["environments"]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200, r.json()
+    grupo = r.json()["groups"]["environments"]
+    assert grupo["conflitos_total"] == 1
+    conflito = grupo["conflitos"][0]
+    assert conflito["key"] == f"environments:{env.id}"
+    campos = {c["campo"]: c for c in conflito["campos"]}
+    assert campos["nome"]["atual"] == "Loja 14 (reformada)"
+    assert campos["nome"]["arquivo"] == "Loja 14"
+
+    # decidindo pelo que está no sistema, o import não desfaz a mudança
+    r = client.post(
+        "/api/backup/import",
+        json={
+            "blob": blob, "passphrase": "frase", "sections": ["environments"],
+            "decisions": {conflito["key"]: "atual"},
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200, r.json()
+    assert r.json()["applied"]["environments"]["mantidos"] == 1
+    assert ec_repo.list_environments(db)[0].nome == "Loja 14 (reformada)"
+
+
+def test_importar_pacote_igual_ao_sistema_nao_muda_nada(client, db: Session) -> None:
+    csrf = _authed(client, db)
+    ec_repo.create_environment(db, nome="Loja 14", modelo_telefone="Intelbras S3002")
+    db.commit()
+    blob = client.post(
+        "/api/backup/export", json={"passphrase": "frase"},
+        headers={"X-CSRF-Token": csrf},
+    ).text
+
+    grupos = client.post(
+        "/api/backup/diff", json={"blob": blob, "passphrase": "frase"},
+        headers={"X-CSRF-Token": csrf},
+    ).json()["groups"]
+    assert grupos["environments"]["conflitos_total"] == 0
+    assert grupos["environments"]["identicos"] == 1
+
+    aplicado = client.post(
+        "/api/backup/import", json={"blob": blob, "passphrase": "frase"},
+        headers={"X-CSRF-Token": csrf},
+    ).json()["applied"]
+    assert all(g["atualizados"] == 0 and g["novos"] == 0 for g in aplicado.values())
+
+
+def test_decisao_invalida_e_recusada_pela_api(client, db: Session) -> None:
+    csrf = _authed(client, db)
+    blob = client.post(
+        "/api/backup/export", json={"passphrase": "frase"},
+        headers={"X-CSRF-Token": csrf},
+    ).text
+    r = client.post(
+        "/api/backup/import",
+        json={"blob": blob, "passphrase": "frase", "decisions": {"users:admin": "talvez"}},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 400

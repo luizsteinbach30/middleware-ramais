@@ -889,19 +889,25 @@ ambiente por vez (`.mwrenv`), e nada da configuração do sistema saía do banco
   com as seções: configurações do sistema (`app_config`, servidores USCall,
   brokers MQTT), ambientes do Configurador com linhas, usuários e devices.
   Seleção por seção; passphrase obrigatória.
-- **RF-BK-02** Analisar um pacote antes de aplicar, mostrando data de geração,
-  versão de origem e o conteúdo de cada seção.
-- **RF-BK-03** Importar o pacote em transação única, nos modos `merge`
-  (acrescenta) e `replace` (substitui ambientes, servidores e brokers).
-  Usuários e devices nunca são apagados na importação.
-- **RF-BK-04** Gerar snapshot consistente do banco (`VACUUM INTO` + gzip) sob
+- **RF-BK-02** Analisar um pacote antes de aplicar, comparando **item a item**
+  com o que está no banco e classificando cada um em *igual*, *novo*, *em
+  conflito* ou *só no sistema*. O conflito traz os campos divergentes com o
+  valor dos dois lados; valor de segredo nunca é exibido.
+- **RF-BK-03** Escolher, por item ou por grupo inteiro, qual lado prevalece em
+  cada conflito (`atual` ou `arquivo`). Sem escolha vale o padrão do grupo:
+  `arquivo`, exceto em usuários, onde é `atual`.
+- **RF-BK-04** Importar o pacote em transação única, nos modos `merge`
+  (acrescenta) e `replace` (também apaga ambientes, servidores e brokers que só
+  existem no sistema). Item igual não gera escrita; usuários e devices nunca são
+  apagados na importação.
+- **RF-BK-05** Gerar snapshot consistente do banco (`VACUUM INTO` + gzip) sob
   demanda e por agendamento diário.
-- **RF-BK-05** Poda automática por quantidade de cópias **e** por espaço, sem
+- **RF-BK-06** Poda automática por quantidade de cópias **e** por espaço, sem
   nunca ficar com zero backups.
-- **RF-BK-06** Restaurar snapshot de arquivo da pasta ou de upload, com
+- **RF-BK-07** Restaurar snapshot de arquivo da pasta ou de upload, com
   validação prévia; a troca do banco ocorre no boot seguinte.
-- **RF-BK-07** Cancelar uma restauração agendada enquanto ela não foi aplicada.
-- **RF-BK-08** Listar, baixar e apagar arquivos da pasta de backups pela tela.
+- **RF-BK-08** Cancelar uma restauração agendada enquanto ela não foi aplicada.
+- **RF-BK-09** Listar, baixar e apagar arquivos da pasta de backups pela tela.
 
 ### Requisitos não-funcionais (RNF-BK)
 
@@ -921,6 +927,12 @@ ambiente por vez (`.mwrenv`), e nada da configuração do sistema saía do banco
   `VACUUM INTO` de um banco grande não travar a API nem a ingestão MQTT.
 - **RNF-BK-06** Toda a API de backup exige sessão **e** perfil admin; o download
   valida o nome do arquivo contra caminho relativo.
+- **RNF-BK-07** Os dois lados da comparação são produzidos pela mesma função que
+  monta o pacote — o que se compara é exatamente o que se aplica.
+- **RNF-BK-08** Segredo em repouso ilegível (chave da instalação trocada) não
+  derruba a exportação: sai vazio e o restante do pacote é gerado.
+- **RNF-BK-09** A comparação detalha no máximo 200 itens por grupo; acima disso
+  a decisão em massa do grupo governa o restante.
 
 ### Onde ficam os arquivos
 

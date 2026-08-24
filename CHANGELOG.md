@@ -14,8 +14,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
     só, cifrado com passphrase, para importar em **outra instalação**. Antes
     disso o export existia apenas por ambiente, um arquivo de cada vez, e a
     configuração do sistema não saía do banco de jeito nenhum.
-    Importar mostra o conteúdo do arquivo **antes** de aplicar e roda em
-    transação única, em modo *mesclar* (nada é apagado) ou *substituir*.
+    Importar **compara antes de aplicar**, item a item: o que já está igual é
+    ignorado (não vira escrita nenhuma) e o que diverge aparece com os dois
+    valores lado a lado para o operador escolher qual fica — por item ou de uma
+    vez para o grupo inteiro. A aplicação roda em transação única, em modo
+    *mesclar* (nada é apagado) ou *substituir*.
+
+    Duas regras do desenho: valor de segredo (token, senha de broker, hash de
+    senha) nunca aparece na comparação — a tela diz que difere e para por aí; e
+    o padrão de **contas de acesso** é manter o que já existe, mesmo em
+    *substituir*, porque o padrão errado ali tranca o operador para fora da
+    própria instalação. Todos os outros grupos assumem o arquivo por padrão,
+    que é o que "restaurar" significa.
   - **Snapshot do banco** (`.db.gz`, `VACUUM INTO` + gzip): cópia consistente de
     tudo, inclusive o histórico, para recuperar **esta** instalação. Medido no
     banco real: 58 MB viram 3,9 MB.
@@ -64,6 +74,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   conversa que nunca existiu.
 
 ### Fixed
+- **Exportar quebrava se um segredo em repouso não abrisse.** Banco vindo de
+  outra máquina ou `APP_SECRET_KEY` trocado deixavam o token do USCall e a senha
+  do broker ilegíveis, e a exportação inteira caía com erro 500 — justamente no
+  estado em que mais se precisa tirar a configuração de dentro do sistema. Agora
+  o segredo ilegível vira vazio e o resto do pacote sai normalmente.
 - **Testes de chamadas quebravam sozinhos com o passar dos dias.** Eles
   gravavam as chamadas numa data fixa (o dia em que foram escritos) e
   consultavam a API com `last=24h`: três dias depois, a janela não alcançava

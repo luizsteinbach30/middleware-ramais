@@ -85,16 +85,58 @@ sem ninguém perceber. A poda respeita `keep` (padrão 7) e `max_mb` (padrão
 recente**, mesmo que sozinho ele estoure o teto. Ficar sem cópia nenhuma por
 causa de um limite de espaço seria o pior resultado possível.
 
-### 7. Import nunca apaga conta de acesso
+### 7. Importar compara antes de aplicar, e quem decide o empate é o operador
 
-Em `replace`, ambientes, servidores USCall e brokers são substituídos. Usuários
-e devices, não: os que faltam são criados e (em `replace`) os existentes têm
-senha e perfil atualizados. Uma restauração que remove o login de quem está
-operando deixa a instalação inacessível — e devices a coleta recria sozinha.
+Pedido do dono em 2026-08-24, depois da primeira versão: sobrescrever calado é
+inaceitável quando os dois lados são plausíveis. A importação passou a ter duas
+etapas — `diff` e `apply`:
+
+- **igual não vira escrita.** Se o item do arquivo bate campo a campo com o do
+  banco, ele nem aparece na tela: não há decisão a tomar e gravar de novo só
+  produziria ruído de auditoria (`updated_at` mexido sem nada ter mudado).
+  Medido no banco real: 1929 dos 1930 devices caem nesse caso.
+- **conflito vai para a tela** com os dois valores lado a lado e a escolha
+  `atual` / `arquivo`, por item ou para o grupo inteiro.
+
+Os dois lados da comparação saem da **mesma** função (`build`) que gera o
+pacote: o que se compara é exatamente o que se aplica. Um segundo mapeamento só
+para comparar divergiria do primeiro na primeira mudança de campo.
+
+O padrão por grupo é `arquivo` — é o que "restaurar" quer dizer —, com uma
+exceção: `users`. Ali o padrão é `atual`, inclusive no modo `replace`, porque um
+padrão errado nesse grupo troca a senha de quem está operando e tranca a pessoa
+para fora da instalação.
+
+Valor de segredo não entra na comparação: token, senha de broker e hash de senha
+aparecem como `••••` dos dois lados. A tela diz que difere, e isso basta para
+decidir — mostrar o valor entregaria pela janela o que o envelope protege.
+
+Identidade dos itens: `key` (config), `nome` (servidor/broker), `id` (ambiente),
+`username`, `name` (device). É o que permite reconhecer o mesmo item numa
+segunda importação — e é por isso que o ambiente é criado **com o id do
+arquivo** em vez de ganhar um slug novo: sem id estável, todo import viraria uma
+cópia e nunca haveria conflito para decidir.
+
+### 8. Import nunca apaga conta de acesso nem device
+
+`replace` apaga, nos grupos que aceitam (ambientes, servidores USCall, brokers
+MQTT), o que existe no banco e não existe no arquivo. Usuários e devices ficam
+fora dessa lista em qualquer modo: uma restauração que remove o login de quem
+está operando deixa a instalação inacessível, e device a coleta REST recria
+sozinha — apagar levaria junto histórico de ping e vínculo de linha.
+
+Conta existente só muda de senha ou perfil com decisão explícita do operador
+(decisão 7), o que também vale em `replace`.
 
 ## Consequências
 
 - Migração entre máquinas vira procedimento de tela, documentado no RUNBOOK §10.
+- Reimportar o mesmo pacote virou operação sem efeito, e não uma reescrita
+  completa — o que torna seguro analisar, aplicar em partes e voltar depois.
+- Segredo em repouso que não abre (banco de outra máquina, `APP_SECRET_KEY`
+  trocado) vira string vazia no pacote em vez de derrubar a exportação: no
+  estado em que a chave se perdeu, conseguir tirar o resto da configuração é
+  mais valioso do que falhar inteiro.
 - `update_broker` ganhou `clean_session`/`client_id` (não têm campo na tela) —
   sem eles a instalação restaurada assinaria o broker como cliente novo e
   perderia o backlog da sessão durável.
