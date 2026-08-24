@@ -847,3 +847,91 @@ Yealink provisiona a "Action URI Allow IP List". **Não provisiona** —
 whitelist `_ALLOWED_PREFIXES` (`yealink.py:57-63`) rejeitaria. Na prática o
 `normalize` do Yealink depende de o aparelho já ter o IP do middleware liberado.
 Corrigir a documentação ou implementar o provisionamento.
+
+### 15.6 Revisão de arquitetura e desempenho
+
+Pedido do dono em 2026-08-24, para depois das pendências acima: **rever a
+arquitetura e otimizar o sistema para ficar rápido e ágil**. Ainda não há
+diagnóstico — o primeiro passo é medir, não mexer. Pontos que já se sabem
+suspeitos, para a medição começar por eles:
+
+- **Banco único SQLite com o ledger dentro.** `mqtt_messages` domina o volume
+  (medido: 58 MB de banco, ~4 MB comprimidos, a maior parte ledger) e divide o
+  arquivo com tudo o mais. Toda consulta de tela concorre com a escrita do
+  coletor.
+- **Coleta e ping no mesmo intervalo.** `collect_extensions` e `monitor_devices`
+  compartilham `webhook_interval_minutes`; com 1930 devices, a varredura de rede
+  é o job mais pesado do sistema.
+- **Telas que carregam tudo.** `/devices` traz o cadastro inteiro; o painel ao
+  vivo casa ramal↔device a cada chamada.
+- **Reconstrução de chamadas a cada 60 s**, hoje barata (426 ms para 11 mil
+  transições), mas que cresce com o movimento do PBX.
+- **Retenção diária única.** A poda roda uma vez por dia e pode ficar cara;
+  `VACUUM` nunca é executado sozinho, então o arquivo não encolhe.
+
+Entregável esperado da primeira etapa: medição com número (tempo de resposta
+por tela, duração de cada job, tamanho por tabela) antes de qualquer mudança de
+arquitetura.
+
+---
+
+## 16. Módulo Backup e restauração
+
+### Objetivo
+
+Permitir **levar a configuração para outra instalação** e **recuperar esta
+instalação**, dois problemas que a v2.8.1 não resolvia: só existia export de um
+ambiente por vez (`.mwrenv`), e nada da configuração do sistema saía do banco.
+
+### Requisitos funcionais (RF-BK)
+
+- **RF-BK-01** Exportar um pacote portável cifrado por passphrase (`.mwrbak`)
+  com as seções: configurações do sistema (`app_config`, servidores USCall,
+  brokers MQTT), ambientes do Configurador com linhas, usuários e devices.
+  Seleção por seção; passphrase obrigatória.
+- **RF-BK-02** Analisar um pacote antes de aplicar, mostrando data de geração,
+  versão de origem e o conteúdo de cada seção.
+- **RF-BK-03** Importar o pacote em transação única, nos modos `merge`
+  (acrescenta) e `replace` (substitui ambientes, servidores e brokers).
+  Usuários e devices nunca são apagados na importação.
+- **RF-BK-04** Gerar snapshot consistente do banco (`VACUUM INTO` + gzip) sob
+  demanda e por agendamento diário.
+- **RF-BK-05** Poda automática por quantidade de cópias **e** por espaço, sem
+  nunca ficar com zero backups.
+- **RF-BK-06** Restaurar snapshot de arquivo da pasta ou de upload, com
+  validação prévia; a troca do banco ocorre no boot seguinte.
+- **RF-BK-07** Cancelar uma restauração agendada enquanto ela não foi aplicada.
+- **RF-BK-08** Listar, baixar e apagar arquivos da pasta de backups pela tela.
+
+### Requisitos não-funcionais (RNF-BK)
+
+- **RNF-BK-01** Segredos (token USCall, senha de broker, senhas SIP) só saem do
+  sistema dentro do envelope cifrado; a API recusa exportar sem passphrase.
+  A cifra do envelope é PBKDF2-SHA256 (200 mil iterações) + Fernet, a mesma do
+  export por ambiente.
+- **RNF-BK-02** A restauração **não** substitui o arquivo do banco com o
+  processo em execução. O arquivo pendente é validado (assinatura SQLite,
+  `integrity_check`, tabelas obrigatórias e revisão Alembic conhecida) e a troca
+  acontece em `init_engine`, antes da primeira conexão.
+- **RNF-BK-03** Backup gerado por versão mais nova (migration desconhecida) é
+  recusado, não aplicado com aviso.
+- **RNF-BK-04** O banco substituído por uma restauração é preservado como
+  `pre-restore-<data>.db` e é imune à poda por quantidade.
+- **RNF-BK-05** O job de backup roda fora do event loop (thread), para o
+  `VACUUM INTO` de um banco grande não travar a API nem a ingestão MQTT.
+- **RNF-BK-06** Toda a API de backup exige sessão **e** perfil admin; o download
+  valida o nome do arquivo contra caminho relativo.
+
+### Onde ficam os arquivos
+
+`<APP_DATA_DIR>/backups/` — no Windows desktop,
+`%LOCALAPPDATA%\MiddlewareMonitor\backups`; no serviço,
+`%ProgramData%\MiddlewareMonitor\backups`; no Linux,
+`/var/lib/middleware-monitor/backups`.
+
+| Padrão de nome | O que é |
+|---|---|
+| `backup-<data>-manual.db.gz` | snapshot gerado pelo botão |
+| `backup-<data>-auto.db.gz` | snapshot do job diário |
+| `config-<data>-auto.mwrbak` | pacote portável do job diário (só com passphrase salva) |
+| `pre-restore-<data>.db` | banco substituído por uma restauração |

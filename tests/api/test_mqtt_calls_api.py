@@ -13,8 +13,11 @@ from middleware_monitor.core.models import ExtensionCall
 from middleware_monitor.domain.auth.service import bootstrap_admin
 from middleware_monitor.domain.mqtt import calls as calls_domain
 
-BASE = datetime(2026, 8, 21, 14, 0, 0)
-DIA = "2026-08-21"
+# Ancorado no agora, não numa data fixa: os endpoints filtram por janela
+# (`last=24h`), então uma constante do dia em que o teste foi escrito sai da
+# janela sozinha com o passar do tempo e a suíte quebra sem nada ter mudado.
+BASE = datetime.now(UTC).replace(tzinfo=None, microsecond=0) - timedelta(hours=2)
+DIA = BASE.date().isoformat()
 
 
 def _authed(client, db) -> None:

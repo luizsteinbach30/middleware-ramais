@@ -7,6 +7,7 @@ nothing here and would complicate transaction handling in jobs.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from typing import Any
 
@@ -35,10 +36,30 @@ def _enable_sqlite_pragmas(dbapi_conn: Any, _conn_record: Any) -> None:
         cursor.close()
 
 
+def _apply_pending_restore() -> None:
+    """Troca o banco por um snapshot restaurado, antes de qualquer conexão.
+
+    Este é o único instante seguro para a troca: o arquivo ainda não está
+    aberto por ninguém. Import tardio porque ``domain.backup`` não pode ser
+    carregado no topo (``core.models`` importa ``Base`` daqui). Falha aqui não
+    derruba o boot — o app sobe com o banco atual e a tela reporta.
+    """
+    try:
+        from middleware_monitor.domain.backup.snapshot import apply_pending_restore
+
+        apply_pending_restore()
+    except Exception:  # pragma: no cover - defensivo no caminho de boot
+        logging.getLogger("backup").exception("falha ao aplicar restauracao pendente")
+
+
 def init_engine(url: str | None = None) -> Engine:
     global _engine, _SessionLocal
     if _engine is not None:
         return _engine
+    if url is None:
+        # Só no caminho normal: com URL explícita (testes, alembic apontado a
+        # outro arquivo) não faz sentido mexer no banco da instalação.
+        _apply_pending_restore()
     db_url = url or get_settings().effective_db_url
     is_sqlite = db_url.startswith("sqlite")
     connect_args = {"check_same_thread": False} if is_sqlite else {}

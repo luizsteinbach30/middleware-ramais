@@ -17,6 +17,9 @@ from middleware_monitor.api import (
     auth as api_auth,
 )
 from middleware_monitor.api import (
+    backup as api_backup,
+)
+from middleware_monitor.api import (
     branding as api_branding,
 )
 from middleware_monitor.api import (
@@ -179,6 +182,7 @@ def create_app() -> FastAPI:
         api_extension_configurator.router,
         api_branding.router,
         api_mqtt.router,
+        api_backup.router,
     ):
         app.include_router(r)
 

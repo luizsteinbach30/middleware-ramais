@@ -5,6 +5,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 ## [Não publicado]
 
 ### Added
+- **Backup e restauração** — tela nova em `/system/backup` (menu **Backup**),
+  com dois níveis, porque migrar e recuperar são problemas diferentes:
+  - **Pacote portável de configuração** (`.mwrbak`): configurações do sistema
+    (retenções, ping, webhooks, auto-update, hora dos telefones), servidores
+    USCall, brokers MQTT, **todos** os ambientes do Configurador com suas
+    linhas, usuários (só o hash da senha) e o cadastro de devices — num arquivo
+    só, cifrado com passphrase, para importar em **outra instalação**. Antes
+    disso o export existia apenas por ambiente, um arquivo de cada vez, e a
+    configuração do sistema não saía do banco de jeito nenhum.
+    Importar mostra o conteúdo do arquivo **antes** de aplicar e roda em
+    transação única, em modo *mesclar* (nada é apagado) ou *substituir*.
+  - **Snapshot do banco** (`.db.gz`, `VACUUM INTO` + gzip): cópia consistente de
+    tudo, inclusive o histórico, para recuperar **esta** instalação. Medido no
+    banco real: 58 MB viram 3,9 MB.
+  - **Backup diário automático**, com horário no relógio do servidor, retenção
+    por quantidade **e** por espaço, e — quando há passphrase salva — o pacote
+    portável gerado junto. A pasta `backups/` existia desde a v2.0 e nunca
+    recebia um arquivo.
+
+  **Restaurar o banco não troca o arquivo a quente**: com o processo escrevendo
+  nele, a substituição corromperia o banco e os jobs continuariam no antigo. O
+  arquivo é validado (assinatura SQLite, `integrity_check`, tabelas obrigatórias
+  e revisão de migration conhecida — backup de versão mais nova é recusado) e a
+  troca acontece no próximo boot, antes de o engine abrir o banco. O banco
+  substituído vira `pre-restore-*.db` e nunca é apagado pela poda.
+
+  Os segredos (token do USCall, senha do broker, senhas SIP) saem em claro
+  **dentro** do envelope cifrado: a cifra local deriva do `APP_SECRET_KEY` da
+  máquina de origem e não teria como ser lida no destino. É por isso que a API
+  recusa exportar sem passphrase.
 - **Chamadas reconstruídas a partir do MQTT.** O PBX não publica chamadas —
   publica o estado de cada ramal. O middleware passa a deduzir a chamada dessa
   sequência: quem ligou, quem atendeu, quanto tocou e quanto durou. Tela nova
@@ -32,6 +62,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   Armadilha tratada: `Indisponivel` ecoa o `uniqueid` da chamada anterior por
   minutos: herdá-lo grudaria pernas de chamadas diferentes e mostraria uma
   conversa que nunca existiu.
+
+### Fixed
+- **Testes de chamadas quebravam sozinhos com o passar dos dias.** Eles
+  gravavam as chamadas numa data fixa (o dia em que foram escritos) e
+  consultavam a API com `last=24h`: três dias depois, a janela não alcançava
+  mais o dado e quatro testes falhavam sem que nada tivesse mudado no código.
+  Agora ancoram no relógio, como o teste de reprocessamento já fazia.
 
 ## [2.8.1] — 2026-08-21
 

@@ -288,3 +288,65 @@ O updater compara a versão em execução com a última release do canal no GitH
 Ao atualizar, baixa o pacote, valida o `SHA256SUMS`, roda `alembic upgrade head`
 (aplica migrations novas, como a `0004` desta versão) e reinicia. Em falha de
 migração ou de inicialização, faz **rollback automático** para a versão anterior.
+
+---
+
+## 10. Backup e restauração (`/system/backup`)
+
+São **duas coisas diferentes** na mesma tela, e escolher a errada custa caro na
+hora do aperto:
+
+| | Pacote de configuração (`.mwrbak`) | Backup do banco (`.db.gz`) |
+|---|---|---|
+| Serve para | levar a configuração para **outra** instalação | recuperar **esta** instalação |
+| Leva histórico? | não (só configuração) | sim: coletas, pings, ledger MQTT, chamadas |
+| Tamanho | KB a poucos MB | proporcional ao banco (58 MB → ~4 MB comprimido) |
+| Como restaura | aplica na hora, seção a seção | troca o banco no próximo boot |
+
+### Levar a configuração para outro sistema
+
+1. Em **Exportar configuração**, marque o que levar (por padrão vai tudo:
+   configurações do sistema, ambientes, usuários e devices).
+2. Escolha uma passphrase e clique em *Exportar arquivo*. **Guarde a
+   passphrase**: sem ela o arquivo não abre, nem por aqui nem por ninguém.
+   O arquivo carrega o token do USCall, a senha do broker e a senha SIP de cada
+   ramal — é por isso que é cifrado.
+3. No outro sistema, em **Importar configuração**, selecione o arquivo, informe
+   a passphrase e clique em *Analisar arquivo*. A tela mostra o que existe
+   dentro antes de qualquer mudança.
+4. Escolha as seções e o modo:
+   - **Mesclar** — nada é apagado. Ambientes entram como novos (nome repetido
+     ganha um sufixo), a configuração é sobrescrita chave a chave, servidores e
+     brokers de mesmo nome são atualizados.
+   - **Substituir** — apaga os ambientes atuais (e o histórico de aplicação
+     deles), os servidores USCall e os brokers MQTT, e recria a partir do
+     arquivo, preservando os identificadores originais dos ambientes.
+5. Usuários nunca são apagados na importação: os que faltam são criados, e em
+   *Substituir* os existentes têm a senha e o perfil atualizados.
+
+### Recuperar a instalação
+
+- *Gerar backup agora* cria uma cópia completa do banco na pasta de backups.
+- **Backup automático do banco** roda todo dia no horário configurado (relógio
+  do servidor). A poda respeita a quantidade de cópias **e** o teto de espaço —
+  vale o corte que vier primeiro, e o último backup nunca é apagado.
+- Se você salvar uma passphrase em *Passphrase do pacote automático*, cada
+  execução grava também o `.mwrbak` — assim o backup diário já sai com a parte
+  portável pronta.
+- Para restaurar, clique em *restaurar* na linha do arquivo (ou envie um
+  `.db.gz` do seu computador pelo seletor no alto da tabela). O arquivo é
+  conferido na hora; a **troca acontece na próxima inicialização** do
+  middleware, e até lá o sistema continua rodando normalmente. Enquanto estiver
+  agendada, um aviso amarelo fica no topo da tela, com o botão de cancelar.
+- Depois de reiniciar: tudo o que foi gravado **depois** daquele backup se
+  perde, e o banco substituído fica guardado na pasta de backups como
+  `pre-restore-<data>.db` — dá para voltar atrás copiando-o por cima.
+
+### Perguntas que aparecem
+
+- **Perdi a passphrase do `.mwrbak`.** Não há recuperação. Gere um novo export.
+- **O backup é de uma versão mais nova do middleware.** A restauração é
+  recusada: o banco traria um schema que a versão instalada não sabe ler.
+  Atualize o middleware primeiro.
+- **Quanto espaço isso ocupa?** O rodapé da tabela mostra o total. Se apertar,
+  baixe o limite em MB — a poda seguinte já obedece.

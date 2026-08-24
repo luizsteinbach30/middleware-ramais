@@ -149,11 +149,19 @@ def update_broker(
     tls_fingerprint: str | None = None,
     topics: Sequence[str] | None = None,
     qos: int | None = None,
+    clean_session: bool | None = None,
+    client_id: str | None = None,
     max_payload_kb: int | None = None,
     enabled: bool | None = None,
 ) -> MqttBroker:
     """Atualização parcial. ``password_plain=None`` mantém a senha atual;
-    string não-vazia re-cifra; ``""`` limpa (mesma semântica do token USCall)."""
+    string não-vazia re-cifra; ``""`` limpa (mesma semântica do token USCall).
+
+    ``clean_session`` e ``client_id`` não têm campo na tela (a sessão durável é
+    decisão de arquitetura, não preferência do operador), mas a restauração de
+    backup precisa deles: é o par que identifica a sessão no broker, e sem ele
+    a instalação restaurada assinaria como um cliente novo, perdendo o backlog.
+    """
     if nome is not None:
         broker.nome = nome.strip()
     if address_input is not None:
@@ -180,6 +188,10 @@ def update_broker(
         broker.topics = json.dumps(list(topics))
     if qos is not None:
         broker.qos = qos
+    if clean_session is not None:
+        broker.clean_session = clean_session
+    if client_id is not None and client_id:
+        broker.client_id = client_id
     if max_payload_kb is not None:
         broker.max_payload_kb = max_payload_kb
     if enabled is not None:

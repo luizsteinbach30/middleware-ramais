@@ -15,6 +15,7 @@ from middleware_monitor.core.scheduler import (
     remove_job,
     reschedule_cron,
 )
+from middleware_monitor.domain.backup.settings import load_backup_settings
 from middleware_monitor.domain.config.repository import load_config
 from middleware_monitor.domain.config.update_settings import (
     UpdateSettings,
@@ -30,6 +31,7 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     """Register every recurring job. Imports happen lazily so the scheduler
     module stays decoupled from concrete jobs.
     """
+    from middleware_monitor.jobs.backup import apply_backup_schedule
     from middleware_monitor.jobs.collect_extensions import run_collect_extensions
     from middleware_monitor.jobs.monitor_devices import run_monitor_devices
     from middleware_monitor.jobs.rebuild_calls import run_daily_stats, run_rebuild_calls
@@ -38,6 +40,7 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     with session_factory() as db:
         cfg = load_config(db)
         upd = load_update_settings(db)
+        bkp = load_backup_settings(db)
 
     # A single user-facing knob drives how often we collect from USCall and
     # ping/dispatch webhooks. Stored as minutes, applied here in seconds.
@@ -79,6 +82,8 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     # Verificação de update: horário/dias configuráveis pela tela (v2.7.0).
     # O job SÓ verifica e avisa — instalar continua sendo ação manual.
     apply_update_schedule(upd)
+    # Backup diário: horário e retenção configuráveis pela tela.
+    apply_backup_schedule(bkp)
 
     log.info(
         "jobs_registered",

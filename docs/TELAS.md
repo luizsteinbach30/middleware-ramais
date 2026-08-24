@@ -826,3 +826,66 @@ broker, e retenção do ledger (dias + teto opcional em MB, com o volume atual).
 | Fixar evidência | POST | `/api/mqtt/messages/{id}/pin` |
 | Comprovante (texto) | GET | `/api/mqtt/messages/{id}/comprovante` |
 | Cobertura do período | GET | `/api/mqtt/coverage` |
+
+---
+
+## 16. Backup e restauração — `/system/backup`
+
+**Propósito.** Duas perguntas diferentes na mesma tela: *"como levo esta
+configuração para outro sistema?"* e *"como recupero esta instalação?"*. A
+primeira se resolve com um arquivo de configuração portável; a segunda, com uma
+cópia do banco inteiro. Menu **Backup**, abaixo de Atualizações. Só admin.
+
+**Layout.**
+
+1. **Banner de restauração agendada** (só quando existe) — fica no topo porque
+   muda o sentido de tudo abaixo: diz de qual arquivo o banco será substituído,
+   com as contagens do arquivo, e que a troca acontece **na próxima
+   inicialização**. Botão *Cancelar restauração*.
+2. **Exportar configuração** — as quatro seções em caixas de seleção
+   (configurações do sistema, ambientes, usuários, devices), campo de
+   passphrase e o botão que baixa o `.mwrbak`. O texto avisa que o arquivo
+   carrega senhas e que sem a passphrase não há como abri-lo.
+3. **Importar configuração** — arquivo + passphrase → *Analisar arquivo*.
+   A análise mostra quando foi gerado, por qual versão, e o que existe em cada
+   seção (contagens e os nomes dos ambientes); só então aparecem as seções a
+   restaurar, o modo e o botão de aplicar.
+4. **Backup automático do banco** — liga/desliga, horário (no relógio do
+   servidor, com o fuso ao lado), cópias a manter, espaço máximo em MB,
+   passphrase do pacote automático (com botão próprio para remover) e o
+   resultado da última execução.
+5. **Arquivos na pasta de backups** — nome, tipo (*banco completo*,
+   *configuração*, *banco anterior*), tamanho, data e as ações baixar /
+   restaurar / apagar. No cabeçalho, o seletor para restaurar de um arquivo do
+   computador do operador e o caminho da pasta.
+
+**Regras de exibição.**
+
+- Exportar sem passphrase ou sem nenhuma seção marcada é barrado na tela; a API
+  também recusa.
+- *Restaurar* não aparece em arquivo de configuração (`.mwrbak`) — esse entra
+  pelo fluxo de importação, que é outro caminho e outro risco.
+- O modo **Substituir** descreve em vermelho o que apaga, e pede confirmação
+  antes de aplicar. **Mesclar** é o padrão.
+- Restaurar banco e apagar arquivo pedem confirmação com o nome do arquivo no
+  texto.
+- Um backup gerado por versão mais nova do middleware é recusado na validação,
+  com a mensagem dizendo para atualizar antes — não é oferecido "tentar assim
+  mesmo".
+
+### 16.1 Endpoints API consumidos
+
+| Recurso | Método | Path |
+|---|---|---|
+| Exportar configuração | POST | `/api/backup/export` |
+| Analisar pacote | POST | `/api/backup/inspect` |
+| Importar configuração | POST | `/api/backup/import` |
+| Gerar snapshot | POST | `/api/backup/snapshot` |
+| Listar arquivos | GET | `/api/backup/files` |
+| Baixar arquivo | GET | `/api/backup/files/{name}` |
+| Apagar arquivo | DELETE | `/api/backup/files/{name}` |
+| Agendar restauração | POST | `/api/backup/restore` |
+| Restaurar de upload | POST | `/api/backup/restore/upload` |
+| Restauração pendente | GET | `/api/backup/restore` |
+| Cancelar restauração | DELETE | `/api/backup/restore` |
+| Config do backup automático | GET/PUT | `/api/backup/settings` |

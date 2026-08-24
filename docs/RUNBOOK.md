@@ -164,3 +164,55 @@ Logs estruturados JSON (em prod) podem ser parseados com `jq`:
 ```bash
 journalctl -u middleware-monitor -o cat | jq 'select(.level=="error")'
 ```
+
+## 9. Restaurar o banco de um backup
+
+**Quando:** banco corrompido, máquina trocada, ou alguém apagou o que não devia.
+
+**Pelo painel (caminho normal):** `/system/backup` → linha do arquivo →
+*restaurar*. A troca acontece no **próximo boot**; reinicie o serviço para
+concluir:
+
+```bash
+sudo systemctl restart middleware-monitor        # Linux
+```
+```powershell
+nssm restart MiddlewareMonitor                   # Windows (serviço)
+```
+No modo desktop (`.exe`), feche e abra o aplicativo.
+
+**Sem painel** (app não sobe): coloque o `.db.gz` descomprimido como
+`restore.pending.db` ao lado do banco e reinicie — o boot faz a troca e guarda o
+banco anterior como `pre-restore-<data>.db` na pasta de backups.
+
+```bash
+gunzip -c backups/backup-20260824-023000-auto.db.gz > db/restore.pending.db
+```
+```powershell
+# Windows, sem gzip na mão:
+python -c "import gzip,shutil;shutil.copyfileobj(gzip.open(r'backups\backup.db.gz','rb'),open(r'db\restore.pending.db','wb'))"
+```
+
+**Desfazer uma restauração:** o banco anterior está em
+`backups/pre-restore-<data>.db`. Pare o serviço, copie-o por cima de
+`db/app.db` (removendo `app.db-wal`/`app.db-shm`) e suba de novo.
+
+**O que checar depois:** `/system/backup` não mostra mais o aviso amarelo, o
+Dashboard traz a contagem esperada de ramais, e `/config` ainda tem o token do
+USCall (`token: set`) — se os segredos sumirem, o backup veio de instalação com
+outro `APP_SECRET_KEY` e o certo era importar o pacote `.mwrbak`, não o banco.
+
+## 10. Migrar a instalação para outra máquina
+
+1. Na origem, `/system/backup` → **Exportar configuração** com todas as seções
+   e uma passphrase forte.
+2. Instale o middleware no destino e faça o primeiro login.
+3. No destino, **Importar configuração** → analisar → *Substituir* → aplicar.
+4. Confira em `/config` os servidores USCall e o broker MQTT (teste de conexão),
+   e em `/extension-configurator/environments` os ambientes com as linhas.
+5. Só depois desligue o middleware da origem — dois coletores MQTT com o mesmo
+   `client_id` na mesma sessão durável brigam pela conexão no broker.
+
+> Para clonar a máquina inteira (com histórico), use o snapshot do banco em vez
+> do pacote: mas aí os segredos só abrem se o `APP_SECRET_KEY` for o mesmo, o
+> que na prática significa copiar também o `secret.key`/`.env` da origem.

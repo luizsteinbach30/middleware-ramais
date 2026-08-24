@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Backup — Middleware Monitor{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
+    <div>
+      <h1 class="text-lg font-semibold text-gray-100">Backup e restauração</h1>
+      <p class="text-xs text-gray-400 mt-0.5">Levar a configuração para outro sistema e recuperar esta instalação</p>
+    </div>
+    <button id="bk-snapshot" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-sm">
+      <span data-icon="download"></span>Gerar backup agora
+    </button>
+  </div>
+</div>
+
+<div class="px-6 py-6 space-y-6 max-w-5xl">
+
+  <!-- Restauração agendada: enquanto existir, o banco atual ainda está no ar.
+       O aviso fica no topo porque muda o significado de tudo o que a tela
+       mostra abaixo. -->
+  <div id="bk-pending" class="hidden bg-yellow-500/10 ring-1 ring-yellow-500/40 rounded-xl p-5">
+    <div class="flex items-start gap-3">
+      <span data-icon="alert" class="text-yellow-400 mt-0.5"></span>
+      <div class="flex-1">
+        <h3 class="text-sm font-semibold text-yellow-200">Restauração agendada</h3>
+        <p class="text-xs text-yellow-100/80 mt-1">
+          O banco será substituído por <strong id="bk-pending-src">—</strong>
+          <span id="bk-pending-counts" class="text-yellow-100/60"></span>
+          na <strong>próxima inicialização</strong> do middleware. Até lá nada muda:
+          o sistema segue rodando com o banco atual. O banco substituído é guardado
+          como <code class="text-yellow-100">pre-restore-*.db</code>.
+        </p>
+        <button id="bk-pending-cancel" class="mt-3 inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">
+          <span data-icon="x"></span>Cancelar restauração
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid lg:grid-cols-2 gap-6">
+    <!-- ------------------------------------------------------ EXPORTAR -->
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-4">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-100">Exportar configuração</h3>
+        <p class="text-xs text-gray-500 mt-1">
+          Gera um arquivo <code class="text-gray-300">.mwrbak</code> para importar em
+          <strong class="text-gray-300">outra instalação</strong>. Ele carrega token do
+          USCall, senha do broker e senha SIP de cada ramal — por isso é cifrado com a
+          passphrase abaixo. <strong class="text-gray-300">Sem ela não há como abrir o arquivo.</strong>
+        </p>
+      </div>
+      <div>
+        <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-2">O que levar</div>
+        <div class="space-y-2" id="bk-export-sections">
+          <label class="flex items-start gap-2.5 text-sm text-gray-300">
+            <input type="checkbox" value="config" checked class="mt-0.5 accent-blue-500">
+            <span>Configurações do sistema<span class="block text-[11px] text-gray-500">retenções, ping, webhooks, auto-update, servidores USCall e brokers MQTT</span></span>
+          </label>
+          <label class="flex items-start gap-2.5 text-sm text-gray-300">
+            <input type="checkbox" value="environments" checked class="mt-0.5 accent-blue-500">
+            <span>Ambientes do Configurador<span class="block text-[11px] text-gray-500">config padrão, function keys e todas as linhas com senha SIP</span></span>
+          </label>
+          <label class="flex items-start gap-2.5 text-sm text-gray-300">
+            <input type="checkbox" value="users" checked class="mt-0.5 accent-blue-500">
+            <span>Usuários<span class="block text-[11px] text-gray-500">contas de acesso com o hash da senha</span></span>
+          </label>
+          <label class="flex items-start gap-2.5 text-sm text-gray-300">
+            <input type="checkbox" value="devices" checked class="mt-0.5 accent-blue-500">
+            <span>Devices monitorados<span class="block text-[11px] text-gray-500">cadastro dos telefones, sem histórico de ping</span></span>
+          </label>
+        </div>
+      </div>
+      <label class="flex flex-col gap-1.5">
+        <span class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Passphrase</span>
+        <input id="bk-export-pass" type="password" autocomplete="new-password" placeholder="escolha uma passphrase"
+               class="w-full bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/>
+      </label>
+      <button id="bk-export" class="w-full inline-flex items-center justify-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-2 text-sm">
+        <span data-icon="download"></span>Exportar arquivo
+      </button>
+    </div>
+
+    <!-- ------------------------------------------------------ IMPORTAR -->
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-4">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-100">Importar configuração</h3>
+        <p class="text-xs text-gray-500 mt-1">
+          Lê um <code class="text-gray-300">.mwrbak</code> gerado por esta ou por outra
+          instalação. Analise antes de aplicar: a tela mostra o que existe dentro do
+          arquivo. A aplicação é feita de uma vez só — se algo falhar, nada entra.
+        </p>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-3">
+        <label class="flex flex-col gap-1.5">
+          <span class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Arquivo</span>
+          <input id="bk-import-file" type="file" accept=".mwrbak,application/json"
+                 class="w-full text-xs text-gray-300 file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-gray-700 file:text-gray-200 hover:file:bg-gray-600"/>
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Passphrase</span>
+          <input id="bk-import-pass" type="password" autocomplete="off" placeholder="passphrase do arquivo"
+                 class="w-full bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/>
+        </label>
+      </div>
+      <button id="bk-inspect" class="w-full inline-flex items-center justify-center gap-2 rounded-lg font-medium bg-gray-900 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-3 py-2 text-sm">
+        <span data-icon="eye"></span>Analisar arquivo
+      </button>
+
+      <div id="bk-import-preview" class="hidden space-y-4 border-t border-gray-700 pt-4">
+        <div id="bk-import-summary" class="text-xs text-gray-300 space-y-1"></div>
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-2">O que restaurar</div>
+          <div id="bk-import-sections" class="space-y-1.5"></div>
+        </div>
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold mb-2">Como aplicar</div>
+          <label class="flex items-start gap-2.5 text-sm text-gray-300">
+            <input type="radio" name="bk-mode" value="merge" checked class="mt-0.5 accent-blue-500">
+            <span>Mesclar<span class="block text-[11px] text-gray-500">nada é apagado; ambientes entram como novos e a configuração é sobrescrita chave a chave</span></span>
+          </label>
+          <label class="flex items-start gap-2.5 text-sm text-gray-300 mt-1.5">
+            <input type="radio" name="bk-mode" value="replace" class="mt-0.5 accent-blue-500">
+            <span>Substituir<span class="block text-[11px] text-red-300/80">apaga os ambientes atuais (com o histórico de aplicação deles), os servidores USCall e os brokers MQTT, e recria a partir do arquivo</span></span>
+          </label>
+        </div>
+        <button id="bk-import" class="w-full inline-flex items-center justify-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-2 text-sm">
+          <span data-icon="check"></span>Restaurar configuração
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------ BACKUP AUTOMÁTICO -->
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-4">
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-100">Backup automático do banco</h3>
+        <p class="text-xs text-gray-500 mt-1 max-w-3xl">
+          Cópia completa do banco (<code class="text-gray-300">.db.gz</code>) — leva também o
+          histórico: coletas, pings, ledger MQTT e chamadas. É o que recupera
+          <strong class="text-gray-300">esta</strong> instalação. Guardar a passphrase abaixo faz o
+          job gravar junto o pacote de configuração, que é o portável.
+        </p>
+      </div>
+      <button id="bk-cfg-save" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs">Salvar</button>
+    </div>
+
+    <div class="grid md:grid-cols-4 gap-4">
+      <div class="flex items-center gap-3">
+        <label class="relative inline-block w-11 h-6 cursor-pointer shrink-0">
+          <input type="checkbox" id="bk-auto" class="sr-only peer">
+          <span class="absolute inset-0 rounded-full bg-gray-700 peer-checked:bg-blue-500 transition"></span>
+          <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
+        </label>
+        <div>
+          <div class="text-sm text-gray-200">Backup diário</div>
+          <div id="bk-auto-label" class="text-[11px] text-gray-500">—</div>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <span class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
+          Horário <span id="bk-tz" class="normal-case tracking-normal text-gray-600">—</span>
+        </span>
+        <div class="flex items-center gap-1.5">
+          <input id="bk-hour" type="number" min="0" max="23" value="2"
+                 class="w-16 bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-2 text-sm text-gray-100 tabular-nums text-center"/>
+          <span class="text-gray-500">:</span>
+          <input id="bk-minute" type="number" min="0" max="59" value="30"
+                 class="w-16 bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-2 text-sm text-gray-100 tabular-nums text-center"/>
+        </div>
+      </div>
+
+      <label class="flex flex-col gap-1.5">
+        <span class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Cópias a manter</span>
+        <input id="bk-keep" type="number" min="1" max="365" value="7"
+               class="w-full bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 tabular-nums"/>
+      </label>
+
+      <label class="flex flex-col gap-1.5">
+        <span class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Espaço máximo (MB)</span>
+        <input id="bk-max-mb" type="number" min="0" max="1000000" value="2048"
+               class="w-full bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 tabular-nums"/>
+        <span class="text-[11px] text-gray-500">0 = sem limite. Vale o corte que vier primeiro.</span>
+      </label>
+    </div>
+
+    <div class="grid md:grid-cols-2 gap-4 border-t border-gray-700 pt-4">
+      <label class="flex flex-col gap-1.5">
+        <span class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">
+          Passphrase do pacote automático <span id="bk-pass-state" class="normal-case tracking-normal text-gray-600"></span>
+        </span>
+        <input id="bk-cfg-pass" type="password" autocomplete="new-password" placeholder="deixe em branco para manter"
+               class="w-full bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/>
+        <span class="text-[11px] text-gray-500">
+          Com ela salva, cada execução grava também um <code>.mwrbak</code> pronto para
+          levar a outro sistema. Campo em branco mantém a que já está salva.
+        </span>
+        <button id="bk-pass-clear" class="self-start inline-flex items-center gap-1.5 rounded-lg font-medium bg-gray-900 hover:bg-gray-700 text-gray-400 hover:text-red-300 ring-1 ring-inset ring-gray-700 px-2.5 py-1 text-[11px]">
+          <span data-icon="x"></span>Remover passphrase salva
+        </button>
+      </label>
+      <div class="text-xs text-gray-400 space-y-1">
+        <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Última execução</div>
+        <div id="bk-last">—</div>
+        <div id="bk-dir" class="text-[11px] text-gray-600 break-all"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ------------------------------------------------------- ARQUIVOS -->
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between gap-3 flex-wrap">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-100">Arquivos na pasta de backups</h3>
+        <p id="bk-files-total" class="text-[11px] text-gray-500 mt-0.5">—</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-xs text-gray-400 inline-flex items-center gap-2">
+          <span class="hidden sm:inline">Restaurar de um arquivo do computador:</span>
+          <input id="bk-upload" type="file" accept=".db.gz,.db"
+                 class="text-xs text-gray-300 file:mr-2 file:px-2.5 file:py-1 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-gray-700 file:text-gray-200 hover:file:bg-gray-600"/>
+        </label>
+        <button id="bk-refresh" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-900 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">
+          <span data-icon="refresh"></span>Atualizar
+        </button>
+      </div>
+    </div>
+    <table class="w-full text-sm">
+      <thead class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider">
+        <tr>
+          <th class="text-left px-4 py-3 font-semibold">Arquivo</th>
+          <th class="text-left px-4 py-3 font-semibold">Tipo</th>
+          <th class="text-right px-4 py-3 font-semibold">Tamanho</th>
+          <th class="text-left px-4 py-3 font-semibold">Gerado em</th>
+          <th class="text-right px-4 py-3 font-semibold">Ações</th>
+        </tr>
+      </thead>
+      <tbody id="bk-files" class="divide-y divide-gray-800"></tbody>
+    </table>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/system_backup.js"></script>
+{% endblock %}

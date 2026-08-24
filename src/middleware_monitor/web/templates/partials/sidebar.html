@@ -45,6 +45,7 @@
       ('logs',        'Logs',          '/logs',          'terminal'),
       ('config',      'Configuração',  '/config',        'settings'),
       ('system_updates','Atualizações','/system/updates','package'),
+      ('system_backup','Backup',       '/system/backup', 'shield'),
     ] %}
     {% for id, label, href, icon in NAV %}
     <a href="{{ href }}" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if page == id or (page == 'device_detail' and id == 'devices') %}bg-blue-500/10 text-blue-300 ring-1 ring-blue-500/30{% else %}text-gray-400 hover:text-gray-100 hover:bg-gray-800/60{% endif %}">
