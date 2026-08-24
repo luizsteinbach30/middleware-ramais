@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+from pathlib import Path
+
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from jinja2 import ChoiceLoader, DictLoader
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.api.deps import get_session
+from middleware_monitor.core import resources
 from middleware_monitor.core.models import Session as SessionModel
 from middleware_monitor.core.models import User
 from middleware_monitor.core.security import (
@@ -21,23 +26,38 @@ from middleware_monitor.version import __version__
 router = APIRouter()
 
 
+@lru_cache(maxsize=1)
 def get_templates() -> Jinja2Templates:
-    from pathlib import Path
+    """Ambiente Jinja da aplicação — montado uma vez, não a cada request.
 
-    here = Path(__file__).parent
-    templates = Jinja2Templates(directory=str(here / "templates"))
-    from middleware_monitor.core import resources
+    Montar um ``Jinja2Templates`` cria um ``Environment`` novo, com cache de
+    compilação novo: fazer isso por request obrigava **toda** tela a recompilar
+    o template do zero, toda vez. Medido em 2026-08-24 (ver
+    ``docs/design/PERF_BASELINE.md``): era o maior custo do caminho de request,
+    acima de qualquer consulta ao banco — ``/config`` caiu de 11,7 ms para
+    2,2 ms, ``/devices`` de 9,8 ms para 2,2 ms.
 
-    cache = resources.templates_cache()
+    Memorizar **não** congela o template em disco: o ``auto_reload`` do Jinja
+    continua ligado, então editar um template em desenvolvimento e dar refresh
+    segue funcionando sem reiniciar o processo.
+    """
+    templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
     loader = templates.env.loader
-    if cache and loader is not None:
+    if loader is not None:
         # O disco continua sendo a fonte; o cache em memória só entra quando o
         # arquivo não está mais lá. É o que mantém a tela de pé quando o
         # diretório de extração do .exe é esvaziado com o app no ar
         # (ver core/resources.py).
-        from jinja2 import ChoiceLoader, DictLoader
-
-        templates.env.loader = ChoiceLoader([loader, DictLoader(cache)])
+        #
+        # O ``DictLoader`` é montado mesmo com o cache ainda vazio, e de
+        # propósito: ele guarda a referência do dicionário que ``preload()``
+        # preenche depois. Condicionar ao cache já estar cheio faria a rede de
+        # segurança depender da ordem entre a primeira chamada daqui e o
+        # ``preload()`` — ordem que, com esta função memorizada, valeria para
+        # sempre.
+        templates.env.loader = ChoiceLoader(
+            [loader, DictLoader(resources.templates_cache())]
+        )
     return templates
 
 

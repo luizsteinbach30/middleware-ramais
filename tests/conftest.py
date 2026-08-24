@@ -40,14 +40,19 @@ def reset_mqtt_ingestor() -> Iterator[None]:
     """
     from middleware_monitor.domain.mqtt import links as mqtt_links
     from middleware_monitor.domain.mqtt import service as mqtt_service
+    from middleware_monitor.domain.mqtt import storage as mqtt_storage
 
     mqtt_service._ingestor = None
     # O índice ramal → device/ambiente também é de processo, com TTL de 30 s:
     # sem zerar, o teste seguinte veria o vínculo do anterior.
     mqtt_links.invalidate()
+    # Idem para a ocupação do ledger (TTL de 60 s): sem zerar, o teste que grava
+    # mensagens leria o total do teste anterior — normalmente zero.
+    mqtt_storage.invalidate()
     yield
     mqtt_service._ingestor = None
     mqtt_links.invalidate()
+    mqtt_storage.invalidate()
 
 
 @pytest.fixture

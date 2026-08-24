@@ -120,3 +120,33 @@ def test_static_inexistente_continua_404(
 
     with pytest.raises(StarletteHTTPException):
         asyncio.run(servidor.get_response("js/nao-existe.js", scope))
+
+
+def test_ambiente_jinja_e_reaproveitado_entre_requests() -> None:
+    """Montar um `Jinja2Templates` por request recompilava todo template.
+
+    Medido em 2026-08-24 (`docs/design/PERF_BASELINE.md`): era o maior custo do
+    caminho de request, ~8 ms em toda tela.
+    """
+    from middleware_monitor.web.pages import get_templates
+
+    assert get_templates() is get_templates()
+
+
+def test_fallback_do_bundle_sobrevive_a_memorizacao() -> None:
+    """O `DictLoader` tem de apontar para o dicionário vivo de `resources`.
+
+    A armadilha que este teste prende: com `get_templates` memorizado, montar o
+    fallback só quando o cache já está cheio faria a rede de segurança do `.exe`
+    depender da ordem entre a primeira renderização e o `preload()` — e essa
+    ordem valeria para sempre, porque o ambiente nunca mais é remontado.
+    """
+    from jinja2 import ChoiceLoader, DictLoader
+
+    from middleware_monitor.web.pages import get_templates
+
+    loader = get_templates().env.loader
+    assert isinstance(loader, ChoiceLoader)
+    dicts = [x for x in loader.loaders if isinstance(x, DictLoader)]
+    assert dicts, "sem DictLoader, o .exe volta a cair com TemplateNotFound"
+    assert dicts[0].mapping is resources.templates_cache()

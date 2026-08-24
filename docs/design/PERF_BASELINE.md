@@ -181,20 +181,14 @@ Achado que não estava na lista, e é o maior do caminho de request:
 
 ## 5. Etapa 2 — o que fazer, em ordem de retorno por risco
 
-Nada disto foi feito: a etapa 1 é medir. A ordem abaixo é a que os números
-sustentam.
-
-1. **Memorizar o `Jinja2Templates`** (`web/pages.py`). ~8 ms a menos em toda
+1. ✅ **Memorizar o `Jinja2Templates`** (`web/pages.py`). ~8 ms a menos em toda
    tela, ~80% do tempo do documento. Cuidado único: o `ChoiceLoader` com o cache
-   de bundle (`core/resources.py`) precisa continuar montado — memorizar depois
-   do `preload()`, não antes.
-2. **`VACUUM` depois da retenção**, ou incremental. Devolve 24,4 MB por 240 ms.
-   Decidir se roda sempre ou só quando a freelist passar de um limiar — o custo
-   cresce com o tamanho do banco, e a poda diária é o único momento em que dá
-   para pagar isso sem atrapalhar ninguém.
-3. **Não varrer a tabela para mostrar o tamanho do ledger.** `SUM(payload_bytes)`
-   é 2/3 do custo de `/api/mqtt/status`. Opções: manter um acumulado, estimar por
-   `COUNT(*) × média`, ou tirar o número da carga da tela e deixá-lo sob demanda.
+   de bundle (`core/resources.py`) precisa continuar montado.
+2. ✅ **`VACUUM` depois da retenção**. Devolve 24,4 MB por 240 ms. Roda por
+   limiar, não todo dia — o custo cresce com o tamanho do banco, e num dia de
+   poda pequena a reescrita não se paga.
+3. ✅ **Não varrer a tabela para mostrar o tamanho do ledger.**
+   `SUM(payload_bytes)` é 2/3 do custo de `/api/mqtt/status`.
 4. **Persistir duração de job.** Sem isso a §15.6 não fecha para `collect_extensions`
    e `monitor_devices`, e nenhum problema de campo é diagnosticável. O caminho
    mais curto é gravar cada execução (job, início, duração, resultado) numa
@@ -202,9 +196,50 @@ sustentam.
    `core/metrics.py` é o caminho mais completo — hoje eles estão declarados e
    ninguém os alimenta.
 5. **Separar o ledger do banco principal** — a mudança de arquitetura que a
-   §15.6 imagina. Os números **não a justificam ainda**: nenhuma tela passa de
-   33 ms. O que a justificaria é contenção sob escrita, que esta medição não
-   cobre. Medir isso antes: repetir a medição de telas com o coletor rodando.
+   §15.6 imagina. Os números **não a justificam ainda**: nenhuma tela passava de
+   33 ms antes dos itens 1–3, e agora nenhuma passa de 18 ms. O que a
+   justificaria é contenção sob escrita, que esta medição não cobre. Medir isso
+   antes: repetir a medição de telas com o coletor rodando.
+
+## 5.1 Itens 1 a 3 aplicados — antes e depois
+
+Mesma ferramenta, mesmo banco, mesma máquina, 7 repetições.
+
+| Tela | Antes | Depois | |
+|---|---:|---:|---:|
+| Mensagens (ledger, 15 min) | 33 ms | **12 ms** | −64% |
+| Ramais (lista) | 24 ms | **15 ms** | −38% |
+| Configurações | 23 ms | **13 ms** | −43% |
+| Detalhe do ramal | 22 ms | **14 ms** | −36% |
+| Dashboard | 20 ms | **11 ms** | −45% |
+| Backup | 19 ms | **9 ms** | −53% |
+| Configurador (lista) | 17 ms | **8 ms** | −53% |
+| Configurador (ambiente) | 17 ms | **6 ms** | −65% |
+| Updates | 16 ms | **7 ms** | −56% |
+| Chamadas (24 h) | 15 ms | **6 ms** | −60% |
+| Logs | 14 ms | **5 ms** | −64% |
+| Painel ao vivo | 14 ms | **5 ms** | −64% |
+| Webhooks | 13 ms | **5 ms** | −62% |
+| Coletas | 13 ms | **5 ms** | −62% |
+| Configurador (execuções) | 13 ms | **5 ms** | −62% |
+| Ramais (filtro de faixa) | 19 ms | 18 ms | — |
+
+O documento HTML caiu de 10–11 ms para **2 ms** em todas as telas, e deixou de
+ser a requisição mais cara de qualquer uma delas — agora quem aparece no topo é
+sempre uma API, que é como deveria ser. A tela de **filtro de faixa** não mudou
+porque não tem documento: é a chamada de API pura que pagina em memória, e ela
+segue sendo a requisição mais cara do sistema (18 ms).
+
+Na poda, o `VACUUM` fez o esperado no banco real:
+
+```
+retention_vacuum  compactou=True  antes_mb=55.4  depois_mb=29.6
+                  liberado_mb=25.8  duracao_ms=253
+```
+
+O job de retenção passou de 18 ms para 235 ms **no dia em que compacta** — é o
+preço, e ele só é pago quando há mais de 8 MB e mais de 20% do arquivo a
+recuperar. Nos outros dias a poda continua custando dezenas de milissegundos.
 
 ## 6. O que esta medição não prova
 

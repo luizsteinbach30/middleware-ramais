@@ -900,17 +900,34 @@ toda vez. Medido, memorizando a mesma função: `/devices` cai de 9,8 ms para
 instrumentos Prometheus que **nenhuma linha do código alimenta**. Enquanto isso
 não mudar, "duração de cada job" não fecha para os dois jobs de rede.
 
-**Etapa 2 — na ordem que os números sustentam** (detalhe e ressalva de cada item
-no `PERF_BASELINE.md` §5):
+**Etapa 2 — itens 1 a 3 entregues** (detalhe e ressalva de cada um no
+`PERF_BASELINE.md` §5 e §5.1):
 
-1. memorizar o `Jinja2Templates` — ~8 ms a menos em toda tela;
-2. `VACUUM` após a retenção — devolve 24,4 MB por 240 ms;
-3. tirar o `SUM(payload_bytes)` da carga de `/api/mqtt/status` — 10,8 ms de
-   varredura da tabela inteira, 2/3 do custo da requisição mais cara do sistema;
-4. persistir duração de job, sem o que a §15.6 não fecha nem se diagnostica campo;
-5. separar o ledger do banco principal — **os números ainda não justificam**.
-   Nenhuma tela passa de 33 ms; o que justificaria é contenção sob escrita, que a
-   medição atual não cobre (roda com a ingestão parada). Medir isso primeiro.
+1. ✅ **`Jinja2Templates` memorizado** — o documento HTML caiu de 10–11 ms para
+   **2 ms** em todas as telas e deixou de ser a requisição mais cara de qualquer
+   uma. As telas caíram entre 36% e 65%: Mensagens 33 → 12 ms, Dashboard
+   20 → 11 ms, Painel ao vivo 14 → 5 ms.
+2. ✅ **`VACUUM` por limiar depois da poda** (`jobs/retention.py`) — no banco do
+   cliente: 55,4 → 29,6 MB, **25,8 MB devolvidos em 253 ms**. Não roda todo dia:
+   só quando a freelist passa de 8 MB **e** de 20% do arquivo, porque o `VACUUM`
+   reescreve o arquivo inteiro e num dia de poda pequena não se paga. No dia em
+   que compacta, o job vai de 18 ms para 235 ms — é o preço.
+3. ✅ **Ocupação do ledger com TTL** (`domain/mqtt/storage.py`) — a soma de
+   `payload_bytes` deixou de rodar a cada 5 s. O desenho é assimétrico de
+   propósito: **a contagem continua ao vivo** (custa 0 ms num índice de
+   cobertura, e é o número que o operador acompanha ao configurar o broker);
+   só o total de bytes, que é rótulo de ocupação, tem TTL de 60 s. A poda
+   invalida o cache ao apagar, e a poda **por tamanho** continua lendo o valor
+   exato — ela decide quantas linhas apagar a partir dele.
+
+Em aberto:
+
+4. **persistir duração de job**, sem o que a §15.6 não fecha para os dois jobs de
+   rede nem se diagnostica campo;
+5. **separar o ledger do banco principal** — **os números ainda não justificam**.
+   Depois dos itens 1–3 nenhuma tela passa de 18 ms. O que justificaria é
+   contenção sob escrita, que a medição atual não cobre (roda com a ingestão
+   parada). Medir isso primeiro.
 
 ---
 

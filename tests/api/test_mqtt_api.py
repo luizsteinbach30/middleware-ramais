@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from middleware_monitor.domain.auth.service import bootstrap_admin
 from middleware_monitor.domain.mqtt import repository as repo
+from middleware_monitor.domain.mqtt import storage as mqtt_storage
 
 
 def _agora() -> datetime:
@@ -249,8 +250,15 @@ def test_status_reporta_configuracao_e_retencao(client, db) -> None:
     _gravar_mensagens(db, 2)
     dados = client.get("/api/mqtt/status").json()
     assert dados["configured"] is True
+    # Contagem é exata a cada chamada — é o que o operador olha enquanto
+    # configura o broker.
     assert dados["stored_messages"] == 2
-    assert dados["stored_payload_bytes"] == 160
+    # O total de bytes tem TTL (domain/mqtt/storage.py) e a chamada acima já o
+    # guardou como zero: aqui ele ainda é o valor de antes das mensagens.
+    assert dados["stored_payload_bytes"] == 0
+
+    mqtt_storage.invalidate()
+    assert client.get("/api/mqtt/status").json()["stored_payload_bytes"] == 160
 
 
 def test_tela_de_configuracao_traz_a_secao_do_coletor(client, db) -> None:

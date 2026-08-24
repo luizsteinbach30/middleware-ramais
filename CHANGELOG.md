@@ -114,6 +114,33 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   `system_logs` guarda apenas WARNING e ERROR. É por isso que `collect_extensions`
   e `monitor_devices`, os dois jobs mais suspeitos, seguem sem número.
 
+### Changed
+- **Toda tela ficou entre 36% e 65% mais rápida**, e nenhuma linha de regra de
+  negócio mudou — as três causas eram desperdício, e vieram da medição-base:
+  - **o ambiente Jinja era remontado a cada request.** Cada tela recompilava o
+    template do zero, toda vez; era o maior custo do caminho de request, acima de
+    qualquer consulta ao banco. Memorizado, o documento HTML caiu de 10–11 ms
+    para **2 ms** em todas as telas e deixou de ser a requisição mais cara de
+    qualquer uma. Editar template em desenvolvimento continua valendo sem
+    reiniciar (o `auto_reload` do Jinja segue ligado), e a rede de segurança do
+    `.exe` contra o sumiço da pasta de extração continua montada — agora sem
+    depender da ordem entre a primeira tela e o `preload()`.
+  - **a poda apagava e não devolvia o espaço.** O SQLite transforma em freelist a
+    página que a poda esvazia, e o arquivo só cresce: no banco do cliente, 44%
+    dele (24,4 de 55,4 MB) era espaço livre. A retenção agora compacta ao
+    terminar — medido: **55,4 → 29,6 MB, 25,8 MB devolvidos em 253 ms**. Não roda
+    todo dia: só quando há mais de 8 MB **e** mais de 20% do arquivo a recuperar,
+    porque o `VACUUM` reescreve o arquivo inteiro e num dia de poda pequena não se
+    paga. No dia em que compacta, o job vai de 18 ms para 235 ms.
+  - **mostrar o tamanho do ledger custava varrer o ledger.** `SUM(payload_bytes)`
+    lê a tabela inteira (15,6 MB, 10,8 ms) e a tela de Config → MQTT pedia isso a
+    cada 5 s, a de Mensagens a cada 10 s, cada aba por sua conta — disputando o
+    arquivo com a escrita do coletor. Agora tem TTL de 60 s. **A contagem de
+    mensagens continua exata a cada chamada**, de propósito: custa 0 ms e é o
+    número que o operador fica olhando enquanto configura o broker; congelá-la
+    faria a tela parecer travada. Só o total de bytes, que é rótulo de ocupação,
+    é que espera.
+
 ### Fixed
 - **O `.exe` não cai mais quando o Windows esvazia a pasta de extração.**
   Relatado em campo: `TemplateNotFound: 'system_updates.html'` com o arquivo

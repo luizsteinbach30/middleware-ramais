@@ -25,7 +25,7 @@ from middleware_monitor.core.models import MqttBroker, MqttMessage, User
 from middleware_monitor.core.time import as_local_str, iso_utc
 from middleware_monitor.domain.config.repository import load_config
 from middleware_monitor.domain.mqtt import calls as calls_domain
-from middleware_monitor.domain.mqtt import links, realtime
+from middleware_monitor.domain.mqtt import links, realtime, storage
 from middleware_monitor.domain.mqtt import repository as repo
 from middleware_monitor.domain.mqtt.address import (
     normalize_topic_filter,
@@ -390,6 +390,10 @@ def status(
     snap = get_ingestor().status()
     cfg = load_config(db)
     brokers = repo.list_brokers(db)
+    # Ocupação do ledger vem com TTL: somar `payload_bytes` é varredura da
+    # tabela inteira, e esta rota é buscada a cada 5 s pela tela de config
+    # (ver domain/mqtt/storage.py).
+    ocupacao = storage.tamanho(db)
     return StatusOut(
         running=bool(snap["running"]),
         configured=bool(brokers),
@@ -407,8 +411,8 @@ def status(
         transitions=int(snap["transitions"]),
         devices_touched=int(snap["devices_touched"]),
         tracked_ramais=int(snap["tracked_ramais"]),
-        stored_messages=repo.count_messages(db),
-        stored_payload_bytes=repo.payload_bytes_total(db),
+        stored_messages=ocupacao.mensagens,
+        stored_payload_bytes=ocupacao.payload_bytes,
         retention_days=cfg.mqtt_message_retention_days,
         retention_max_mb=cfg.mqtt_message_max_mb,
     )
