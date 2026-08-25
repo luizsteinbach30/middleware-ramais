@@ -2,7 +2,7 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
-## [Não publicado]
+## [2.9.5] — 2026-08-25
 
 ### Added
 - **Painel ao vivo deixou de ser ilha.** O cartão do ramal em `/mqtt-painel`
