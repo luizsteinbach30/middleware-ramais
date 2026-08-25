@@ -658,8 +658,37 @@ def main() -> int:
         if args.manter:
             print(f"diretório de trabalho mantido: {trabalho}", file=sys.stderr)
         else:
-            shutil.rmtree(trabalho, ignore_errors=True)
+            _apagar(trabalho)
     return 0
+
+
+def _apagar(trabalho: Path) -> None:
+    """Apaga a cópia — e reclama alto se não conseguir.
+
+    A cópia é do banco de produção: carrega o token da API USCall, a senha do
+    broker e as senhas SIP das linhas. Deixá-la para trás em ``%TEMP%`` é
+    vazamento, não sujeira.
+
+    No Windows o ``rmtree`` falha em silêncio enquanto o SQLite ainda tem o
+    arquivo aberto — foi o que aconteceu nas primeiras medições, que deixaram
+    sete cópias de 58 MB no disco sem nenhum aviso. Por isso o engine é
+    descartado antes, e o que sobrar vira mensagem de erro em vez de
+    ``ignore_errors``.
+    """
+    try:
+        from middleware_monitor.core.db import get_engine
+
+        get_engine().dispose()
+    except Exception:  # a medição pode nem ter aberto o banco
+        pass
+    shutil.rmtree(trabalho, ignore_errors=True)
+    if trabalho.exists():
+        print(
+            f"ATENÇÃO: não consegui apagar {trabalho} — ela contém uma cópia do "
+            "banco de produção (token da USCall, senha do broker, senhas SIP). "
+            "Apague à mão.",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":
