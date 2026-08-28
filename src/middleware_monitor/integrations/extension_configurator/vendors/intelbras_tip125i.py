@@ -207,15 +207,43 @@ _STATEMENT_RE = re.compile(
 _ASSIGN_RE = re.compile(r"(?P<col>\w+)\s*=")
 
 
-def _sql_str(value: Any) -> str:
+class TIP125iValorInvalido(ValueError):
+    """Valor que o firmware do TIP nao consegue receber (ver `_sql_str`)."""
+
+
+def _sql_str(value: Any, campo: str = "") -> str:
     """Literal SQL de texto, com a aspa simples escapada.
 
     A web UI do aparelho faz `.replace(/'/,"''")` — sem a flag `g`, ou seja, so
     escapa a PRIMEIRA aspa (bug do firmware que quebraria um nome como
     `D'Avila's`). Aqui escapamos todas. O `#` nao precisa de tratamento:
     comprovado em bancada que atravessa o db.cgi intacto.
+
+    Ja o `;` e uma quebra que NAO da para escapar: o CGI separa os statements
+    por `;` antes de entregar ao SQL, entao um `;` dentro de aspas parte o
+    comando ao meio. Medido em bancada: o aparelho responde **401** — a request
+    morre antes do CGI e o adapter leria "credencial recusada", mandando o
+    pipeline tentar a outra senha e reportar um problema de autenticacao que nao
+    existe. Caracteres de controle (nova linha, tab) sao o mesmo tipo de
+    problema: gravam sujeira e quebram o re-parse da whitelist.
+
+    Por isso o valor e RECUSADO, e nao silenciosamente limpado: numa senha SIP,
+    trocar o caractere sem avisar deixaria o ramal sem registrar e ninguem
+    entenderia por que. Falha cedo, com o nome do campo.
     """
-    return "'" + str(value if value is not None else "").replace("'", "''") + "'"
+    texto = str(value if value is not None else "")
+    if ";" in texto:
+        raise TIP125iValorInvalido(
+            f"TIP 125i: o campo {campo or 'de texto'} contém ';', que o firmware do "
+            f"aparelho não aceita (ele corta o comando nesse ponto). Remova o "
+            f"ponto-e-vírgula do valor.",
+        )
+    if any(c < " " or c == "\x7f" for c in texto):
+        raise TIP125iValorInvalido(
+            f"TIP 125i: o campo {campo or 'de texto'} tem caractere de controle "
+            f"(quebra de linha ou tab), que o firmware do aparelho não aceita.",
+        )
+    return "'" + texto.replace("'", "''") + "'"
 
 
 def _sql_int(value: Any, default: int = 0) -> int:
@@ -229,12 +257,17 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
     vendor_id = "intelbras_tip125i"
 
     _TIMEOUT = 8.0
+    # O restart do controle de chamadas costuma nao responder (ver
+    # `_restart_call_control`): timeout curto, para nao segurar o pipeline em
+    # massa por 8 s por telefone sem necessidade.
+    _RESTART_TIMEOUT = 3.0
     _BASE = "https://{ip}"
 
     _DB = "/db.cgi"
     _NOTIFY = "/notify.cgi"
     _STATUS = "/status.cgi"
     _BACKUP = "/backup.cgi"
+    _RESTART_CALL = "/restart_control_call.cgi"
 
     # ------------------------------------------------------------------ HTTP
     @classmethod
@@ -335,13 +368,13 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
         linhas: list[str] = [
             "UPDATE TAB_VOIP_ACCOUNT SET "
             + ",".join([
-                f"PhoneNumber={_sql_str(conta_sip)}",
-                f"AuthUserName={_sql_str(row.get('auth_id') or conta_sip)}",
-                f"AuthPassword={_sql_str(row.get('senha_sip', ''))}",
-                f"CallerIDName={_sql_str(nome)}",
-                f"ServerAddress={_sql_str(servidor)}",
+                f"PhoneNumber={_sql_str(conta_sip, 'ramal')}",
+                f"AuthUserName={_sql_str(row.get('auth_id') or conta_sip, 'usuário de autenticação')}",
+                f"AuthPassword={_sql_str(row.get('senha_sip', ''), 'senha SIP')}",
+                f"CallerIDName={_sql_str(nome, 'nome visível')}",
+                f"ServerAddress={_sql_str(servidor, 'servidor SIP')}",
                 f"ServerPort={_sql_int(template.get('sip_port'), 5060)}",
-                f"Transport={_sql_str(transport)}",
+                f"Transport={_sql_str(transport, 'transporte')}",
                 f"SendRegister={active}",
                 f"RegisterTimer={_sql_int(template.get('register_expiration'), 30)}",
             ])
@@ -351,14 +384,14 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             + ",".join([
                 "SYSTimeManual=0",
                 f"SYSTimeEnableNTP={_NTP_ON}",
-                f"SYSTimeNTPFirstAddress={_sql_str(template.get('ntp_server', 'a.ntp.br'))}",
+                f"SYSTimeNTPFirstAddress={_sql_str(template.get('ntp_server', 'a.ntp.br'), 'servidor NTP')}",
                 f"SYSTimeTimeZone={self._timezone_id(template)}",
             ])
             + " WHERE PK = 1;",
             "UPDATE TAB_SYSTEM_PHONE SET "
             + ",".join([
-                f"SYSPhoneLanguage={_sql_str(self._lcd_language(template))}",
-                f"SYSPhonePin={_sql_str(pin)}",
+                f"SYSPhoneLanguage={_sql_str(self._lcd_language(template), 'idioma')}",
+                f"SYSPhonePin={_sql_str(pin, 'PIN de bloqueio')}",
                 f"SYSPhoneLockPhone={1 if _sql_int(template.get('keylock_enable'), 2) else 0}",
             ])
             + " WHERE PK = 1;",
@@ -437,7 +470,7 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             else:
                 acct = max(_sql_int(fk.get("account", 1), 1), 1) - 1
             out.append(
-                f"UPDATE TAB_SOFTKEY SET Type={tipo},Value={_sql_str(valor)},"
+                f"UPDATE TAB_SOFTKEY SET Type={tipo},Value={_sql_str(valor, 'valor da tecla')},"
                 f"Account={acct},Number='' WHERE PK = {pk};",
             )
         return out
@@ -455,8 +488,8 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             return []
         nova_user = str(template.get("nova_web_user", "") or "").strip() or "admin"
         return [
-            f"UPDATE TAB_SECURITY_ACCOUNT SET SECPassword={_sql_str(nova_pwd)} "
-            f"WHERE SECAccount = {_sql_str(nova_user)};",
+            f"UPDATE TAB_SECURITY_ACCOUNT SET SECPassword={_sql_str(nova_pwd, 'nova senha web')} "
+            f"WHERE SECAccount = {_sql_str(nova_user, 'novo usuário web')};",
         ]
 
     # -------------------------------------------------------------- whitelist
@@ -488,10 +521,23 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
     async def send_config(
         self, ip: str, creds: VendorCredentials, cfg: bytes, *, fmt: str = "sql",
     ) -> None:
-        """Executa o SQL no aparelho e AVISA o firmware (`notify.cgi`).
+        """Grava o SQL, avisa o firmware (`notify.cgi`) e REINICIA o controle de
+        chamadas — as tres etapas sao obrigatorias.
 
-        As duas etapas sao obrigatorias: sem o notify o valor fica no banco e o
-        telefone continua operando com o antigo ate reiniciar.
+        Sem o `notify` o valor fica so no banco e o aparelho segue operando com o
+        antigo. E sem o `restart_control_call.cgi` o telefone **fica preso na
+        sessao SIP anterior**: medido em bancada, ele continua registrado com a
+        credencial velha mesmo depois do notify, e a conta nova nunca sobe. Pior,
+        o caminho intuitivo nao resolve — desativar a conta
+        (``AccountActive=0`` + notify) derruba o registro em 1 s, mas religar
+        (``=1`` + notify, nas duas tabelas) **nao** faz voltar: o banco diz ativo
+        e o aparelho fica fora do ar. Quem religa e o restart, que devolveu o
+        registro em 2 s. E o mesmo endpoint que a web UI do telefone chama
+        quando a versao do TLS muda.
+
+        O restart reinicia SO a pilha de chamadas (nao o aparelho), mas derruba
+        chamada em curso — daí `ActionResult.rebooted` nao se aplica aqui:
+        `send_config` ja e uma operacao de janela de manutencao no pipeline.
         """
         if fmt not in ("sql", "xml"):  # 'xml' tolerado por compat de assinatura
             raise ValueError(f"TIP 125i: fmt deve ser 'sql', recebido {fmt!r}")
@@ -502,7 +548,31 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             resp = await self._execute(client, sql)
             self._raise_for_db_error(resp, ip)
             await client.get(self._NOTIFY, params={"tables": ",".join(_NOTIFY_TABLES)})
+            await self._restart_call_control(client, ip)
         log.info("tip125i: config aplicada", ip=ip, statements=sql.count(";"))
+
+    @classmethod
+    async def _restart_call_control(cls, client: httpx.AsyncClient, ip: str) -> None:
+        """`POST /restart_control_call.cgi` — normalmente NAO responde, e tudo bem.
+
+        O CGI reinicia a pilha que esta servindo a propria request, entao a
+        conexao morre sem resposta: medido em bancada, timeout com a conta ativa
+        e HTTP 200 rapido quando ela ja estava fora. Ou seja, o timeout aqui e o
+        caminho feliz, e tratar como erro faria toda aplicacao bem-sucedida ser
+        reportada como falha. O efeito foi conferido no aparelho pelo lado de
+        fora: com a config nova, o registro sai de `200` e vai para o codigo da
+        nova credencial em segundos.
+
+        Erro de rede tambem nao derruba a aplicacao — a config ja esta gravada e
+        notificada neste ponto; o que resta e um empurrao. Fica no log.
+        """
+        try:
+            await client.post(cls._RESTART_CALL, timeout=cls._RESTART_TIMEOUT)
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            log.debug(
+                "tip125i: restart do controle de chamadas sem resposta (esperado)",
+                ip=ip, erro=type(exc).__name__,
+            )
 
     @classmethod
     async def _execute(cls, client: httpx.AsyncClient, sql: str) -> httpx.Response:
@@ -548,9 +618,22 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             data = json.loads(resp.text)
         except ValueError:
             raise RuntimeError(f"TIP 125i {ip}: resposta do db.cgi nao e JSON") from None
-        for item in data if isinstance(data, list) else [data]:
-            if isinstance(item, dict) and item.get("error"):
+        for pos, item in enumerate(data if isinstance(data, list) else [data], start=1):
+            if not isinstance(item, dict):
+                continue
+            if item.get("error"):
                 raise RuntimeError(f"TIP 125i {ip}: {item['error']}")
+            # `affected` conta as linhas que casaram com o WHERE (grava o mesmo
+            # valor e ainda vem 1). Entao 0 significa que a linha nao existe —
+            # conta SIP fora do alcance do aparelho, tecla inexistente, ou
+            # `nova_web_user` que nao e um usuario cadastrado. O UPDATE nao faz
+            # nada e, sem esta checagem, isso viraria "aplicado com sucesso".
+            if item.get("affected") == 0:
+                raise RuntimeError(
+                    f"TIP 125i {ip}: o comando {pos} não encontrou o registro para "
+                    f"atualizar (0 linhas). Verifique a conta SIP escolhida e, se "
+                    f"estiver trocando a senha web, se o usuário existe no aparelho.",
+                )
 
     # ----------------------------------------------------------- backup_config
     async def backup_config(self, ip: str, creds: VendorCredentials) -> bytes | None:

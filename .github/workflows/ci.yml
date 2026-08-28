@@ -21,6 +21,16 @@ jobs:
           python-version: "3.11"
           cache: pip
 
+      # O `node` faz o parse dos módulos JS servidos pela web
+      # (tests/unit/web/test_static_js_syntax.py). Sem ele o teste seria pulado
+      # e um SyntaxError voltaria a passar por CI verde até o navegador do
+      # usuário — foi assim que a tela Config padrão ficou quebrada da v2.8.0
+      # à v2.10.0.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install
         run: |
           python -m pip install --upgrade pip

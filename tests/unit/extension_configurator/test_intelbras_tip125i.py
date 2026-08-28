@@ -280,27 +280,6 @@ def test_whitelist_aborta_verbo_que_nao_e_update() -> None:
 
 # --------------------------------------------------------------- send_config
 @pytest.mark.asyncio
-async def test_send_config_executa_sql_e_depois_notifica() -> None:
-    """Sem o notify.cgi o valor fica no banco e o aparelho segue com o antigo."""
-    a = IntelbrasTIP125iAdapter()
-    cfg = a.generate_config(_template(), _row())
-    chamadas: list[str] = []
-
-    def _registra(request: httpx.Request) -> httpx.Response:
-        chamadas.append(request.url.path)
-        if request.url.path == "/db.cgi":
-            return httpx.Response(200, text='[{"affected":1}]')
-        return httpx.Response(200, text="")
-
-    with respx.mock(assert_all_called=False) as router:
-        router.get(f"https://{IP}/db.cgi").mock(side_effect=_registra)
-        router.get(f"https://{IP}/notify.cgi").mock(side_effect=_registra)
-        await a.send_config(IP, CREDS, cfg)
-
-    assert chamadas == ["/db.cgi", "/notify.cgi"]
-
-
-@pytest.mark.asyncio
 async def test_send_config_manda_o_sql_em_base64_percent_encodado() -> None:
     """O Base64 vai como NOME de parametro, entao o httpx encoda `+`/`/`.
 
@@ -317,6 +296,9 @@ async def test_send_config_manda_o_sql_em_base64_percent_encodado() -> None:
             side_effect=lambda r: (visto.append(r), httpx.Response(200, text='[{"affected":1}]'))[1],
         )
         router.get(f"https://{IP}/notify.cgi").mock(return_value=httpx.Response(200))
+        router.post(f"https://{IP}/restart_control_call.cgi").mock(
+            return_value=httpx.Response(200),
+        )
         await a.send_config(IP, CREDS, cfg)
 
     query = visto[0].url.query.decode()
@@ -338,6 +320,9 @@ async def test_erro_do_db_cgi_vira_excecao_apesar_do_http_200() -> None:
             ),
         )
         notify = router.get(f"https://{IP}/notify.cgi").mock(return_value=httpx.Response(200))
+        router.post(f"https://{IP}/restart_control_call.cgi").mock(
+            return_value=httpx.Response(200),
+        )
         with pytest.raises(RuntimeError, match="LuaSQL"):
             await a.send_config(IP, CREDS, cfg)
     assert not notify.called, "nao pode notificar depois de erro de SQL"
@@ -397,6 +382,9 @@ async def test_corpo_vazio_nao_passa_por_sucesso() -> None:
     with respx.mock(assert_all_called=False) as router:
         router.get(f"https://{IP}/db.cgi").mock(return_value=httpx.Response(200, text=""))
         notify = router.get(f"https://{IP}/notify.cgi").mock(return_value=httpx.Response(200))
+        router.post(f"https://{IP}/restart_control_call.cgi").mock(
+            return_value=httpx.Response(200),
+        )
         with pytest.raises(RuntimeError, match="descartado"):
             await a.send_config(IP, CREDS, cfg)
     assert not notify.called
@@ -412,8 +400,137 @@ async def test_envio_remove_sobra_do_payload_recebido() -> None:
             side_effect=lambda r: (visto.append(r), httpx.Response(200, text='[{"affected":1}]'))[1],
         )
         router.get(f"https://{IP}/notify.cgi").mock(return_value=httpx.Response(200))
+        router.post(f"https://{IP}/restart_control_call.cgi").mock(
+            return_value=httpx.Response(200),
+        )
         await a.send_config(
             IP, CREDS, b"UPDATE TAB_TEL_ACCOUNT SET AccountActive=1 WHERE Account = 0;\n \n",
         )
     payload = urllib.parse.unquote(visto[0].url.query.decode().rsplit("=", 1)[0])
     assert base64.b64decode(payload).endswith(b";")
+
+
+# ------------------------- o telefone fica preso na sessão SIP anterior (bancada)
+@pytest.mark.asyncio
+async def test_send_config_reinicia_o_controle_de_chamadas_no_fim() -> None:
+    """Sem o restart o aparelho segue registrado com a credencial ANTIGA.
+
+    Medido em bancada: notify sozinho grava e "aplica", mas a sessão SIP não é
+    refeita. E o caminho intuitivo não resolve — desativar a conta derruba o
+    registro em 1 s e religar não o traz de volta. Quem religa é o
+    `restart_control_call.cgi`, o mesmo que a web UI do telefone usa.
+    """
+    a = IntelbrasTIP125iAdapter()
+    cfg = a.generate_config(_template(), _row())
+    chamadas: list[str] = []
+
+    def _reg(request: httpx.Request) -> httpx.Response:
+        chamadas.append(request.url.path)
+        if request.url.path == "/db.cgi":
+            return httpx.Response(200, text='[{"affected":1}]')
+        return httpx.Response(200, text="")
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"https://{IP}/db.cgi").mock(side_effect=_reg)
+        router.get(f"https://{IP}/notify.cgi").mock(side_effect=_reg)
+        router.post(f"https://{IP}/restart_control_call.cgi").mock(side_effect=_reg)
+        await a.send_config(IP, CREDS, cfg)
+
+    assert chamadas == ["/db.cgi", "/notify.cgi", "/restart_control_call.cgi"]
+
+
+@pytest.mark.asyncio
+async def test_restart_sem_resposta_nao_falha_a_aplicacao() -> None:
+    """O CGI reinicia a pilha que serve a própria request: timeout é o normal.
+
+    Tratar isso como erro faria toda aplicação bem-sucedida ser reportada como
+    falha (foi o que aconteceu na bancada antes da correção).
+    """
+    a = IntelbrasTIP125iAdapter()
+    cfg = a.generate_config(_template(), _row())
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"https://{IP}/db.cgi").mock(
+            return_value=httpx.Response(200, text='[{"affected":1}]'),
+        )
+        router.get(f"https://{IP}/notify.cgi").mock(return_value=httpx.Response(200))
+        router.post(f"https://{IP}/restart_control_call.cgi").mock(
+            side_effect=httpx.ReadTimeout("sem resposta"),
+        )
+        await a.send_config(IP, CREDS, cfg)  # não pode levantar
+
+
+@pytest.mark.asyncio
+async def test_erro_de_sql_nao_reinicia_o_aparelho() -> None:
+    a = IntelbrasTIP125iAdapter()
+    cfg = a.generate_config(_template(), _row())
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"https://{IP}/db.cgi").mock(
+            return_value=httpx.Response(200, text='[{"error":"LuaSQL: x"}]'),
+        )
+        restart = router.post(f"https://{IP}/restart_control_call.cgi").mock(
+            return_value=httpx.Response(200),
+        )
+        with pytest.raises(RuntimeError, match="LuaSQL"):
+            await a.send_config(IP, CREDS, cfg)
+    assert not restart.called
+
+
+# --------------------------------- valores que o firmware não consegue receber
+def test_ponto_e_virgula_no_valor_e_recusado_com_o_nome_do_campo() -> None:
+    """O CGI corta o comando no `;` e o aparelho responde 401.
+
+    Sem esta recusa, o adapter leria 401 como "credencial recusada" — o pipeline
+    tentaria a outra senha e reportaria um problema de autenticação inexistente.
+    """
+    from middleware_monitor.integrations.extension_configurator.vendors.intelbras_tip125i import (
+        TIP125iValorInvalido,
+    )
+
+    with pytest.raises(TIP125iValorInvalido, match="senha SIP"):
+        IntelbrasTIP125iAdapter().generate_config(_template(), _row(senha_sip="ab;cd"))
+    with pytest.raises(TIP125iValorInvalido, match="nome visível"):
+        IntelbrasTIP125iAdapter().generate_config(
+            _template(), _row(display_name="Recepcao; Loja"),
+        )
+
+
+def test_quebra_de_linha_no_valor_e_recusada() -> None:
+    from middleware_monitor.integrations.extension_configurator.vendors.intelbras_tip125i import (
+        TIP125iValorInvalido,
+    )
+
+    with pytest.raises(TIP125iValorInvalido, match="controle"):
+        IntelbrasTIP125iAdapter().generate_config(_template(), _row(display_name="Sala\nReuniao"))
+
+
+def test_valor_normal_com_hash_e_aspa_continua_passando() -> None:
+    """A recusa é cirúrgica: `#` e `'` atravessam o db.cgi intactos (bancada)."""
+    sql = (
+        IntelbrasTIP125iAdapter()
+        .generate_config(_template(), _row(senha_sip="s3nh@'test#"))
+        .decode()
+    )
+    assert "AuthPassword='s3nh@''test#'" in sql
+
+
+# ------------------------------------------- UPDATE que não encontrou a linha
+@pytest.mark.asyncio
+async def test_affected_zero_nao_passa_por_sucesso() -> None:
+    """0 linhas = o registro não existe; o UPDATE não fez nada.
+
+    `affected` conta linhas que casaram com o WHERE (gravar o mesmo valor ainda
+    devolve 1), então 0 é sempre erro real — conta SIP fora do alcance, ou
+    `nova_web_user` que não é um usuário do aparelho.
+    """
+    a = IntelbrasTIP125iAdapter()
+    cfg = a.generate_config(_template(), _row())
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"https://{IP}/db.cgi").mock(
+            return_value=httpx.Response(200, text='[{"affected":1},{"affected":0}]'),
+        )
+        restart = router.post(f"https://{IP}/restart_control_call.cgi").mock(
+            return_value=httpx.Response(200),
+        )
+        with pytest.raises(RuntimeError, match="não encontrou o registro"):
+            await a.send_config(IP, CREDS, cfg)
+    assert not restart.called

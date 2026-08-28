@@ -102,8 +102,6 @@ function fkRow(fk) {
 }
 
 function collectFKs() {
-  await pintarHora(cfg);
-
   const list = $('#ec-fk-list');
   return Array.from(list.querySelectorAll('.ec-fk-row')).map(row => {
     const o = {};
@@ -173,6 +171,11 @@ async function reload() {
   list.innerHTML = '';
   const fks = Array.isArray(cfg.function_keys) ? cfg.function_keys : [];
   (fks.length ? fks : [defaultFK()]).forEach((fk) => list.appendChild(fkRow(fk)));
+
+  // Por último: `pintarHora` lê os selects de modo já preenchidos acima e vai à
+  // rede buscar o fuso/NTP herdados. É aqui que ela pertence — `cfg` só existe
+  // neste escopo.
+  await pintarHora(cfg);
 }
 
 // ── hora ────────────────────────────────────────────────────────────────────
