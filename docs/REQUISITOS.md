@@ -812,6 +812,7 @@ fuso sem ninguém perceber — pior do que não mexer.
 |---|---|
 | Demais fusos do Intelbras V-series | precisa da tabela de ids do firmware: ler o `<select>` de fuso na página web de um aparelho, ou exportar a config depois de trocar o fuso à mão |
 | Intelbras S3002 (linha S) | adapter é form-replay em páginas `.asp`; sem export nem bancada não dá para saber o campo |
+| ~~Intelbras TIP 125i~~ | ✅ resolvido em 2026-08-28: hora vai junto com a config (`TAB_SYSTEM_TIME`), com a tabela de fusos lida do próprio aparelho — ver 15.7 |
 | FlyingVoice P10 | idem — o dump de lab que existe é da página *Preference*, que não tem NTP/fuso |
 | Homologar o V-series no aparelho | o XML é gerado e testado, mas nenhum telefone recebeu ainda |
 
@@ -928,6 +929,46 @@ Em aberto:
    Depois dos itens 1–3 nenhuma tela passa de 18 ms. O que justificaria é
    contenção sob escrita, que a medição atual não cobre (roda com a ingestão
    parada). Medir isso primeiro.
+
+### 15.7 ✅ Intelbras TIP 125i (2026-08-28)
+
+Sexto modelo do Configurador e **terceira plataforma Intelbras** — a linha TIP
+não tem nada em comum com a V-series (RapidLogic) nem com a linha S (GoAhead).
+Homologado ao vivo contra `10.150.51.101` (fw 5.0.2, hw 17).
+
+**O firmware expõe o próprio banco.** A web UI é uma SPA AngularJS que monta SQL
+no navegador, codifica em Base64 e chama `GET /db.cgi?<base64>` (LuaSQL sobre
+SQLite); `GET /notify.cgi?tables=…` avisa o firmware que as tabelas mudaram — é
+o "aplicar". Não existe API por trás: **o SQL é a API**. Autenticação é HTTP
+Basic simples — sem login, sessão, cookie ou token CSRF, o mais simples de todos
+os adapters. O fingerprint sai de graça: o 401 traz
+`WWW-Authenticate: Basic realm="IP phone Intelbras (<ip>)"`, que identifica
+fabricante e plataforma **sem credencial nenhuma**.
+
+**A whitelist ficou mais forte aqui, não mais fraca.** Como o `UPDATE` só toca
+as colunas que escrevemos, não há replay e não há risco de arrastar campo
+alheio. `_assert_whitelist` ainda re-parseia o SQL gerado e aborta em qualquer
+verbo diferente de `UPDATE` ou par `tabela.coluna` fora da lista — as tabelas de
+rede (`TAB_NET_ETH_WAN`, `TAB_NET_ETH_LAN`, `TAB_NET_VLAN`, `TAB_NET_SYSLOG`,
+`TAB_LLDP`) nunca entram.
+
+**Três pegadinhas medidas na bancada, todas silenciosas:**
+
+| Pegadinha | O que acontece | Correção |
+|---|---|---|
+| Sobra depois do `;` final | uma nova linha, um espaço ou um comentário `--` fazem o `db.cgi` responder **HTTP 200 com corpo vazio**: nada executa e nada é reportado | o payload termina exatamente em `;`, o envio dá `strip()` e **corpo vazio virou erro explícito** (senão o pipeline marcaria a linha como aplicada) |
+| Base64 cru na query | quando o Base64 contém `+` ou `/`, o servidor responde **401** — a request morre antes do CGI e o sintoma (credencial recusada) não tem relação com a causa. É o que a web UI do próprio telefone faz, então ela quebra dependendo do que o operador digitou | mandamos percent-encodado (`%2B`/`%2F`); o CGI faz URL-decode antes do Base64 |
+| `SYSTimeTimeZone` | parece offset em minutos, mas o firmware desempata offsets repetidos com sufixo: **-180 é Newfoundland**, -181 é Brasília, -182 é Buenos Aires. Mandar o offset cru poria o telefone no fuso errado | mapa IANA → id explícito (lido da tabela `timeZones` do app.js do aparelho); o fallback pelo offset só vale onde não há ambiguidade |
+
+De quebra, a UI do aparelho escapa só a **primeira** aspa simples de cada valor
+(`.replace(/'/,"''")`, sem a flag `g`) — um nome como `D'Avila's` corromperia o
+comando. O adapter escapa todas.
+
+**O que falta:** nenhuma *device action* homologada. O `normalize` (volume no
+máximo + DND desligado) não entra sem prova — o DND é claro
+(`TAB_SERVICE_CODE.DND`), mas o volume vive em `TAB_SOFT_CURRENTCONFIG` e essa
+plataforma **não tem tela web de volume**, então o valor máximo não foi
+confirmado em hardware. Fica para a próxima bancada em vez de virar chute.
 
 ---
 

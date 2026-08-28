@@ -110,6 +110,14 @@ extend-immutable-calls = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "PLR"]
+# O firmware do Intelbras TIP (platwip) expoe o proprio banco: o "protocolo" de
+# configuracao E o SQL, mandado por HTTP em `db.cgi?<base64(SQL)>`. Nao ha como
+# usar query parametrizada — nao existe driver, existe uma query string. A
+# defesa aqui e outra e esta no proprio adapter: todo valor passa por
+# `_sql_str` (escapa a aspa simples) e o SQL gerado e RE-PARSEADO por
+# `_assert_whitelist`, que aborta em qualquer verbo diferente de UPDATE ou
+# qualquer par tabela.coluna fora da whitelist. Ver test_intelbras_tip125i.py.
+"src/middleware_monitor/integrations/extension_configurator/vendors/intelbras_tip125i.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.11"

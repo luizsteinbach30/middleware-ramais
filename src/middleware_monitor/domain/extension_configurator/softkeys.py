@@ -17,21 +17,37 @@ from __future__ import annotations
 import re
 from typing import Any
 
-__all__ = ["is_intelbras_s_series", "softkey_catalog_for", "vendor_of_model"]
+__all__ = [
+    "is_intelbras_s_series",
+    "is_intelbras_tip",
+    "softkey_catalog_for",
+    "vendor_of_model",
+]
 
 # Intelbras linha S (S3002, S3001...) usa firmware GoAhead — adapter proprio,
 # distinto do V-series (RapidLogic). Casa "Intelbras S3002", "intelbras s3002".
 _INTELBRAS_S_RE = re.compile(r"intelbras\s*s\d", re.IGNORECASE)
+
+# Intelbras linha TIP (TIP 125i...) usa a plataforma "platwip" (lighttpd +
+# AngularJS + SQL via db.cgi) — terceira plataforma Intelbras, sem parentesco
+# com a V-series nem com a linha S. Casa "Intelbras TIP 125i", "intelbras tip125i".
+_INTELBRAS_TIP_RE = re.compile(r"intelbras\s*tip\s*\d", re.IGNORECASE)
 
 
 def is_intelbras_s_series(modelo: str) -> bool:
     return bool(_INTELBRAS_S_RE.search(modelo or ""))
 
 
+def is_intelbras_tip(modelo: str) -> bool:
+    return bool(_INTELBRAS_TIP_RE.search(modelo or ""))
+
+
 def vendor_of_model(modelo: str) -> str:
     """Fabricante a partir do nome do modelo (independente do adapter_for)."""
     m = (modelo or "").lower()
     if m.startswith("intelbras"):
+        if is_intelbras_tip(m):
+            return "intelbras_tip125i"
         return "intelbras_s3002" if is_intelbras_s_series(m) else "intelbras"
     if "flying" in m or "flyong" in m:
         return "flyingvoice"
@@ -56,6 +72,7 @@ _ACCOUNTS: dict[str, list[int]] = {
     "htek": [1],
     "intelbras": [1],
     "intelbras_s3002": [1],  # conta 2 (AccountID=1) ainda nao validada em hardware
+    "intelbras_tip125i": [1, 2],  # TAB_VOIP_ACCOUNT.Account 0 e 1 (0-based no banco)
     "yealink": [1, 2],   # confirmado (account.2.*)
     "flyingvoice": [1],
 }
@@ -91,6 +108,22 @@ _CATALOG: dict[str, dict[str, Any]] = {
             ("speed_dial", "Discagem rápida"),
             ("blf", "BLF"),
             ("blf_list", "Broadsoft BLF"),
+        ]),
+    },
+    "intelbras_tip125i": {
+        "vendor_label": "Intelbras TIP",
+        # TAB_SOFTKEY: PK 1..10 sao as teclas do aparelho (11+ sao modulos de
+        # expansao, que o 125i nao tem). Type confirmado no `softkeyType` do
+        # SoftkeysCtrl (app.js do proprio telefone).
+        "key_slots": _slots("Tecla", 10),
+        "types": _types([
+            ("disabled", "Não Definido"),
+            ("line", "Conta"),
+            ("speed_dial", "Discagem rápida"),
+            ("blf", "BLF"),
+            ("pickup", "Captura de ramal"),
+            ("group_pickup", "Captura de grupo"),
+            ("intercom", "Intercom"),
         ]),
     },
     "yealink": {

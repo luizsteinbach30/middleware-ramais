@@ -20,13 +20,14 @@ from middleware_monitor.integrations.extension_configurator.vendors import (
     HTEKAdapter,
     IntelbrasAdapter,
     IntelbrasS3002Adapter,
+    IntelbrasTIP125iAdapter,
     VendorAdapter,
     YealinkAdapter,
 )
 
 from . import time_settings
 from .repository import merged_config_padrao
-from .softkeys import is_intelbras_s_series
+from .softkeys import is_intelbras_s_series, is_intelbras_tip
 
 
 def adapter_for(modelo_telefone: str) -> VendorAdapter:
@@ -37,8 +38,11 @@ def adapter_for(modelo_telefone: str) -> VendorAdapter:
     """
     modelo = modelo_telefone.lower()
     if modelo.startswith("intelbras"):
-        # Linha S (S3002...) e firmware GoAhead, protocolo diferente do V-series
-        # (RapidLogic). V-series continua no IntelbrasAdapter (default intelbras).
+        # Sao tres plataformas Intelbras distintas, sem protocolo em comum:
+        # linha TIP (platwip, SQL via db.cgi), linha S (GoAhead, form .asp) e
+        # V-series (RapidLogic, upload de XML — o default `intelbras`).
+        if is_intelbras_tip(modelo):
+            return IntelbrasTIP125iAdapter()
         if is_intelbras_s_series(modelo):
             return IntelbrasS3002Adapter()
         return IntelbrasAdapter()
