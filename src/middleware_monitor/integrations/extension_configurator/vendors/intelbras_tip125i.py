@@ -119,7 +119,14 @@ _WHITELIST: frozenset[str] = frozenset({
     "TAB_SYSTEM_PHONE.SYSPhoneLanguage",
     "TAB_SYSTEM_PHONE.SYSPhonePin",
     "TAB_SYSTEM_PHONE.SYSPhoneLockPhone",
-    # Teclas programaveis (TAB_SOFTKEY).
+    # Hotline / linha direta (TAB_SERVICE_CODE). Substitui a tecla de atalho
+    # neste modelo, que NAO tem teclas programaveis.
+    "TAB_SERVICE_CODE.Hotline",
+    "TAB_SERVICE_CODE.HotlineNumber",
+    "TAB_SERVICE_CODE.HotlineTime",
+    # Teclas programaveis (TAB_SOFTKEY). A tabela existe no firmware (e comum a
+    # linha TIP), mas o 125i NAO tem essas teclas no aparelho — ver
+    # `_render_softkeys`, que so emite para quem configurou explicitamente.
     "TAB_SOFTKEY.Type",
     "TAB_SOFTKEY.Value",
     "TAB_SOFTKEY.Account",
@@ -132,6 +139,7 @@ _WHITELIST: frozenset[str] = frozenset({
 # a propria web UI as envia ao salvar uma conta.
 _NOTIFY_TABLES: tuple[str, ...] = (
     "TAB_VOIP_ACCOUNT",
+    "TAB_SERVICE_CODE",  # hotline vive aqui, e a UI do aparelho tambem notifica
     "TAB_TEL_ACCOUNT",
     "TAB_SYSTEM_TIME",
     "TAB_SYSTEM_PHONE",
@@ -407,6 +415,7 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             ])
             + " WHERE PK = 1;",
         ]
+        linhas.extend(self._render_hotline(template, account))
         linhas.extend(self._render_softkeys(template.get("function_keys", []) or [], row, account))
         linhas.extend(self._render_web_admin(template))
 
@@ -438,6 +447,50 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
     def _lcd_language(template: dict[str, Any]) -> str:
         raw = str(template.get("lcd_language", "pt-BR") or "pt-BR").lower()
         return _LCD_LANGUAGES.get(raw, "pt_BR")
+
+    @staticmethod
+    def _render_hotline(template: dict[str, Any], account: int) -> list[str]:
+        """Hotline (linha direta) — `TAB_SERVICE_CODE`, por conta.
+
+        Este modelo **nao tem teclas programaveis**, entao a hotline e o que
+        cumpre o papel do atalho: ao tirar do gancho, o telefone disca sozinho o
+        numero configurado. Campos lidos da tela do proprio aparelho
+        (`views/account/redirect.html`):
+
+          Hotline        0/1   "Habilitar Hotline"
+          HotlineNumber  texto "Número de Hotline" (maxlength 50, obrigatorio
+                               quando habilitada)
+          HotlineTime    0..7  "Tempo de Hotline" — segundos de espera antes de
+                               discar; 0 disca assim que tira do gancho. O
+                               `<select>` do firmware so oferece 0 a 7, entao o
+                               valor e limitado a essa faixa.
+
+        Desligada, ainda emitimos `Hotline=0`: e o que desfaz uma hotline que
+        ficou ligada num aparelho reaproveitado. Mas so mexemos no numero e no
+        tempo quando ela esta ligada — desligada, o numero antigo fica no
+        aparelho sem efeito, e apaga-lo nao traria beneficio nenhum.
+        """
+        ligada = _sql_int(template.get("hotline_enable"), 0) == 1
+        if not ligada:
+            return [f"UPDATE TAB_SERVICE_CODE SET Hotline=0 WHERE Account = {account};"]
+
+        numero = str(template.get("hotline_number") or "").strip()
+        if not numero:
+            raise TIP125iValorInvalido(
+                "TIP 125i: a hotline está habilitada mas o número está vazio. "
+                "Informe o número da hotline na configuração padrão do ambiente "
+                "ou desligue a hotline.",
+            )
+        tempo = min(max(_sql_int(template.get("hotline_time"), 0), 0), 7)
+        return [
+            "UPDATE TAB_SERVICE_CODE SET "
+            + ",".join([
+                "Hotline=1",
+                f"HotlineNumber={_sql_str(numero, 'número da hotline')}",
+                f"HotlineTime={tempo}",
+            ])
+            + f" WHERE Account = {account};",
+        ]
 
     @classmethod
     def _render_softkeys(

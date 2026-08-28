@@ -112,19 +112,14 @@ _CATALOG: dict[str, dict[str, Any]] = {
     },
     "intelbras_tip125i": {
         "vendor_label": "Intelbras TIP",
-        # TAB_SOFTKEY: PK 1..10 sao as teclas do aparelho (11+ sao modulos de
-        # expansao, que o 125i nao tem). Type confirmado no `softkeyType` do
-        # SoftkeysCtrl (app.js do proprio telefone).
-        "key_slots": _slots("Tecla", 10),
-        "types": _types([
-            ("disabled", "Não Definido"),
-            ("line", "Conta"),
-            ("speed_dial", "Discagem rápida"),
-            ("blf", "BLF"),
-            ("pickup", "Captura de ramal"),
-            ("group_pickup", "Captura de grupo"),
-            ("intercom", "Intercom"),
-        ]),
+        # O TIP 125i NAO tem teclas programaveis no aparelho. A `TAB_SOFTKEY`
+        # existe no firmware (e comum a linha TIP), mas oferecer teclas aqui
+        # produziria configuracao que nao faz nada — pior que nao oferecer.
+        # Quem cumpre o papel do atalho neste modelo e a **hotline**, que fica
+        # na configuracao padrao do ambiente (`hotline_*`).
+        "key_slots": [],
+        "types": [],
+        "softkeys": False,
     },
     "yealink": {
         "vendor_label": "Yealink",
@@ -173,4 +168,10 @@ def softkey_catalog_for(modelo: str) -> dict[str, Any]:
         "key_slots": cat["key_slots"],
         "types": cat["types"],
         "accounts": _ACCOUNTS.get(vendor, [1]),
+        # False = o aparelho não tem teclas programáveis; a UI esconde a seção
+        # em vez de oferecer configuração que não faria nada.
+        "softkeys": cat.get("softkeys", True),
+        # True = o modelo tem hotline (linha direta) na config padrão. É o que
+        # substitui o atalho onde não há tecla.
+        "hotline": cat.get("hotline", vendor == "intelbras_tip125i"),
     }

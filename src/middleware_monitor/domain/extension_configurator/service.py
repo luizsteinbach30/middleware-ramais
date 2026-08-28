@@ -82,6 +82,10 @@ def build_template(cfg: dict[str, Any]) -> dict[str, Any]:
         "keylock_password": cfg.get("keylock_password", cfg.get("menu_password", "123")),
         "keylock_enable": cfg.get("keylock_enable", 2),
         "keylock_timeout": cfg.get("keylock_timeout", 30),
+        # Hotline — só os adapters de modelos sem tecla programável usam (TIP).
+        "hotline_enable": cfg.get("hotline_enable", 0),
+        "hotline_number": cfg.get("hotline_number", ""),
+        "hotline_time": cfg.get("hotline_time", 0),
     }
 
 

@@ -56,6 +56,9 @@ def _template(**over: object) -> dict:
         "menu_password": "123",
         "nova_web_user": "",
         "nova_web_password": "",
+        "hotline_enable": 0,
+        "hotline_number": "",
+        "hotline_time": 0,
         "function_keys": [
             {
                 "key": "LineKey2",
@@ -620,3 +623,81 @@ async def test_401_persistente_continua_sendo_credencial_recusada() -> None:
         with pytest.raises(VendorAuthError):
             await a.send_config(IP, CREDS, cfg)
     assert not notify.called
+
+
+# ------------------------------------- hotline (o atalho de quem não tem tecla)
+def test_hotline_ligada_grava_numero_e_tempo() -> None:
+    sql = (
+        IntelbrasTIP125iAdapter()
+        .generate_config(
+            _template(hotline_enable=1, hotline_number="9000", hotline_time=3), _row(),
+        )
+        .decode()
+    )
+    assert (
+        "UPDATE TAB_SERVICE_CODE SET Hotline=1,HotlineNumber='9000',HotlineTime=3 "
+        "WHERE Account = 0;" in sql
+    )
+
+
+def test_hotline_desligada_desfaz_a_do_aparelho() -> None:
+    """Emitir `Hotline=0` é o que limpa hotline herdada de um aparelho reaproveitado."""
+    sql = IntelbrasTIP125iAdapter().generate_config(_template(), _row()).decode()
+    assert "UPDATE TAB_SERVICE_CODE SET Hotline=0 WHERE Account = 0;" in sql
+
+
+def test_hotline_segue_a_conta_sip_escolhida() -> None:
+    sql = (
+        IntelbrasTIP125iAdapter()
+        .generate_config(
+            _template(sip_account=2, hotline_enable=1, hotline_number="9000"), _row(),
+        )
+        .decode()
+    )
+    assert "Hotline=1,HotlineNumber='9000',HotlineTime=0 WHERE Account = 1;" in sql
+
+
+def test_hotline_ligada_sem_numero_e_recusada() -> None:
+    """Hotline sem número deixaria o telefone discando nada ao tirar do gancho."""
+    from middleware_monitor.integrations.extension_configurator.vendors.intelbras_tip125i import (
+        TIP125iValorInvalido,
+    )
+
+    with pytest.raises(TIP125iValorInvalido, match="hotline"):
+        IntelbrasTIP125iAdapter().generate_config(
+            _template(hotline_enable=1, hotline_number="  "), _row(),
+        )
+
+
+def test_tempo_de_hotline_limitado_a_faixa_do_firmware() -> None:
+    """O `<select>` do aparelho só oferece 0..7 — fora disso o valor é limitado."""
+    sql = (
+        IntelbrasTIP125iAdapter()
+        .generate_config(
+            _template(hotline_enable=1, hotline_number="9000", hotline_time=99), _row(),
+        )
+        .decode()
+    )
+    assert "HotlineTime=7" in sql
+
+
+def test_service_code_e_notificado() -> None:
+    """A hotline vive em TAB_SERVICE_CODE; sem notificá-la o aparelho não a assume."""
+    from middleware_monitor.integrations.extension_configurator.vendors.intelbras_tip125i import (
+        _NOTIFY_TABLES,
+    )
+
+    assert "TAB_SERVICE_CODE" in _NOTIFY_TABLES
+
+
+def test_modelo_sem_tecla_programavel_nao_oferece_teclas() -> None:
+    """O TIP 125i não tem essas teclas: oferecer geraria config que não faz nada."""
+    from middleware_monitor.domain.extension_configurator.softkeys import softkey_catalog_for
+
+    cat = softkey_catalog_for("Intelbras TIP 125i")
+    assert cat["softkeys"] is False
+    assert cat["key_slots"] == []
+    assert cat["hotline"] is True
+    # Os outros fabricantes seguem com teclas e sem hotline.
+    htek = softkey_catalog_for("HTEK UC912")
+    assert htek["softkeys"] is True and htek["hotline"] is False
