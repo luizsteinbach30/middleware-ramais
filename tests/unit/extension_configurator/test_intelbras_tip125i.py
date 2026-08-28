@@ -585,3 +585,38 @@ async def test_firmware_novo_nao_reinicia_o_aparelho() -> None:
         reboot = router.post(f"https://{IP}/restart.cgi").mock(return_value=httpx.Response(200))
         await a.send_config(IP, CREDS, cfg)
     assert not reboot.called, "reboot completo num firmware que tem reinício parcial"
+
+
+# ------------------------------- 401 nem sempre é sobre credencial neste firmware
+@pytest.mark.asyncio
+async def test_401_transitorio_e_repetido_antes_de_acusar_credencial() -> None:
+    """Visto em campo com a senha certa e o mesmo SQL passando segundos depois.
+
+    Um 401 vira `VendorAuthError`, que gasta a cadeia de credenciais e faz o
+    operador conferir uma senha que está correta. O retry é seguro: cada
+    statement é um `UPDATE` idempotente.
+    """
+    a = IntelbrasTIP125iAdapter()
+    cfg = a.generate_config(_template(), _row())
+    respostas = [httpx.Response(401), httpx.Response(200, text='[{"affected":1}]')]
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"https://{IP}/db.cgi").mock(side_effect=respostas)
+        router.get(f"https://{IP}/notify.cgi").mock(return_value=httpx.Response(200))
+        router.post(f"https://{IP}/restart_control_call.cgi").mock(
+            return_value=httpx.Response(200),
+        )
+        await a.send_config(IP, CREDS, cfg)  # não pode levantar
+
+
+@pytest.mark.asyncio
+async def test_401_persistente_continua_sendo_credencial_recusada() -> None:
+    """Senha de fato errada tem de falhar — só ~2 s mais tarde."""
+    a = IntelbrasTIP125iAdapter()
+    cfg = a.generate_config(_template(), _row())
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"https://{IP}/db.cgi").mock(return_value=httpx.Response(401))
+        notify = router.get(f"https://{IP}/notify.cgi").mock(return_value=httpx.Response(200))
+        with pytest.raises(VendorAuthError):
+            await a.send_config(IP, CREDS, cfg)
+    assert not notify.called

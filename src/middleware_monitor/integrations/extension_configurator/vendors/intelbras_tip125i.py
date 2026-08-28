@@ -75,6 +75,7 @@ Device actions: nenhuma homologada ainda. O `normalize` (volume no maximo + DND
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import re
@@ -261,6 +262,9 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
     # `_restart_call_control`): timeout curto, para nao segurar o pipeline em
     # massa por 8 s por telefone sem necessidade.
     _RESTART_TIMEOUT = 3.0
+    # 401 neste firmware nem sempre e sobre credencial (ver `_executar_com_retry`).
+    _AUTH_RETRIES = 2
+    _AUTH_RETRY_DELAY_S = 1.5
     _BASE = "https://{ip}"
 
     _DB = "/db.cgi"
@@ -552,7 +556,7 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
         self._assert_whitelist(sql)  # defesa em profundidade tambem no envio
 
         async with self._client(ip, creds) as client:
-            resp = await self._execute(client, sql)
+            resp = await self._executar_com_retry(client, sql, ip)
             self._raise_for_db_error(resp, ip)
             await client.get(self._NOTIFY, params={"tables": ",".join(_NOTIFY_TABLES)})
             rebootou = await self._restart_call_control(client, ip)
@@ -560,6 +564,40 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             "tip125i: config aplicada",
             ip=ip, statements=sql.count(";"), reiniciou_aparelho=rebootou,
         )
+
+    @classmethod
+    async def _executar_com_retry(
+        cls, client: httpx.AsyncClient, sql: str, ip: str,
+    ) -> httpx.Response:
+        """Reenvia o SQL quando o aparelho responde 401 com a credencial certa.
+
+        Visto em campo com `admin`/`admin` confirmado no aparelho e o mesmo SQL
+        passando segundos depois pela mesma credencial: **o 401 deste firmware
+        nem sempre é sobre credencial**. Ele também sai quando o servidorzinho
+        embarcado recusa a request antes de chegar ao CGI — foi o que medimos
+        com Base64 cru contendo `+`/`/`, e é o mesmo código que aparece sob
+        concorrência, logo após um reinício da pilha, ou numa aplicação em massa.
+
+        Como um 401 vira `VendorAuthError`, ele faz o pipeline gastar a cadeia de
+        credenciais e reportar "credencial recusada" — mandando o operador
+        conferir uma senha que está certa. Então tentamos de novo antes de
+        acreditar no 401. Se a credencial estiver mesmo errada, todas as
+        tentativas falham e o erro sai igual (só ~2 s mais tarde).
+
+        O retry é seguro porque cada statement é um `UPDATE` idempotente: grava
+        o mesmo valor, no mesmo `WHERE`, quantas vezes for.
+        """
+        resp = await cls._execute(client, sql)
+        for tentativa in range(1, cls._AUTH_RETRIES + 1):
+            if resp.status_code not in (401, 403):
+                return resp
+            log.warning(
+                "tip125i: 401/403 com a credencial informada — tentando de novo",
+                ip=ip, tentativa=tentativa, de=cls._AUTH_RETRIES,
+            )
+            await asyncio.sleep(cls._AUTH_RETRY_DELAY_S)
+            resp = await cls._execute(client, sql)
+        return resp
 
     @classmethod
     async def _restart_call_control(cls, client: httpx.AsyncClient, ip: str) -> bool:
