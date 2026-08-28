@@ -534,3 +534,54 @@ async def test_affected_zero_nao_passa_por_sucesso() -> None:
         with pytest.raises(RuntimeError, match="não encontrou o registro"):
             await a.send_config(IP, CREDS, cfg)
     assert not restart.called
+
+
+# ---------------------------- o endpoint de reinicio MUDA com a versao do firmware
+@pytest.mark.asyncio
+async def test_firmware_antigo_cai_para_o_reboot_completo() -> None:
+    """fw 4.3.x não tem `restart_control_call.cgi` (404) — só `restart.cgi`.
+
+    Foi o que fez a primeira versão desta correção não ajudar os aparelhos em
+    campo: ela só conhecia o endpoint do fw 5.0.x. Medido nos dois: 404 no
+    4.3.41, executa no 5.0.2.
+    """
+    a = IntelbrasTIP125iAdapter()
+    cfg = a.generate_config(_template(), _row())
+    chamadas: list[str] = []
+
+    def _reg(request: httpx.Request) -> httpx.Response:
+        chamadas.append(request.url.path)
+        if request.url.path == "/db.cgi":
+            return httpx.Response(200, text='[{"affected":1}]')
+        if request.url.path == "/restart_control_call.cgi":
+            return httpx.Response(404)  # firmware antigo
+        return httpx.Response(200, text="")
+
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"https://{IP}/db.cgi").mock(side_effect=_reg)
+        router.get(f"https://{IP}/notify.cgi").mock(side_effect=_reg)
+        router.post(f"https://{IP}/restart_control_call.cgi").mock(side_effect=_reg)
+        router.post(f"https://{IP}/restart.cgi").mock(side_effect=_reg)
+        await a.send_config(IP, CREDS, cfg)
+
+    assert chamadas == [
+        "/db.cgi", "/notify.cgi", "/restart_control_call.cgi", "/restart.cgi",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_firmware_novo_nao_reinicia_o_aparelho() -> None:
+    """Onde há reinício parcial, o telefone NÃO pode ser rebootado à toa."""
+    a = IntelbrasTIP125iAdapter()
+    cfg = a.generate_config(_template(), _row())
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"https://{IP}/db.cgi").mock(
+            return_value=httpx.Response(200, text='[{"affected":1}]'),
+        )
+        router.get(f"https://{IP}/notify.cgi").mock(return_value=httpx.Response(200))
+        router.post(f"https://{IP}/restart_control_call.cgi").mock(
+            side_effect=httpx.ReadTimeout("reinicia a pilha e nao responde"),
+        )
+        reboot = router.post(f"https://{IP}/restart.cgi").mock(return_value=httpx.Response(200))
+        await a.send_config(IP, CREDS, cfg)
+    assert not reboot.called, "reboot completo num firmware que tem reinício parcial"

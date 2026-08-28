@@ -267,7 +267,14 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
     _NOTIFY = "/notify.cgi"
     _STATUS = "/status.cgi"
     _BACKUP = "/backup.cgi"
+    # Reinicio pos-config. O endpoint MUDA com a versao do firmware, e a
+    # escolha errada faz o telefone ficar preso na sessao SIP anterior:
+    #   fw 5.0.x  -> /restart_control_call.cgi  reinicia SO a pilha de chamadas
+    #   fw 4.3.x  -> NAO existe (404); so ha /restart.cgi, que reinicia o
+    #                aparelho inteiro (~1 min fora do ar)
+    # Medido em bancada nos dois: 404 no 4.3.41, executa no 5.0.2.
     _RESTART_CALL = "/restart_control_call.cgi"
+    _RESTART_SYSTEM = "/restart.cgi"
 
     # ------------------------------------------------------------------ HTTP
     @classmethod
@@ -548,31 +555,59 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             resp = await self._execute(client, sql)
             self._raise_for_db_error(resp, ip)
             await client.get(self._NOTIFY, params={"tables": ",".join(_NOTIFY_TABLES)})
-            await self._restart_call_control(client, ip)
-        log.info("tip125i: config aplicada", ip=ip, statements=sql.count(";"))
+            rebootou = await self._restart_call_control(client, ip)
+        log.info(
+            "tip125i: config aplicada",
+            ip=ip, statements=sql.count(";"), reiniciou_aparelho=rebootou,
+        )
 
     @classmethod
-    async def _restart_call_control(cls, client: httpx.AsyncClient, ip: str) -> None:
-        """`POST /restart_control_call.cgi` — normalmente NAO responde, e tudo bem.
+    async def _restart_call_control(cls, client: httpx.AsyncClient, ip: str) -> bool:
+        """Poe a config nova em vigor. Devolve True se o APARELHO foi reiniciado.
 
-        O CGI reinicia a pilha que esta servindo a propria request, entao a
-        conexao morre sem resposta: medido em bancada, timeout com a conta ativa
-        e HTTP 200 rapido quando ela ja estava fora. Ou seja, o timeout aqui e o
-        caminho feliz, e tratar como erro faria toda aplicacao bem-sucedida ser
-        reportada como falha. O efeito foi conferido no aparelho pelo lado de
-        fora: com a config nova, o registro sai de `200` e vai para o codigo da
-        nova credencial em segundos.
+        Sem este passo o telefone **fica preso na sessao SIP anterior**: segue
+        registrado com a credencial velha e a conta nova nunca sobe. O
+        `notify.cgi` nao resolve — no fw 4.3 ele nem sequer derruba a conta
+        quando ela e desativada, ou seja, a pilha SIP simplesmente nao reage.
 
-        Erro de rede tambem nao derruba a aplicacao — a config ja esta gravada e
-        notificada neste ponto; o que resta e um empurrao. Fica no log.
+        Qual reinicio usar depende do firmware, e e por isso que a primeira
+        versao desta correcao nao ajudou os aparelhos em campo: ela so conhecia
+        o endpoint do fw 5.0.x, que responde **404** no 4.3.x. Entao tentamos o
+        leve primeiro e caimos no pesado quando ele nao existe:
+
+          * `/restart_control_call.cgi` (fw 5.0.x) reinicia so a pilha de
+            chamadas — o aparelho nao reinicia e o registro volta em ~2 s.
+          * `/restart.cgi` (fw 4.3.x) reinicia o aparelho inteiro, ~1 min fora
+            do ar. E o unico caminho la: nao existe reinicio parcial.
+
+        Nenhum dos dois costuma responder — ambos derrubam o processo que serve
+        a propria request. Timeout aqui e o caminho feliz; tratar como erro
+        faria toda aplicacao bem-sucedida ser reportada como falha.
         """
         try:
-            await client.post(cls._RESTART_CALL, timeout=cls._RESTART_TIMEOUT)
+            resp = await client.post(cls._RESTART_CALL, timeout=cls._RESTART_TIMEOUT)
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             log.debug(
-                "tip125i: restart do controle de chamadas sem resposta (esperado)",
+                "tip125i: reinicio da pilha de chamadas sem resposta (esperado)",
                 ip=ip, erro=type(exc).__name__,
             )
+            return False
+        if resp.status_code != 404:
+            return False
+
+        # Firmware antigo: so o reboot completo aplica a conta.
+        log.info(
+            "tip125i: firmware sem reinicio parcial — reiniciando o aparelho "
+            "para a conta SIP entrar em vigor",
+            ip=ip,
+        )
+        try:
+            await client.post(cls._RESTART_SYSTEM, timeout=cls._RESTART_TIMEOUT)
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            log.debug(
+                "tip125i: reboot sem resposta (esperado)", ip=ip, erro=type(exc).__name__,
+            )
+        return True
 
     @classmethod
     async def _execute(cls, client: httpx.AsyncClient, sql: str) -> httpx.Response:

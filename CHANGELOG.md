@@ -18,7 +18,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   exercitam a API, nunca a página. Agora todo módulo servido passa pelo parse do
   `node` (o mesmo motor do navegador) em `tests/unit/web/test_static_js_syntax.py`,
   e o CI ganhou o passo *Setup Node* para o teste nunca ser pulado lá.
-- **Intelbras TIP 125i ficava preso na sessão SIP anterior.** Gravar a config e
+- **Intelbras TIP 125i ficava preso na sessão SIP anterior — e o endpoint que
+  resolve muda com o firmware.** Depois de gravar a config, o aparelho seguia
+  registrado com a credencial antiga; o `notify.cgi` não põe a conta em vigor
+  (no fw 4.3 ele nem sequer a derruba quando ela é desativada). O reinício certo
+  depende da versão, e escolher só um deixa metade do parque parado:
+  `restart_control_call.cgi` existe no **fw 5.0.x** e reinicia apenas a pilha de
+  chamadas (registro volta em ~2 s, sem reboot); no **fw 4.3.x** ele responde
+  **404** e o único caminho é `restart.cgi`, que reinicia o aparelho (~45 s fora
+  do ar). O adapter tenta o leve e cai no pesado. Medido nos dois firmwares, com
+  aparelho em campo: reboot detectado, telefone de volta e registrado em 44 s.
+- ~~**Intelbras TIP 125i ficava preso na sessão SIP anterior.**~~ Gravar a config e
   notificar não refaz o registro: o aparelho seguia com a credencial antiga. E o
   caminho intuitivo não resolve — desativar a conta derruba o registro em 1 s,
   mas religar **não** o traz de volta. Quem religa é o
