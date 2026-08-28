@@ -930,6 +930,37 @@ Em aberto:
    contenção sob escrita, que a medição atual não cobre (roda com a ingestão
    parada). Medir isso primeiro.
 
+### 15.8 🐛 A cadeia de credenciais não é percorrida (relatado 2026-08-28)
+
+**Relato do dono:** ao aplicar, o sistema **não tenta todas as credenciais** — a
+definição é tentar a **cadastrada** (`web_user`/`web_password`) e, se ela for
+recusada, a **nova** (`nova_web_user`/`nova_web_password`).
+
+**Ainda não reproduzido.** O que já foi conferido na leitura do código, para não
+repetir caminho:
+
+- `build_creds_chain` (`domain/extension_configurator/apply.py`) monta
+  `[atual, nova]` e **descarta a nova quando ela é igual à atual** — que é
+  exatamente o caso do ambiente onde o problema apareceu (*Muffato - Loja 142*
+  tem `nova_web_user`/`nova_web_password` = `admin`/`admin`, iguais aos atuais).
+  Então ali a cadeia tem **um** item por definição, e o sintoma pode ser esse: a
+  tela deixa preencher a "nova" com o mesmo valor e não avisa que ela não vale
+  como segunda tentativa.
+- `_send_config_with_fallback` só avança para a credencial seguinte quando o
+  adapter levanta `VendorAuthError`; qualquer outro erro aborta na hora. Vale
+  auditar **cada adapter**: um 401/403 que escape como `HTTPStatusError` (ou
+  como texto de página de login não reconhecido) mata a cadeia sem tentar a
+  segunda. No `intelbras_tip125i` os caminhos de leitura/escrita traduzem
+  401/403 para `VendorAuthError`, mas o reinício pós-config não checa status —
+  ele roda depois do sucesso, então não deveria influir.
+- Falta verificar o caminho das **device actions** (`actions.py:120` usa a mesma
+  `build_creds_chain`) e se a UI mostra qual credencial acabou funcionando.
+
+**Próximo passo:** reproduzir com um ambiente onde a nova senha é *diferente* da
+atual e um aparelho já rotacionado, instrumentando qual credencial cada tentativa
+usou. Enquanto isso não fecha, o operador deve manter `nova_web_*` vazio quando
+não houver rotação de senha — preencher com o mesmo valor não adiciona tentativa.
+
 ### 15.7 ✅ Intelbras TIP 125i (2026-08-28)
 
 Sexto modelo do Configurador e **terceira plataforma Intelbras** — a linha TIP
@@ -963,6 +994,22 @@ rede (`TAB_NET_ETH_WAN`, `TAB_NET_ETH_LAN`, `TAB_NET_VLAN`, `TAB_NET_SYSLOG`,
 De quebra, a UI do aparelho escapa só a **primeira** aspa simples de cada valor
 (`.replace(/'/,"''")`, sem a flag `g`) — um nome como `D'Avila's` corromperia o
 comando. O adapter escapa todas.
+
+**Reinício pós-config depende do firmware (2026-08-28, tarde):** gravar e
+notificar **não** põe a conta SIP em vigor — o aparelho fica preso na sessão
+anterior, registrado com a credencial antiga. No fw 4.3 o `notify.cgi` nem
+derruba a conta quando ela é desativada: a pilha SIP simplesmente não reage a
+ele. E o endpoint que resolve **muda com a versão**, então conhecer só um deixa
+metade do parque parado:
+
+| Firmware | Endpoint | Efeito |
+|---|---|---|
+| 5.0.x | `restart_control_call.cgi` | reinicia só a pilha de chamadas; registro volta em ~2 s, sem reboot |
+| 4.3.x | **404** — só existe `restart.cgi` | reinicia o aparelho inteiro, ~45 s fora do ar |
+
+O adapter tenta o leve e cai no pesado no 404. Onde há reinício parcial o
+aparelho **não** é rebootado. Medido nos dois firmwares, o 4.3.41 em aparelho de
+campo.
 
 **O que falta:** nenhuma *device action* homologada. O `normalize` (volume no
 máximo + DND desligado) não entra sem prova — o DND é claro
