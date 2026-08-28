@@ -2,6 +2,43 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.10.1] — 2026-08-28
+
+### Fixed
+- **A tela Config padrão do Configurador não carregava — desde a v2.8.0.** Um
+  `await` dentro de uma função não `async` (`collectFKs`), colado no lugar errado
+  ao trazer a hora herdada do servidor (#45), é `SyntaxError`: o navegador
+  **descarta o módulo inteiro** e nenhum handler é registrado. Os sintomas não
+  pareciam sintaxe — *"ao clonar o ambiente vem tudo zerado"* (o `reload()` nunca
+  rodava para preencher os campos) e *"ao salvar não redireciona, preciso sair e
+  entrar de novo"* (o clique do Salvar nunca era ligado — ele não salvava nada).
+  A chamada voltou para o fim do `reload()`, onde sempre pertenceu.
+- **Nada no pipeline olhava para o JavaScript**, e é por isso que o erro
+  sobreviveu a três releases: `ruff` e `mypy` só veem Python, e os testes
+  exercitam a API, nunca a página. Agora todo módulo servido passa pelo parse do
+  `node` (o mesmo motor do navegador) em `tests/unit/web/test_static_js_syntax.py`,
+  e o CI ganhou o passo *Setup Node* para o teste nunca ser pulado lá.
+- **Intelbras TIP 125i ficava preso na sessão SIP anterior.** Gravar a config e
+  notificar não refaz o registro: o aparelho seguia com a credencial antiga. E o
+  caminho intuitivo não resolve — desativar a conta derruba o registro em 1 s,
+  mas religar **não** o traz de volta. Quem religa é o
+  `restart_control_call.cgi` (o mesmo que a interface do telefone usa), agora
+  chamado ao fim de toda aplicação. Ele normalmente **não responde** — reinicia a
+  pilha que está servindo a própria request —, então o timeout ali é o caminho
+  feliz e não uma falha.
+- **TIP 125i: `;` em qualquer valor quebrava a aplicação com o diagnóstico
+  errado.** O CGI do aparelho separa os statements por `;` antes do SQL, então um
+  `;` dentro de aspas parte o comando e o telefone responde **401** — que seria
+  lido como "credencial recusada", mandando o pipeline tentar a outra senha e
+  reportar um problema de autenticação inexistente. Valor com `;` ou caractere de
+  controle agora é recusado **com o nome do campo**, em vez de limpado em
+  silêncio: numa senha SIP, trocar o caractere sem avisar deixaria o ramal sem
+  registrar e ninguém entenderia por quê.
+- **TIP 125i: `affected: 0` passava por sucesso.** O contador conta linhas que
+  casaram com o `WHERE` (gravar o mesmo valor ainda devolve 1), então 0 é sempre
+  erro real — conta SIP fora do alcance do aparelho, ou um `nova_web_user` que
+  não existe nele: a senha web "trocava" sem trocar.
+
 ## [2.10.0] — 2026-08-28
 
 ### Added
