@@ -2,7 +2,7 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
-## [Não publicado]
+## [2.10.0] — 2026-08-28
 
 ### Added
 - **Intelbras TIP 125i no Configurador de Ramais** — sexto modelo e **terceira
