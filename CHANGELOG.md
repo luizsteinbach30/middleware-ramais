@@ -2,6 +2,35 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.10.0] — 2026-08-28
+
+### Added
+- **Intelbras TIP 125i no Configurador de Ramais** — sexto modelo e **terceira
+  plataforma Intelbras**, sem nada em comum com a V-series (RapidLogic) nem com
+  a linha S (GoAhead). Homologado ao vivo (fw 5.0.2): fingerprint, discover,
+  geração, envio, backup e restauração conferidos contra o aparelho, que voltou
+  ao estado original ao fim do teste.
+  - O firmware **expõe o próprio banco**: a web UI monta SQL no navegador,
+    codifica em Base64 e chama `GET /db.cgi?<base64>` (LuaSQL/SQLite);
+    `notify.cgi?tables=…` é o "aplicar". Não há API por trás — o SQL é a API.
+    Auth é HTTP Basic simples, sem login, sessão nem token CSRF.
+  - Provisiona conta SIP (1 ou 2), hora (NTP + fuso), idioma do display,
+    bloqueio de teclado, teclas programáveis e senha do admin web.
+  - ⚠️ **Três armadilhas silenciosas, todas medidas na bancada e cobertas por
+    teste:** (1) qualquer sobra depois do `;` final — nova linha, espaço,
+    comentário `--` — faz o aparelho responder **HTTP 200 com corpo vazio** sem
+    executar nada, então **corpo vazio agora é erro explícito** (senão a linha
+    seria marcada como aplicada sem o telefone ter recebido nada); (2) Base64
+    cru com `+`/`/` na query devolve **401**, e o sintoma não tem relação com a
+    causa — mandamos percent-encodado; (3) `SYSTimeTimeZone` **não** é o offset
+    puro: -180 é *Newfoundland* e Brasília é **-181**.
+  - A whitelist "nunca tocar em rede" fica mais forte nesta plataforma: o
+    `UPDATE` só toca as colunas que escrevemos (sem replay), e o SQL gerado
+    ainda é re-parseado, abortando em qualquer verbo que não seja `UPDATE` ou
+    par `tabela.coluna` fora da lista.
+  - Sem *device actions* por ora: o `normalize` depende do volume máximo, que
+    esta plataforma não expõe em tela web e não foi confirmado em hardware.
+
 ## [2.9.5] — 2026-08-25
 
 ### Added

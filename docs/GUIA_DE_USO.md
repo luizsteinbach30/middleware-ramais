@@ -173,8 +173,8 @@ Provisiona telefones SIP em massa pela interface web dos próprios aparelhos.
 Sem fingerprint/discover automático — **o modelo cadastrado no ambiente é a
 fonte da verdade** — e **nunca** mexe em configuração de rede do aparelho.
 
-Modelos suportados: HTEK (UC9xx), Intelbras (V-series e S3002), FlyingVoice P10 e
-Yealink T31G.
+Modelos suportados: HTEK (UC9xx), Intelbras (V-series, S3002 e TIP 125i),
+FlyingVoice P10 e Yealink T31G.
 
 ### 5.1 Ambientes (`/extension-configurator/environments`)
 Cada **ambiente** agrupa telefones do mesmo modelo com uma **configuração
