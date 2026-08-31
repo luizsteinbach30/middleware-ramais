@@ -460,7 +460,10 @@ $('#ec-bak-confirm').addEventListener('click', async () => {
   }
 });
 
-// --- Importar ambiente (.mwrenv cifrado) ---
+// --- Importar ambiente(s) (.mwrenv ou .mwrbak cifrado) ------------------------
+// Os dois formatos que ESTA tela exporta entram de volta por aqui, e sempre
+// criando ambiente NOVO (nunca sobrescreve). Atualizar o que já existe, item a
+// item, continua sendo Sistema → Backup, que compara antes de aplicar.
 const importModal = $('#ec-import-modal');
 function openImportModal() {
   $('#ec-import-file').value = '';
@@ -478,15 +481,8 @@ $('#ec-import-confirm').addEventListener('click', async () => {
   const file = $('#ec-import-file').files[0];
   const passphrase = $('#ec-import-pass').value;
   const nome = $('#ec-import-nome').value.trim();
-  if (!file) { toast.error('Selecione um arquivo .mwrenv'); return; }
+  if (!file) { toast.error('Selecione um arquivo .mwrenv ou .mwrbak'); return; }
   if (!passphrase) { toast.error('Informe a passphrase'); return; }
-  // Pacote de backup entra por outro caminho: lá o operador vê a comparação e
-  // decide cada conflito. Aqui, esta tela só sabe criar ambiente novo — melhor
-  // apontar o caminho certo do que falhar com "schema não suportado".
-  if (file.name.toLowerCase().endsWith('.mwrbak')) {
-    toast.error('Arquivo de backup (.mwrbak): importe em Sistema → Backup, que mostra o que muda antes de aplicar');
-    return;
-  }
   const btn = $('#ec-import-confirm');
   btn.disabled = true;
   try {
@@ -495,7 +491,10 @@ $('#ec-import-confirm').addEventListener('click', async () => {
       method: 'POST', body: { passphrase, blob, nome: nome || undefined },
     });
     closeImportModal();
-    toast.success(`Ambiente "${r.nome}" importado (${r.linhas} linha(s))`);
+    const criados = r.ambientes || [r];
+    toast.success(criados.length === 1
+      ? `Ambiente "${criados[0].nome}" importado (${criados[0].linhas} linha(s))`
+      : `${criados.length} ambientes importados (${criados.reduce((s, a) => s + a.linhas, 0)} linhas)`);
     await load();
   } catch (err) {
     toast.error('Falha ao importar: ' + err.message);
