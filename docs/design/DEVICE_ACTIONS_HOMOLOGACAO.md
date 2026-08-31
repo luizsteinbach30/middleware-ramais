@@ -23,9 +23,11 @@ O que não fechou os 5 pontos ficou como "não suportado" (fora da capability).
 | HTEK UC902G        | ✅ (volume + DND) | — | `hl_provision` parcial (P-codes) | **sim, sempre** |
 | Intelbras V3501/V5501 | ✅ (volume + DND + campainha) | — | Action URI `DNDOff` + `sysConf` parcial | não |
 | Intelbras S3002    | ❌        | —      | sem unidade em lab para homologar | —      |
+| Intelbras TIP 125i | ✅ (volume + DND) | — | `UPDATE` no banco (`db.cgi`) + `notify.cgi` | não |
 
-Cobertura: **4 dos 5 adapters** do sistema (HTEK, Yealink, FlyingVoice e
-Intelbras V-series). Só o S3002 segue pendente, por falta de hardware.
+Cobertura: **5 dos 6 adapters** do sistema (HTEK, Yealink, FlyingVoice,
+Intelbras V-series e Intelbras TIP 125i). Só o S3002 segue pendente, por
+falta de hardware.
 
 `set_ip` está no catálogo (`vendors/base.py`) com guard de confirmação na
 API/UI, mas **nenhum vendor homologou** até agora.
@@ -165,6 +167,57 @@ sequência esgotam o aparelho — espere entre elas.
   aparelho na rede: o caminho provável é achar o form de preferências/áudio
   e replicar o padrão `/goform/Save*` já usado no adapter.
 
+### Intelbras TIP 125i (linha TIP / platwip) — `UPDATE` + `notify`
+
+Homologado em **2026-08-31**, contra um aparelho de campo em **fw 4.3.17**
+(`192.168.0.220`) — não a bancada 5.0.2 do adapter original, o que também
+confirma o mecanismo na versão que o parque roda.
+
+**O achado que destravou:** nesta plataforma a **tecla física escreve no
+banco**. Medido, com o dono no aparelho:
+
+| Ação no telefone | Efeito no banco |
+|---|---|
+| DND ligado pela tecla | `TAB_SERVICE_CODE.DND` = 1 nas **quatro** contas (0..3) |
+| campainha abaixada pela tecla | `CurVolumeRing` 10 → **0** |
+
+Ou seja, aqui o banco **é** o estado de runtime — o oposto do V-series, onde o
+DND da tecla não aparece na config e exige o Action URI `DNDOff`. Por isso o
+normalize do TIP é só `UPDATE` + `notify.cgi`, sem segunda camada.
+
+**A premissa anterior estava errada.** O adapter dizia que a plataforma "não tem
+tela web de volume" e que o máximo seria chute. A tela existe: fieldset
+*Controle de Ganho* em `views/system/phone.html`, e ela **declara a escala** nos
+próprios `<select>`:
+
+| Campo | Escala |
+|---|---|
+| `CurVolumeHandPhone` / `CurVolMicHandPhone` | 1..10 |
+| `CurVolumeHeadPhone` / `CurVolMicHeadPhone` | 1..10 |
+| `CurVolumeSpeaker` / `CurVolMicSpeaker` | 1..10 (só `tip125`/`tip425`) |
+| `CurVolumeRing` | **0**..10 (0 = mudo) |
+
+Procurar por "volume" no `app.js` não acha nada — os campos só existem no HTML
+da view; o `app.js` os carrega pelo schema (`schemaPhoneSoftCurrentConfig`). Foi
+o que fez a primeira leitura concluir que a tela não existia.
+
+- **Mecanismo:** um `db.cgi` com dois statements
+  (`UPDATE TAB_SOFT_CURRENTCONFIG SET CurVolume* = 10 WHERE PK = 1;` +
+  `UPDATE TAB_SERVICE_CODE SET DND = 0;`), depois
+  `notify.cgi?tables=tab_soft_currentConfig,TAB_SERVICE_CODE` — os mesmos nomes
+  que a web UI envia (a primeira em camelCase, como no `app.js`).
+- **Microfones (`CurVolMic*`) não são tocados**, mesma regra do V-series: é
+  ganho de entrada, e forçá-lo ao máximo tende a gerar eco.
+- **DND sem `WHERE Account`**: a tecla liga nas quatro contas, então zerar só a
+  provisionada deixaria o telefone mudo nas outras.
+- **Sem reboot.** O `notify` basta para o volume e o DND — diferente do
+  `send_config`, que precisa do reinício para a conta SIP entrar em vigor. No
+  fw 4.3.x isso importa muito: lá o único reinício disponível é o do aparelho
+  inteiro (~1 min fora do ar), e o normalize é disparado com o telefone em uso.
+- **401 intermitente confirmado também no 4.3.17:** um `SELECT` de leitura
+  devolveu 401 com `admin/admin` correto e passou na repetição imediata. O
+  retry de `_executar_com_retry` cobre o normalize pelo mesmo caminho.
+
 ## Limitações gerais
 
 - **MUTE é estado de runtime** no FlyingVoice e no HTEK — não há controle
@@ -183,6 +236,7 @@ sequência esgotam o aparelho — espere entre elas.
 | HTEK UC902G        | 172.16.250.131   |
 | Intelbras V3501    | 192.168.0.179    |
 | Yealink T31G       | 172.16.250.133   |
+| Intelbras TIP 125i | 192.168.0.220 (fw 4.3.17) |
 
 Senhas web: os ambientes que já aplicaram `nova_web_password` deixam de
 aceitar `admin/admin` (ex.: o UC902G de lab está em `w0rk151234`). O

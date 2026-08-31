@@ -66,11 +66,14 @@ Pegadinha do fuso (SYSTimeTimeZone):
   explicitamente, e o fallback (offset cru) so vale para os offsets sem
   ambiguidade. Lista lida de `timeZones` no app.js do proprio aparelho.
 
-Device actions: nenhuma homologada ainda. O `normalize` (volume no maximo + DND
-  desligado) nao entra sem prova: o DND e claro (TAB_SERVICE_CODE.DND), mas o
-  volume vive em TAB_SOFT_CURRENTCONFIG e essa plataforma NAO tem tela web de
-  volume — o valor maximo nao foi confirmado em hardware. Fica para a proxima
-  bancada em vez de virar chute.
+Device actions: `normalize` homologado em 2026-08-31 (fw 4.3.17, ver
+  `execute_action`). A versao anterior desta nota dizia que a plataforma "nao
+  tem tela web de volume" e por isso o maximo seria chute — estava errado: a
+  tela existe (fieldset "Controle de Ganho" em `views/system/phone.html`) e
+  declara a escala nos proprios `<select>`, 1..10 para os volumes e 0..10 para
+  a campainha. Procurar por "volume" no `app.js` nao acha nada porque os campos
+  so aparecem no HTML da view; o `app.js` os carrega pelo schema
+  (`schemaPhoneSoftCurrentConfig`).
 """
 
 from __future__ import annotations
@@ -79,14 +82,17 @@ import asyncio
 import base64
 import json
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
 from middleware_monitor.core.logging import get_logger
 
 from .base import (
+    ACTION_NORMALIZE,
+    ActionResult,
     DiscoveryResult,
+    VendorActionUnsupported,
     VendorAdapter,
     VendorAuthError,
     VendorCredentials,
@@ -133,6 +139,13 @@ _WHITELIST: frozenset[str] = frozenset({
     "TAB_SOFTKEY.Number",
     # Senha do admin web (TAB_SECURITY_ACCOUNT).
     "TAB_SECURITY_ACCOUNT.SECPassword",
+    # Device action `normalize` (ver `execute_action`). Volumes de RECEPCAO —
+    # os de microfone (`CurVolMic*`) ficam de fora de proposito.
+    "TAB_SOFT_CURRENTCONFIG.CurVolumeHandPhone",
+    "TAB_SOFT_CURRENTCONFIG.CurVolumeHeadPhone",
+    "TAB_SOFT_CURRENTCONFIG.CurVolumeSpeaker",
+    "TAB_SOFT_CURRENTCONFIG.CurVolumeRing",
+    "TAB_SERVICE_CODE.DND",
 })
 
 # Tabelas que o `notify.cgi` precisa conhecer depois do UPDATE, na ordem em que
@@ -780,3 +793,76 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
         except Exception as exc:  # backup e best-effort: nao derruba a aplicacao
             log.warning("tip125i: backup falhou", ip=ip, erro=str(exc))
             return None
+
+    # ------------------------------------------------------------ device actions
+    # `normalize` — homologado ao vivo em 2026-08-31 (TIP 125i, fw 4.3.17, o
+    # firmware do parque). O problema real e o operador que abaixa o volume ou
+    # liga o DND pela tecla e depois reclama que "o telefone nao toca".
+    #
+    # A descoberta que destravou: nesta plataforma **a tecla fisica escreve no
+    # banco**. Medido — o dono ligou o DND na tecla e `TAB_SERVICE_CODE.DND`
+    # virou 1 nas QUATRO contas; ele baixou a campainha e `CurVolumeRing` foi de
+    # 10 a 0. Ou seja, aqui o banco E o estado de runtime, e por isso o
+    # `normalize` e so `UPDATE` + `notify` — sem a segunda camada que a V-series
+    # precisa (la o DND da tecla e runtime puro e o Action URI `DNDOff` e que
+    # resolve; ver `intelbras.py`).
+    #
+    # Escala 1..10 (campainha 0..10), lida dos `<select>` do fieldset "Controle
+    # de Ganho" em `views/system/phone.html` do proprio aparelho — a mesma fonte
+    # que ensinou a plataforma inteira.
+    #
+    # Volumes de MICROFONE (`CurVolMic*`) NAO sao tocados, mesma regra do
+    # V-series: e ganho de entrada, e forca-lo ao maximo tende a gerar eco.
+    #
+    # O DND e zerado em TODAS as contas (sem `WHERE Account`): a tecla liga nas
+    # quatro, entao desligar so a provisionada deixaria o telefone mudo nas
+    # outras. Nao ha reinicio aqui — nem o parcial nem o reboot: o `notify`
+    # basta, e no fw 4.3.x reiniciar custaria ~1 min de telefone fora do ar por
+    # uma acao que o operador dispara com o aparelho em uso.
+    _VOLUME_MAX = 10
+    _NORMALIZE_VOLUME_FIELDS: ClassVar[tuple[str, ...]] = (
+        "CurVolumeHandPhone",  # recepcao do monofone
+        "CurVolumeHeadPhone",  # recepcao do headset
+        "CurVolumeSpeaker",    # recepcao do viva-voz
+        "CurVolumeRing",       # campainha (unico que aceita 0 = mudo)
+    )
+    # `TAB_SOFT_CURRENTCONFIG` tem uma linha so (PK=1) — o WHERE mantem o padrao
+    # do adapter e faz `affected: 0` denunciar a linha ausente.
+    _SOFT_CURRENTCONFIG_PK = 1
+    # A web UI notifica esta tabela com o nome em camelCase (`tab_soft_currentConfig`
+    # no app.js), diferente do nome real no `sqlite_master`. Mandamos igual a ela.
+    _NORMALIZE_NOTIFY_TABLES: ClassVar[tuple[str, ...]] = (
+        "tab_soft_currentConfig",
+        "TAB_SERVICE_CODE",
+    )
+
+    def capabilities(self) -> frozenset[str]:
+        return frozenset({ACTION_NORMALIZE})
+
+    async def execute_action(
+        self, ip: str, creds: VendorCredentials, action: str, params: dict[str, Any],
+    ) -> ActionResult:
+        if action != ACTION_NORMALIZE:
+            raise VendorActionUnsupported(f"TIP 125i: acao {action!r} nao suportada")
+        volumes = ", ".join(
+            f"{campo} = {self._VOLUME_MAX}" for campo in self._NORMALIZE_VOLUME_FIELDS
+        )
+        sql = (
+            f"UPDATE TAB_SOFT_CURRENTCONFIG SET {volumes} "
+            f"WHERE PK = {self._SOFT_CURRENTCONFIG_PK};\n"
+            f"UPDATE TAB_SERVICE_CODE SET DND = 0;"
+        )
+        self._assert_whitelist(sql)
+        async with self._client(ip, creds) as client:
+            resp = await self._executar_com_retry(client, sql, ip)
+            self._raise_for_db_error(resp, ip)
+            await client.get(
+                self._NOTIFY, params={"tables": ",".join(self._NORMALIZE_NOTIFY_TABLES)},
+            )
+        log.info("tip125i: normalize aplicado", ip=ip, volume=self._VOLUME_MAX)
+        return ActionResult(
+            ok=True,
+            detail=f"volumes de recepção e campainha em {self._VOLUME_MAX} (máximo) "
+                   f"e DND desligado nas contas",
+            rebooted=False,
+        )

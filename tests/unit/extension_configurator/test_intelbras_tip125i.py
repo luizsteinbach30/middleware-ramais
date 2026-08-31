@@ -701,3 +701,144 @@ def test_modelo_sem_tecla_programavel_nao_oferece_teclas() -> None:
     # Os outros fabricantes seguem com teclas e sem hotline.
     htek = softkey_catalog_for("HTEK UC912")
     assert htek["softkeys"] is True and htek["hotline"] is False
+
+
+# --------------------------------------------------------------- device action
+# `normalize` — homologado ao vivo em 2026-08-31 (fw 4.3.17, aparelho de campo).
+# O que a bancada provou e estes testes travam: nesta plataforma a TECLA FISICA
+# escreve no banco (DND na tecla -> DND=1 nas 4 contas; volume na tecla ->
+# CurVolumeRing 10 -> 0), entao UPDATE + notify bastam. Nao ha camada de runtime
+# separada como no V-series, e NAO se reinicia o aparelho.
+
+
+def _mock_normalize(router: respx.Router, visto: list[httpx.Request]) -> None:
+    router.get(f"https://{IP}/db.cgi").mock(
+        side_effect=lambda r: (
+            visto.append(r),
+            httpx.Response(200, text='[{"affected":1},{"affected":4}]'),
+        )[1],
+    )
+    router.get(f"https://{IP}/notify.cgi").mock(
+        side_effect=lambda r: (visto.append(r), httpx.Response(200))[1],
+    )
+
+
+def _sql_da_request(req: httpx.Request) -> str:
+    payload = urllib.parse.unquote(req.url.query.decode().rsplit("=", 1)[0])
+    return base64.b64decode(payload).decode()
+
+
+def test_normalize_esta_nas_capabilities() -> None:
+    assert IntelbrasTIP125iAdapter().capabilities() == frozenset({"normalize"})
+
+
+@pytest.mark.asyncio
+async def test_normalize_poe_volume_no_maximo_e_desliga_dnd() -> None:
+    """Escala 1..10 (campainha 0..10), lida dos `<select>` de views/system/phone.html."""
+    a = IntelbrasTIP125iAdapter()
+    visto: list[httpx.Request] = []
+    with respx.mock(assert_all_called=False) as router:
+        _mock_normalize(router, visto)
+        res = await a.execute_action(IP, CREDS, "normalize", {})
+
+    sql = _sql_da_request(visto[0])
+    for campo in ("CurVolumeHandPhone", "CurVolumeHeadPhone", "CurVolumeSpeaker", "CurVolumeRing"):
+        assert f"{campo} = 10" in sql, sql
+    assert "UPDATE TAB_SERVICE_CODE SET DND = 0;" in sql
+    assert res.ok and not res.rebooted
+
+
+@pytest.mark.asyncio
+async def test_normalize_nao_toca_no_ganho_do_microfone() -> None:
+    """`CurVolMic*` e ganho de ENTRADA: no maximo gera eco (mesma regra do V-series)."""
+    visto: list[httpx.Request] = []
+    with respx.mock(assert_all_called=False) as router:
+        _mock_normalize(router, visto)
+        await IntelbrasTIP125iAdapter().execute_action(IP, CREDS, "normalize", {})
+
+    assert "CurVolMic" not in _sql_da_request(visto[0])
+
+
+@pytest.mark.asyncio
+async def test_normalize_zera_o_dnd_de_todas_as_contas() -> None:
+    """A tecla liga o DND nas 4 contas (medido); zerar so a provisionada deixaria
+    o telefone mudo nas outras."""
+    visto: list[httpx.Request] = []
+    with respx.mock(assert_all_called=False) as router:
+        _mock_normalize(router, visto)
+        await IntelbrasTIP125iAdapter().execute_action(IP, CREDS, "normalize", {})
+
+    sql = _sql_da_request(visto[0])
+    dnd = next(linha for linha in sql.splitlines() if "DND" in linha)
+    assert "WHERE" not in dnd.upper(), f"o DND nao pode ser por conta: {dnd!r}"
+
+
+@pytest.mark.asyncio
+async def test_normalize_notifica_as_duas_tabelas_como_a_web_ui() -> None:
+    """A UI do aparelho notifica `tab_soft_currentConfig` (camelCase) e TAB_SERVICE_CODE."""
+    visto: list[httpx.Request] = []
+    with respx.mock(assert_all_called=False) as router:
+        _mock_normalize(router, visto)
+        await IntelbrasTIP125iAdapter().execute_action(IP, CREDS, "normalize", {})
+
+    notify = next(r for r in visto if r.url.path == "/notify.cgi")
+    tables = urllib.parse.parse_qs(notify.url.query.decode())["tables"][0]
+    assert tables == "tab_soft_currentConfig,TAB_SERVICE_CODE"
+
+
+@pytest.mark.asyncio
+async def test_normalize_nao_reinicia_o_aparelho() -> None:
+    """No fw 4.3.x o unico reinicio e o reboot completo (~1 min fora do ar). O
+    operador dispara o normalize com o telefone EM USO — e o notify basta."""
+    visto: list[httpx.Request] = []
+    with respx.mock(assert_all_called=False) as router:
+        _mock_normalize(router, visto)
+        restart_call = router.post(f"https://{IP}/restart_control_call.cgi").mock(
+            return_value=httpx.Response(200),
+        )
+        restart_sys = router.post(f"https://{IP}/restart.cgi").mock(
+            return_value=httpx.Response(200),
+        )
+        res = await IntelbrasTIP125iAdapter().execute_action(IP, CREDS, "normalize", {})
+
+    assert not restart_call.called and not restart_sys.called
+    assert res.rebooted is False
+
+
+@pytest.mark.asyncio
+async def test_normalize_termina_exatamente_no_ponto_e_virgula() -> None:
+    """Sobra depois do `;` final = HTTP 200 com corpo vazio e nada aplicado."""
+    visto: list[httpx.Request] = []
+    with respx.mock(assert_all_called=False) as router:
+        _mock_normalize(router, visto)
+        await IntelbrasTIP125iAdapter().execute_action(IP, CREDS, "normalize", {})
+
+    sql = _sql_da_request(visto[0])
+    assert sql.endswith(";") and not sql.endswith("\n")
+
+
+@pytest.mark.asyncio
+async def test_normalize_corpo_vazio_nao_passa_por_sucesso() -> None:
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"https://{IP}/db.cgi").mock(return_value=httpx.Response(200, text=""))
+        router.get(f"https://{IP}/notify.cgi").mock(return_value=httpx.Response(200))
+        with pytest.raises(RuntimeError, match="descartado"):
+            await IntelbrasTIP125iAdapter().execute_action(IP, CREDS, "normalize", {})
+
+
+@pytest.mark.asyncio
+async def test_normalize_401_vira_auth_error_para_a_chain() -> None:
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"https://{IP}/db.cgi").mock(return_value=httpx.Response(401))
+        with pytest.raises(VendorAuthError):
+            await IntelbrasTIP125iAdapter().execute_action(IP, CREDS, "normalize", {})
+
+
+@pytest.mark.asyncio
+async def test_acao_fora_do_catalogo_e_recusada() -> None:
+    from middleware_monitor.integrations.extension_configurator.vendors.base import (
+        VendorActionUnsupported,
+    )
+
+    with pytest.raises(VendorActionUnsupported):
+        await IntelbrasTIP125iAdapter().execute_action(IP, CREDS, "set_ip", {"ip": "10.0.0.9"})
