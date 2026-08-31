@@ -63,6 +63,13 @@ def default_config_padrao() -> dict[str, Any]:
         "keylock_password": "123",
         "keylock_enable": 2,
         "keylock_timeout": 30,
+        # Hotline (linha direta): ao tirar do gancho o telefone disca sozinho.
+        # É o substituto da tecla de atalho nos modelos SEM teclas programáveis
+        # — caso do Intelbras TIP 125i. `hotline_time` é a espera em segundos
+        # antes de discar (0 = imediato); o firmware do TIP aceita 0 a 7.
+        "hotline_enable": 0,
+        "hotline_number": "",
+        "hotline_time": 0,
         "function_keys": [
             {
                 "key": "LineKey2",

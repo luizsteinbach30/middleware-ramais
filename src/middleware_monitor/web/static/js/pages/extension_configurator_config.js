@@ -15,12 +15,18 @@ if (ambienteNovo) {
 
 const FIELDS_STR = [
   'web_user', 'web_password', 'nova_web_user', 'nova_web_password',
-  'menu_password', 'keylock_password',
+  'menu_password', 'keylock_password', 'hotline_number',
   // Hora: o valor só é usado quando o modo correspondente é "proprio".
   'timezone_mode', 'timezone', 'ntp_mode', 'ntp_server',
 ];
-const FIELDS_INT = ['register_expiration', 'keylock_enable', 'keylock_timeout', 'sip_account'];
+const FIELDS_INT = [
+  'register_expiration', 'keylock_enable', 'keylock_timeout', 'sip_account',
+  // Hotline: 0..7 s de espera antes de discar (o firmware do TIP só aceita essa faixa).
+  'hotline_time',
+];
 const FIELDS_BOOL = ['validar_conectividade', 'verificar_registro_sip'];
+// `hotline_number` é texto; `hotline_enable` é checkbox mas vai ao backend como
+// 0/1, porque é assim que o campo existe no aparelho — ver collectHotline().
 
 // Slots e tipos de tecla são populados por fabricante (catálogo do backend) em
 // reload(). Estes são só fallback até o catálogo carregar.
@@ -102,8 +108,6 @@ function fkRow(fk) {
 }
 
 function collectFKs() {
-  await pintarHora(cfg);
-
   const list = $('#ec-fk-list');
   return Array.from(list.querySelectorAll('.ec-fk-row')).map(row => {
     const o = {};
@@ -155,6 +159,11 @@ async function reload() {
     if (Array.isArray(cat.key_slots) && cat.key_slots.length) LINEKEYS = cat.key_slots;
     if (Array.isArray(cat.types) && cat.types.length) TIPOS_FUNCAO = cat.types.map((t) => [t.value, t.label]);
     // Gating do seletor de conta: só habilita "Conta 2" onde o fabricante está confirmado.
+    // Modelo sem tecla programável (TIP 125i): esconde a seção inteira em vez
+    // de oferecer configuração que não faria nada no aparelho; e mostra a
+    // hotline, que é o que cumpre o papel do atalho nele.
+    $('#ec-section-fk')?.classList.toggle('hidden', cat.softkeys === false);
+    $('#ec-section-hotline')?.classList.toggle('hidden', !cat.hotline);
     const accounts = Array.isArray(cat.accounts) && cat.accounts.length ? cat.accounts : [1];
     const opt2 = document.querySelector('#cfg-sip_account option[value="2"]');
     const hint = $('#cfg-sip_account-hint');
@@ -169,10 +178,19 @@ async function reload() {
   FIELDS_INT.forEach((k) => { const el = $('#cfg-' + k); if (el) el.value = String(cfg[k] ?? ''); });
   FIELDS_BOOL.forEach((k) => { const el = $('#cfg-' + k); if (el) el.checked = !!cfg[k]; });
 
+  const hotlineOn = $('#cfg-hotline_enable');
+  if (hotlineOn) hotlineOn.checked = Number(cfg.hotline_enable) === 1;
+  pintarHotline();
+
   const list = $('#ec-fk-list');
   list.innerHTML = '';
   const fks = Array.isArray(cfg.function_keys) ? cfg.function_keys : [];
   (fks.length ? fks : [defaultFK()]).forEach((fk) => list.appendChild(fkRow(fk)));
+
+  // Por último: `pintarHora` lê os selects de modo já preenchidos acima e vai à
+  // rede buscar o fuso/NTP herdados. É aqui que ela pertence — `cfg` só existe
+  // neste escopo.
+  await pintarHora(cfg);
 }
 
 // ── hora ────────────────────────────────────────────────────────────────────
@@ -238,6 +256,8 @@ async function save() {
   FIELDS_INT.forEach((k) => { body.config_padrao[k] = parseInt($('#cfg-' + k).value || '0', 10); });
   FIELDS_BOOL.forEach((k) => { body.config_padrao[k] = $('#cfg-' + k).checked; });
   body.config_padrao.function_keys = collectFKs();
+  // No aparelho a hotline é 0/1, não booleano — mandamos no formato do campo.
+  body.config_padrao.hotline_enable = $('#cfg-hotline_enable')?.checked ? 1 : 0;
   try {
     await api(`/api/extension-configurator/environments/${encodeURIComponent(envId)}`, {
       method: 'PUT', body,
@@ -267,6 +287,17 @@ function collectHora() {
     ntp_server: $('#cfg-ntp_mode')?.value === 'proprio' ? $('#cfg-ntp_server')?.value : '',
   };
 }
+
+// Espelha a tela do próprio telefone: com a hotline desligada, número e tempo
+// ficam inertes — evita o operador preencher achando que vale alguma coisa.
+function pintarHotline() {
+  const on = $('#cfg-hotline_enable')?.checked;
+  const num = $('#cfg-hotline_number');
+  const tempo = $('#cfg-hotline_time');
+  if (num) num.disabled = !on;
+  if (tempo) tempo.disabled = !on;
+}
+$('#cfg-hotline_enable')?.addEventListener('change', pintarHotline);
 
 $('#ec-save').addEventListener('click', save);
 $('#ec-fk-add').addEventListener('click', () => {

@@ -1202,6 +1202,7 @@ function attachActionsMenu(container) {
 async function runNormalizeOnLine(lineId, ip, ramal) {
   if (!ip) { toast.info('Linha sem IP — nada a normalizar.'); return; }
   if (!confirm(`Normalizar o telefone ${ip} (ramal ${ramal || '—'})?\nVolume no máximo + DND desligado.`)) return;
+  stopMonitor();  // mesmo motivo do "Aplicar": vendor que reinicia deixaria o ping vermelho à toa
   try {
     const r = await api(
       `/api/extension-configurator/environments/${encodeURIComponent(envId)}/lines/${encodeURIComponent(lineId)}/actions/normalize`,
@@ -1297,6 +1298,10 @@ async function normalizeAll() {
     (isHtek ? '\n\nAtenção: telefones HTEK reiniciam ao receber a normalização.' : '')
   );
   if (!ok) return;
+  // Mesmo motivo do "Aplicar" (ver `apply`): vendor que reinicia ao normalizar
+  // (HTEK sempre; FlyingVoice ao mexer no DND) derrubaria a bolinha de todo
+  // mundo, e o round de ping ainda concorre com as 5 aplicações em paralelo.
+  stopMonitor();
   const btn = $('#ec-normalize');
   btn.disabled = true;
   try {

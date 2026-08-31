@@ -112,10 +112,33 @@ _REPLACEABLE: frozenset[str] = frozenset(
 _DEFAULT_SIDE: dict[str, str] = {"users": "atual"}
 SIDES: tuple[str, ...] = ("atual", "arquivo")
 
+# Escopo de cada secao dentro do pacote (campo `scope`, gravado no export).
+#   "full"      a secao e o retrato COMPLETO daquele grupo no sistema de origem
+#   "selection" a secao leva so parte dos itens (a tela de Ambientes exporta uma
+#               selecao) — nesse caso o que falta no arquivo NAO significa "foi
+#               removido", e o modo `replace` nao pode apagar nada.
+SCOPE_FULL = "full"
+SCOPE_SELECTION = "selection"
+
 _LINE_FIELDS = (
     "ip", "numero_ramal", "user_auth", "senha_sip",
     "servidor_sip", "numero_abreviado", "nome_visivel",
 )
+# Estado da aplicacao. Sem estes campos o ambiente importado nasce inteiro como
+# "pendente", mesmo quando os telefones ja estao provisionados — e o operador
+# reaplica dezenas de ramais a toa. Sao auto-corretivos: `compute_statuses`
+# recalcula o hash da config e, se algo mudou no destino, a linha aparece como
+# `outdated` sozinha. Ficam FORA da comparacao (ver `_comparavel`): dois
+# sistemas que aplicaram o mesmo ambiente em horarios diferentes nao estao em
+# conflito de configuracao.
+LINE_STATE_FIELDS = (
+    "ultimo_hash_aplicado", "ultimo_status", "ultima_aplicacao",
+    "ultimo_erro", "ultimo_modelo", "ultimo_mac",
+)
+# O que NAO entra na comparacao de uma linha: o historico acima e o `id`, que e
+# identificador interno — duas instalacoes com a mesma planilha tem ids
+# diferentes e nao ha nada para o operador decidir sobre isso.
+_LINE_VOLATILE: frozenset[str] = frozenset({*LINE_STATE_FIELDS, "id"})
 # Teto de itens detalhados por grupo na resposta do diff. Com 1930 devices, uma
 # lista completa de conflitos seria impossivel de ler e cara de trafegar; o
 # resto se resolve pela decisao em massa do grupo.
@@ -246,6 +269,20 @@ def _build_config(db: DBSession) -> dict[str, Any]:
     return {"app_config": linhas, "uscall_servers": servidores, "mqtt_brokers": brokers}
 
 
+def _serial(valor: Any) -> Any:
+    """`datetime` vira texto ISO — o pacote e JSON."""
+    return valor.isoformat() if isinstance(valor, datetime) else valor
+
+
+def estado_da_linha(linha: Any) -> dict[str, Any]:
+    """Historico de aplicacao de uma linha, pronto para entrar no arquivo.
+
+    Usado pelo pacote (`.mwrbak`) e pelo export de um ambiente (`.mwrenv`) — os
+    dois precisam levar o estado, senao o destino mostra tudo como pendente.
+    """
+    return {campo: _serial(getattr(linha, campo)) for campo in LINE_STATE_FIELDS}
+
+
 def _build_environments(
     db: DBSession, apenas: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
@@ -260,7 +297,11 @@ def _build_environments(
             "modelo_telefone": env.modelo_telefone,
             "config_padrao": ec_repo.merged_config_padrao(env),
             "lines": [
-                {f: getattr(ln, f) for f in _LINE_FIELDS} | {"posicao": ln.posicao}
+                {f: getattr(ln, f) for f in _LINE_FIELDS}
+                # O id viaja junto para o reimport reconhecer a MESMA linha
+                # (`save_lines` faz upsert por id) em vez de recriar tudo.
+                | {"id": ln.id, "posicao": ln.posicao}
+                | {f: _serial(getattr(ln, f)) for f in LINE_STATE_FIELDS}
                 for ln in linhas
             ],
         })
@@ -309,19 +350,31 @@ def build(
     perdeu no caminho não virar export do sistema inteiro sem querer.
     """
     corpo: dict[str, Any] = {}
+    escopo: dict[str, str] = {}
     if "config" in sections:
         corpo["config"] = _build_config(db)
+        escopo["config"] = SCOPE_FULL
     if "environments" in sections:
         corpo["environments"] = _build_environments(db, environment_ids)
+        # Exportar uma SELECAO nao e o retrato do sistema: sem esta marca, o
+        # `replace` do destino leria os ambientes que faltam como "removidos" e
+        # os apagaria — foi o que aconteceu em 2026-08-31, com 4 ambientes e o
+        # historico de aplicacao deles perdidos por um export de 2.
+        escopo["environments"] = (
+            SCOPE_SELECTION if environment_ids is not None else SCOPE_FULL
+        )
     if "users" in sections:
         corpo["users"] = _build_users(db)
+        escopo["users"] = SCOPE_FULL
     if "devices" in sections:
         corpo["devices"] = _build_devices(db)
+        escopo["devices"] = SCOPE_FULL
     return {
         "format": FORMAT,
         "schema_version": SCHEMA_VERSION,
         "generated_at": _now().isoformat(timespec="seconds"),
         "app_version": __version__,
+        "scope": escopo,
         "sections": corpo,
     }
 
@@ -418,6 +471,29 @@ def _indexar(secoes: dict[str, Any], grupo: str) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _comparavel(grupo: str, item: dict[str, Any]) -> dict[str, Any]:
+    """Item sem os campos que nao dizem respeito à CONFIGURAÇÃO.
+
+    O historico de aplicacao (`ultimo_status`, `ultima_aplicacao`, ...) viaja no
+    pacote para o destino nao mostrar tudo como pendente, mas nao pode virar
+    conflito: dois sistemas que aplicaram o mesmo ambiente em horarios
+    diferentes tem a mesma configuracao. Sem isto, todo ambiente ja aplicado
+    apareceria como "em conflito" e pediria uma decisao que nao existe.
+    """
+    if grupo != "environments":
+        return item
+    linhas = item.get("lines")
+    if not isinstance(linhas, list):
+        return item
+    return item | {
+        "lines": [
+            {k: v for k, v in ln.items() if k not in _LINE_VOLATILE}
+            if isinstance(ln, dict) else ln
+            for ln in linhas
+        ],
+    }
+
+
 def _fmt(valor: Any) -> str:
     if valor is None or valor == "":
         return "(vazio)"
@@ -451,7 +527,11 @@ def _resumo_linhas(atual: list[Any], arquivo: list[Any]) -> dict[str, Any] | Non
         for i, ln in enumerate(linhas):
             if not isinstance(ln, dict):
                 continue
-            out[str(ln.get("numero_ramal") or f"#{i + 1}")] = ln
+            # Mesma regra de `_comparavel`: historico e id nao sao diferenca de
+            # configuracao, e apareceriam como "N linha(s) diferente(s)".
+            out[str(ln.get("numero_ramal") or f"#{i + 1}")] = {
+                k: v for k, v in ln.items() if k not in _LINE_VOLATILE
+            }
         return out
 
     ia, ib = indexar(atual), indexar(arquivo)
@@ -529,6 +609,29 @@ def _rotulo(grupo: str, item: dict[str, Any], ident: str) -> str:
     return ident
 
 
+def pode_remover(data: dict[str, Any], grupo: str) -> bool:
+    """O `replace` pode apagar os itens deste grupo que so existem no banco?
+
+    So quando o pacote AFIRMA que a secao e o retrato completo do grupo na
+    origem (`scope[secao] == "full"`). Duas situacoes dizem que nao:
+
+    * **selecao** — a tela de Ambientes exporta os ambientes marcados. O que
+      nao esta no arquivo simplesmente nao foi escolhido; ler isso como
+      "removido" apaga o trabalho de outra pessoa. Foi o que aconteceu em
+      2026-08-31: um export de 2 ambientes apagou os outros 4, com o historico
+      de aplicacao junto.
+    * **pacote sem `scope`** — gerado por uma versao anterior a esta, que nao
+      registrava escopo nenhum. Como nao da para distinguir depois um export
+      completo de um parcial, o desempate e nao apagar: um `replace` que deixa
+      de remover se conserta com dois cliques, e um que remove demais nao se
+      desfaz. Para substituir de verdade, reexporte o pacote nesta versao.
+    """
+    escopo = data.get("scope")
+    if not isinstance(escopo, dict):
+        return False
+    return escopo.get(GROUP_SECTION[grupo]) == SCOPE_FULL
+
+
 def diff(
     db: DBSession, data: dict[str, Any], sections: tuple[str, ...] = SECTIONS,
 ) -> dict[str, Any]:
@@ -554,7 +657,7 @@ def diff(
             existente = do_banco.get(ident)
             if existente is None:
                 novos.append({"id": ident, "label": _rotulo(grupo, item, ident)})
-            elif existente == item:
+            elif _comparavel(grupo, existente) == _comparavel(grupo, item):
                 identicos += 1
             else:
                 conflitos.append({
@@ -572,7 +675,10 @@ def diff(
             "label": GROUP_LABEL[grupo],
             "section": GROUP_SECTION[grupo],
             "default_side": _DEFAULT_SIDE.get(grupo, "arquivo"),
-            "removable": grupo in _REPLACEABLE,
+            "removable": grupo in _REPLACEABLE and pode_remover(data, grupo),
+            # Por que os ausentes NAO serao apagados, para a tela dizer ao
+            # operador em vez de simplesmente nao remover nada.
+            "scope": (data.get("scope") or {}).get(GROUP_SECTION[grupo], ""),
             "identicos": identicos,
             "novos": novos[:_MAX_DETALHES],
             "novos_total": len(novos),
@@ -687,9 +793,45 @@ def _aplicar_ambiente(db: DBSession, item: dict[str, Any]) -> None:
         ec_repo.update_environment(db, env, config_padrao=cfg)
     linhas = [ln for ln in (item.get("lines") or []) if isinstance(ln, dict)]
     linhas.sort(key=lambda ln: int(ln.get("posicao") or 0))
-    ec_repo.save_lines(
-        db, env, [{f: str(ln.get(f, "") or "") for f in _LINE_FIELDS} for ln in linhas],
-    )
+    salvas = ec_repo.save_lines(db, env, [
+        {f: str(ln.get(f, "") or "") for f in _LINE_FIELDS}
+        | ({"id": str(ln["id"])} if ln.get("id") else {})
+        for ln in linhas
+    ])
+    restaurar_estado(salvas, linhas)
+
+
+def restaurar_estado(salvas: list[Any], do_arquivo: list[dict[str, Any]]) -> None:
+    """Devolve o histórico de aplicação às linhas gravadas.
+
+    `save_lines` só conhece os campos da planilha — uma linha criada por ele
+    nasce sem `ultimo_status`, e a tela mostra o ambiente inteiro como
+    *pendente* mesmo quando os telefones já estão provisionados (relatado em
+    2026-08-31, no import de dois ambientes já aplicados).
+
+    O casamento é por posição: `save_lines` devolve as linhas na ordem em que as
+    recebeu, que é a ordem do arquivo já ordenada por `posicao`. Pacote sem os
+    campos de estado (versão anterior) simplesmente não mexe em nada.
+    """
+    for linha, origem in zip(salvas, do_arquivo, strict=False):
+        for campo in LINE_STATE_FIELDS:
+            if campo not in origem:
+                continue
+            valor = origem.get(campo)
+            if campo == "ultima_aplicacao":
+                valor = _parse_dt(valor)
+            setattr(linha, campo, valor or None)
+
+
+def _parse_dt(valor: Any) -> datetime | None:
+    if isinstance(valor, datetime):
+        return valor
+    if not isinstance(valor, str) or not valor.strip():
+        return None
+    try:
+        return datetime.fromisoformat(valor)
+    except ValueError:
+        return None
 
 
 def _aplicar_usuario(db: DBSession, item: dict[str, Any]) -> None:
@@ -781,8 +923,9 @@ def apply(
     segue a decisao do operador (``{"<grupo>:<id>": "atual"|"arquivo"}``); sem
     decisao vale o padrao do grupo — ``arquivo``, menos em ``users``.
 
-    ``mode="replace"`` acrescenta uma coisa so: apaga, nos grupos que aceitam,
-    o que existe no banco e nao existe no arquivo.
+    ``mode="replace"`` acrescenta uma coisa so: apaga, nos grupos que aceitam
+    **e cuja secao o pacote declara completa** (ver `pode_remover`), o que
+    existe no banco e nao existe no arquivo. Pacote de selecao nunca apaga.
     """
     if mode not in MODES:
         raise BundleError(f"modo invalido: {mode!r}")
@@ -797,23 +940,35 @@ def apply(
             do_arquivo = _indexar(secoes_arquivo, grupo)
             do_banco = _indexar(atual, grupo)
             padrao = escolhas.get(grupo, _DEFAULT_SIDE.get(grupo, "arquivo"))
-            contagem = {
+            contagem: dict[str, Any] = {
                 "novos": 0, "atualizados": 0, "identicos": 0,
                 "mantidos": 0, "removidos": 0,
             }
+            # Pedido de replace que nao pode remover: o relatorio diz quantos
+            # itens foram preservados e por que, em vez de silenciar.
+            if mode == "replace" and grupo in _REPLACEABLE and not pode_remover(data, grupo):
+                ausentes = [i for i in _indexar(atual, grupo) if i not in do_arquivo]
+                if ausentes:
+                    contagem["preservados"] = len(ausentes)
+                    contagem["motivo_preservacao"] = (
+                        "selecao"
+                        if (data.get("scope") or {}).get(GROUP_SECTION[grupo])
+                        == SCOPE_SELECTION
+                        else "pacote_sem_escopo"
+                    )
             for ident, item in do_arquivo.items():
                 existente = do_banco.get(ident)
                 if existente is None:
                     _aplicar(db, grupo, item, user_id)
                     contagem["novos"] += 1
-                elif existente == item:
+                elif _comparavel(grupo, existente) == _comparavel(grupo, item):
                     contagem["identicos"] += 1
                 elif escolhas.get(f"{grupo}:{ident}", padrao) == "atual":
                     contagem["mantidos"] += 1
                 else:
                     _aplicar(db, grupo, item, user_id)
                     contagem["atualizados"] += 1
-            if mode == "replace" and grupo in _REPLACEABLE:
+            if mode == "replace" and grupo in _REPLACEABLE and pode_remover(data, grupo):
                 for ident in [i for i in do_banco if i not in do_arquivo]:
                     _remover(db, grupo, ident)
                     contagem["removidos"] += 1

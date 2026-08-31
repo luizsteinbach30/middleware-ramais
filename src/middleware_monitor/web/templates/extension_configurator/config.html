@@ -145,7 +145,36 @@
     </div>
   </div>
 
-  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
+  <div id="ec-section-hotline" class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3 hidden">
+    <div class="flex items-center justify-between">
+      <h3 class="text-sm font-semibold text-gray-100">Hotline (linha direta)</h3>
+      <label class="flex items-center gap-2 text-xs">
+        <input id="cfg-hotline_enable" type="checkbox"
+               class="rounded bg-gray-900 ring-1 ring-inset ring-gray-700"/>
+        <span class="text-gray-200">Habilitar</span>
+      </label>
+    </div>
+    <p class="text-xs text-gray-500">Ao tirar o telefone do gancho, ele disca sozinho o número abaixo. É o que substitui a tecla de atalho nos modelos sem teclas programáveis.</p>
+    <div class="grid md:grid-cols-2 gap-3 text-xs">
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Número da hotline</span>
+        <input id="cfg-hotline_number" maxlength="50" placeholder="ex.: 9000"
+               class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100 font-mono"/>
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-gray-300">Tempo até discar</span>
+        <select id="cfg-hotline_time" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100">
+          <option value="0">Imediato (0 s)</option>
+          <option value="1">1 s</option><option value="2">2 s</option><option value="3">3 s</option>
+          <option value="4">4 s</option><option value="5">5 s</option><option value="6">6 s</option>
+          <option value="7">7 s</option>
+        </select>
+        <span class="text-[10px] text-gray-500">Com espera, dá tempo de discar outro número antes de a hotline chamar.</span>
+      </label>
+    </div>
+  </div>
+
+  <div id="ec-section-fk" class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-3">
     <div class="flex items-center justify-between">
       <h3 class="text-sm font-semibold text-gray-100" id="ec-fk-legend">Function Keys (teclas programáveis)</h3>
       <button id="ec-fk-add" type="button" class="text-xs text-blue-400 hover:text-blue-300">+ adicionar tecla</button>

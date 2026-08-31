@@ -40,6 +40,7 @@ from middleware_monitor.core.models import (
     User,
 )
 from middleware_monitor.core.time import iso_utc
+from middleware_monitor.domain.backup import bundle as bundle_mod
 from middleware_monitor.domain.extension_configurator import (
     action_state,
     run_state,
@@ -433,7 +434,11 @@ def export_environment(
             "config_padrao": repo.merged_config_padrao(env),
         },
         "lines": [
-            {f: getattr(ln, f) for f in _EXPORT_LINE_FIELDS} for ln in lines
+            {f: getattr(ln, f) for f in _EXPORT_LINE_FIELDS}
+            # Histórico de aplicação: sem ele o ambiente importado nasce inteiro
+            # como "pendente" e o operador reaplica ramal já provisionado.
+            | bundle_mod.estado_da_linha(ln)
+            for ln in lines
         ],
     }
     blob = encrypt_export(json.dumps(data, ensure_ascii=False).encode("utf-8"), payload.passphrase)
@@ -445,6 +450,46 @@ def export_environment(
     )
 
 
+def _ambientes_do_arquivo(data: object) -> list[dict[str, Any]]:
+    """Ambientes contidos no arquivo, nos DOIS formatos que esta tela produz.
+
+    A tela de Ambientes exporta um ambiente como ``.mwrenv`` e uma seleção de
+    vários como ``.mwrbak`` (o mesmo pacote portável de Sistema → Backup, com a
+    seção ``environments``). Ela precisa reimportar os dois: recusar o
+    ``.mwrbak`` fazia a própria tela gerar um arquivo que ela não abre — foi o
+    que o dono encontrou ao exportar dois ambientes e tentar trazê-los de volta.
+
+    A diferença de papel continua: **aqui só se cria ambiente novo**. Quem quer
+    atualizar o que já existe, decidindo item a item, vai a Sistema → Backup,
+    que compara antes de aplicar. Por isso o pacote entra por este caminho sem
+    as outras seções: config, usuários e devices são ignorados de propósito.
+    """
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="conteudo_invalido")
+
+    # .mwrbak — pacote portável (pode trazer N ambientes).
+    if data.get("format") == bundle_mod.FORMAT:
+        try:
+            pacote = bundle_mod.parse(json.dumps(data).encode("utf-8"))
+        except bundle_mod.BundleError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        ambientes = pacote["sections"].get("environments")
+        if not isinstance(ambientes, list) or not ambientes:
+            raise HTTPException(
+                status_code=400,
+                detail="o pacote não tem ambientes (só as outras seções)",
+            )
+        return [a for a in ambientes if isinstance(a, dict)]
+
+    # .mwrenv — um ambiente só.
+    if data.get("schema_version") != _EXPORT_SCHEMA_VERSION:
+        raise HTTPException(status_code=400, detail="schema_nao_suportado")
+    envd = data.get("environment")
+    if not isinstance(envd, dict):
+        raise HTTPException(status_code=400, detail="ambiente_incompleto")
+    return [{**envd, "lines": data.get("lines") or []}]
+
+
 @router.post(
     "/environments/import",
     dependencies=[Depends(require_csrf), Depends(require_admin)],
@@ -454,7 +499,10 @@ def import_environment(
     _user: User = Depends(get_current_user),
     db: DBSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """Importa um ambiente de um arquivo cifrado, criando um NOVO ambiente.
+    """Importa ambientes de um arquivo cifrado, criando NOVOS ambientes.
+
+    Aceita o `.mwrenv` (um ambiente) e o `.mwrbak` (seleção de vários) — os dois
+    arquivos que esta mesma tela exporta.
 
     Não sobrescreve nada: em colisão de nome, gera um slug novo
     (``create_environment``). As senhas decifradas vão para o banco como hoje,
@@ -470,27 +518,49 @@ def import_environment(
     except json.JSONDecodeError as exc:
         raise HTTPException(status_code=400, detail="conteudo_invalido") from exc
 
-    if not isinstance(data, dict) or data.get("schema_version") != _EXPORT_SCHEMA_VERSION:
-        raise HTTPException(status_code=400, detail="schema_nao_suportado")
-    envd = data.get("environment") or {}
-    nome = (payload.nome or envd.get("nome") or "").strip()
-    modelo = str(envd.get("modelo_telefone") or "").strip()
-    if not nome or not modelo:
-        raise HTTPException(status_code=400, detail="ambiente_incompleto")
+    ambientes = _ambientes_do_arquivo(data)
+    # Renomear na importação só faz sentido com UM ambiente no arquivo; com
+    # vários, cada um mantém o próprio nome (renomear todos para o mesmo valor
+    # criaria "Nome", "Nome (2)"... sem dizer qual é qual).
+    renomear = (payload.nome or "").strip() if len(ambientes) == 1 else ""
 
-    new_env = repo.create_environment(db, nome=nome, modelo_telefone=modelo)
-    cfg = envd.get("config_padrao")
-    if isinstance(cfg, dict):
-        repo.update_environment(db, new_env, config_padrao=cfg)
-    rows = [
-        {f: str(ln.get(f, "") or "") for f in _EXPORT_LINE_FIELDS}
-        for ln in (data.get("lines") or [])
-        if isinstance(ln, dict)
-    ]
-    repo.save_lines(db, new_env, rows)
+    criados: list[dict[str, Any]] = []
+    for envd in ambientes:
+        nome = (renomear or str(envd.get("nome") or "")).strip()
+        modelo = str(envd.get("modelo_telefone") or "").strip()
+        if not nome or not modelo:
+            raise HTTPException(status_code=400, detail="ambiente_incompleto")
+
+        new_env = repo.create_environment(db, nome=nome, modelo_telefone=modelo)
+        cfg = envd.get("config_padrao")
+        if isinstance(cfg, dict):
+            repo.update_environment(db, new_env, config_padrao=cfg)
+        do_arquivo = [ln for ln in (envd.get("lines") or []) if isinstance(ln, dict)]
+        do_arquivo.sort(key=lambda ln: int(ln.get("posicao") or 0))
+        rows = [
+            {f: str(ln.get(f, "") or "") for f in _EXPORT_LINE_FIELDS}
+            for ln in do_arquivo
+        ]
+        salvas = repo.save_lines(db, new_env, rows)
+        # O ambiente é novo (id próprio), mas os telefones podem já estar
+        # provisionados: o estado da aplicação vem junto para a tela não mostrar
+        # tudo como pendente. `compute_statuses` corrige sozinho se a config
+        # daqui for outra (a linha aparece como desatualizada).
+        bundle_mod.restaurar_estado(salvas, do_arquivo)
+        criados.append({"id": new_env.id, "nome": new_env.nome, "linhas": len(rows)})
+
+    # Uma transação só: um arquivo com dois ambientes não pode gravar o primeiro
+    # e falhar no segundo, deixando metade importada.
     db.commit()
-    log.info("ec_environment_imported", env_id=new_env.id, lines=len(rows))
-    return {"id": new_env.id, "nome": new_env.nome, "linhas": len(rows)}
+    log.info(
+        "ec_environment_imported",
+        ambientes=len(criados),
+        env_ids=[c["id"] for c in criados],
+        lines=sum(c["linhas"] for c in criados),
+    )
+    # Formato de resposta compatível com o de antes (um ambiente = os mesmos
+    # campos no topo), mais a lista para o caso de vários.
+    return {**criados[0], "ambientes": criados}
 
 
 @router.get("/environments")

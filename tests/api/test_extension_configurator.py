@@ -516,3 +516,162 @@ def test_apply_environment_sem_linhas_devolve_total_zero(client, db) -> None:
     body = r.json()
     assert body["total"] == 0
     assert len(body["run_id"]) == 12
+
+
+def test_importa_o_mwrbak_que_a_propria_tela_exporta(client, db) -> None:
+    """Exportar 2 ambientes na tela de Ambientes e reimportar ali mesmo.
+
+    Relato do dono (2026-08-31): *"a função importar dentro da tela de ambientes
+    não funciona com o arquivo personalizado, eu exportei apenas dois ambientes
+    e ao tentar importar de novo dá erro"* — a tela exportava um `.mwrbak` que
+    ela própria recusava, mandando o operador para Sistema → Backup. Aqui ela
+    cria ambientes NOVOS (a semântica desta tela); atualizar o que já existe
+    segue sendo Sistema → Backup, que compara antes de aplicar.
+    """
+    csrf = _authed(client, db)
+    for nome in ("Loja 142", "Loja 150"):
+        client.post(
+            "/api/extension-configurator/environments",
+            json={"nome": nome, "modelo_telefone": "Intelbras TIP 125i"},
+            headers={"X-CSRF-Token": csrf},
+        )
+    client.put(
+        "/api/extension-configurator/environments/loja-142/lines",
+        json={"linhas": [
+            {"ip": "10.0.0.10", "numero_ramal": "1001", "senha_sip": "Segred0#1"},
+            {"ip": "10.0.0.11", "numero_ramal": "1002", "senha_sip": "Segred0#2"},
+        ]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    client.put(
+        "/api/extension-configurator/environments/loja-150/lines",
+        json={"linhas": [{"ip": "10.0.1.10", "numero_ramal": "2001"}]},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    # o "Exportar selecionados" da tela de Ambientes = pacote portável (.mwrbak)
+    exp = client.post(
+        "/api/backup/export",
+        json={
+            "passphrase": "minha-frase",
+            "sections": ["environments"],
+            "environment_ids": ["loja-142", "loja-150"],
+        },
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert exp.status_code == 200, exp.text
+    blob = exp.text
+    assert "Segred0#1" not in blob  # cifrado
+
+    imp = client.post(
+        "/api/extension-configurator/environments/import",
+        json={"passphrase": "minha-frase", "blob": blob},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert imp.status_code == 200, imp.json()
+    criados = imp.json()["ambientes"]
+    assert len(criados) == 2
+    assert [c["linhas"] for c in criados] == [2, 1]
+    # nada foi sobrescrito: os originais continuam lá, os novos ganharam slug
+    assert {c["id"] for c in criados}.isdisjoint({"loja-142", "loja-150"})
+
+    detalhe = client.get(
+        f"/api/extension-configurator/environments/{criados[0]['id']}",
+    ).json()
+    assert detalhe["modelo_telefone"] == "Intelbras TIP 125i"
+    assert detalhe["linhas"][0]["senha_sip"] == "Segred0#1"
+
+
+def test_import_recusa_pacote_sem_ambientes(client, db) -> None:
+    """`.mwrbak` só com config/usuários não tem o que criar aqui — e dizer isso
+    é melhor que criar nada em silêncio e devolver sucesso."""
+    csrf = _authed(client, db)
+    exp = client.post(
+        "/api/backup/export",
+        json={"passphrase": "minha-frase", "sections": ["users"]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert exp.status_code == 200, exp.text
+    r = client.post(
+        "/api/extension-configurator/environments/import",
+        json={"passphrase": "minha-frase", "blob": exp.text},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 400
+    assert "ambiente" in r.json()["detail"].lower()
+
+
+def test_import_de_um_ambiente_segue_com_a_resposta_de_antes(client, db) -> None:
+    """O `.mwrenv` continua entrando pelo mesmo caminho, com os mesmos campos no
+    topo da resposta (a tela lê `nome`/`linhas` desde antes)."""
+    csrf = _authed(client, db)
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Unica", "modelo_telefone": "HTEK UC902G"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    client.put(
+        "/api/extension-configurator/environments/unica/lines",
+        json={"linhas": [{"ip": "10.0.2.10", "numero_ramal": "3001"}]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    exp = client.post(
+        "/api/extension-configurator/environments/unica/export",
+        json={"passphrase": "p"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    r = client.post(
+        "/api/extension-configurator/environments/import",
+        json={"passphrase": "p", "blob": exp.text, "nome": "Copia"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200, r.json()
+    assert r.json()["nome"] == "Copia" and r.json()["linhas"] == 1
+    assert len(r.json()["ambientes"]) == 1
+
+
+def test_ambiente_importado_nao_nasce_pendente_se_ja_estava_aplicado(
+    client, db,
+) -> None:
+    """Relato do dono (2026-08-31): *"não mostra se os ambientes já estavam
+    aplicados, os dois entraram como pendentes"*. O arquivo levava só os campos
+    de provisionamento, então o destino não tinha como saber que aqueles
+    telefones já estavam configurados — e o operador reaplicaria tudo à toa.
+    """
+    from middleware_monitor.core.models import ExtensionLine
+
+    csrf = _authed(client, db)
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Origem", "modelo_telefone": "Intelbras TIP 125i"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    client.put(
+        "/api/extension-configurator/environments/origem/lines",
+        json={"linhas": [{"ip": "10.0.3.10", "numero_ramal": "4001"}]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    linha = db.query(ExtensionLine).filter_by(environment_id="origem").one()
+    linha.ultimo_status = "ok"
+    linha.ultimo_hash_aplicado = "hash-da-config"
+    linha.ultimo_modelo = "TIP 125i"
+    db.commit()
+
+    exp = client.post(
+        "/api/extension-configurator/environments/origem/export",
+        json={"passphrase": "p"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    imp = client.post(
+        "/api/extension-configurator/environments/import",
+        json={"passphrase": "p", "blob": exp.text, "nome": "Destino"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert imp.status_code == 200, imp.json()
+
+    novo = client.get(
+        f"/api/extension-configurator/environments/{imp.json()['id']}",
+    ).json()["linhas"][0]
+    assert novo["ultimo_status"] == "ok"
+    assert novo["ultimo_hash_aplicado"] == "hash-da-config"
+    assert novo["status"] != "pending"

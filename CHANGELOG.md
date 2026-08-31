@@ -2,6 +2,156 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.11.0] — 2026-08-31
+
+Reúne o que ficou commitado e não publicado na 2.10.1 (as quatro correções que o
+uso real do TIP 125i derrubou) e o trabalho de 31/08. **Um dos itens é perda de
+dados** — ver *Import de pacote apagava ambientes*, abaixo.
+
+### Fixed
+
+- **Import de pacote APAGAVA ambientes que não estavam no arquivo.** O dono
+  exportou 2 ambientes pela tela de Ambientes e importou o `.mwrbak` em
+  Sistema → Backup no modo *Substituir*: os outros **4 ambientes** sumiram, com
+  73 ramais e o histórico de aplicação deles
+  (`backup_imported mode=replace identicos=2 removidos=4`). Um export de
+  **seleção** nunca foi o retrato do sistema — ali "não está no arquivo"
+  significa "não foi escolhido", jamais "foi removido" —, mas a informação
+  existia só no momento do export (`environment_ids`) e se perdia no arquivo.
+  Agora o pacote **declara o escopo** de cada seção
+  (`scope: {"environments": "full" | "selection"}`) e a remoção só acontece
+  quando a seção se diz completa. Pacote de seleção **nunca** apaga; pacote sem
+  `scope` (todos os gerados até esta versão) também não, porque depois não dá
+  para distinguir um export completo de um parcial — e um *replace* que deixa de
+  remover se conserta com dois cliques, enquanto um que remove demais não se
+  desfaz. O `diff` devolve `removable: false` **com o motivo**, a tela deixa de
+  prometer uma remoção que não vai ocorrer e o resultado diz quantos itens foram
+  preservados e por quê. O *replace* legítimo (pacote exportado completo em
+  Sistema → Backup) segue funcionando.
+  Os ambientes do incidente foram recuperados do WAL do SQLite — **sorte, não
+  processo**: o backup automático diário está ligado nessa instalação e nunca
+  havia rodado (§15.9 do REQUISITOS).
+- **Ambiente importado nascia inteiro como "pendente"**, mesmo com os telefones
+  já provisionados — e o operador reaplicaria dezenas de ramais à toa. O arquivo
+  levava só os campos de provisionamento; agora leva também o histórico de
+  aplicação (`ultimo_status`, `ultimo_hash_aplicado`, `ultima_aplicacao`, modelo
+  e MAC) e o `id` das linhas, nos dois formatos. Esses campos ficam **fora da
+  comparação**: dois sistemas que aplicaram o mesmo ambiente em horários
+  diferentes não estão em conflito de configuração. E é auto-corretivo — se a
+  config padrão do destino for outra, a linha aparece como desatualizada.
+- **Normalizar telefones não parava o monitor de ping.** O "Aplicar" desligava
+  (`stopMonitor()`, porque o aparelho reinicia e a bolinha ficaria vermelha à
+  toa), as duas entradas do normalizar — menu ⋮ da linha e botão em massa — não.
+  Além do vermelho falso (HTEK reinicia sempre; FlyingVoice reinicia ao mexer no
+  DND), o round de ping concorria com as até 5 aplicações em paralelo. Um teste
+  trava a chamada nas três funções que mexem no aparelho.
+- **A tela Config padrão do Configurador não carregava — desde a v2.8.0.** Um
+  `await` dentro de função não `async` (`collectFKs`) é `SyntaxError`: o
+  navegador **descarta o módulo inteiro** e nenhum handler é registrado. Os
+  sintomas não pareciam sintaxe — *"ao clonar o ambiente vem tudo zerado"* (o
+  `reload()` nunca rodava) e *"ao salvar não redireciona"* (o clique do Salvar
+  nunca era ligado). **Nada no pipeline olhava para o JavaScript**, e por isso o
+  erro sobreviveu a três releases: agora todo módulo servido passa pelo parse do
+  `node`, com o passo *Setup Node* no CI.
+- **TIP 125i: o endpoint que põe a conta SIP em vigor muda com o firmware.**
+  `restart_control_call.cgi` existe no fw **5.0.x** (reinicia só a pilha de
+  chamadas, registro volta em ~2 s); no fw **4.3.x** responde **404** e o único
+  caminho é `restart.cgi`, que reinicia o aparelho (~45 s fora do ar). O adapter
+  tenta o leve e cai no pesado. Conhecer só um deixava metade do parque parada.
+- **TIP 125i: 401 nem sempre é credencial.** Visto em campo com `admin`/`admin`
+  correto e o mesmo SQL passando segundos depois: o servidorzinho embarcado
+  recusa a request antes de chegar ao CGI. Como 401 vira `VendorAuthError`, isso
+  gastava a cadeia de credenciais e mandava o operador conferir uma senha que
+  estava certa. Agora repete antes de acreditar no 401 (medido também no 4.3.17,
+  onde um `SELECT` de leitura falhou e passou na repetição imediata).
+- **TIP 125i: `;` no valor** quebrava a aplicação com o diagnóstico errado (401
+  lido como credencial recusada) — valor com `;` ou caractere de controle agora
+  é recusado **com o nome do campo**, em vez de limpado em silêncio.
+- **TIP 125i: `affected: 0` passava por sucesso.** O contador conta linhas que
+  casaram com o `WHERE`, então 0 é sempre erro real — conta SIP fora do alcance
+  do aparelho, ou `nova_web_user` que não existe nele (a senha web "trocava" sem
+  trocar).
+
+### Added
+
+- **Device action `normalize` no Intelbras TIP 125i** — quinto adapter com a
+  ação homologada, e o primeiro validado no firmware **4.3.17**, o do parque
+  (aparelho `192.168.0.220`). O que destravou: **nesta plataforma a tecla física
+  escreve no banco** — DND ligado na tecla vira `TAB_SERVICE_CODE.DND = 1` nas
+  quatro contas, campainha abaixada vira `CurVolumeRing = 0`. O banco **é** o
+  estado de runtime, o oposto do V-series (onde o DND da tecla exige o Action
+  URI `DNDOff`), então o normalize é `UPDATE` + `notify.cgi`, **sem reinício** —
+  o que importa muito no 4.3.x, onde reiniciar custaria ~1 min de telefone fora
+  do ar numa ação disparada com o aparelho em uso.
+  A nota anterior do adapter dizia que a plataforma "não tem tela web de volume"
+  e que o máximo seria chute: **estava errada**. A tela existe (fieldset
+  *Controle de Ganho* em `views/system/phone.html`) e declara a escala nos
+  próprios `<select>` — **1..10** para os volumes, **0..10** para a campainha.
+  Procurar "volume" no `app.js` não acha nada porque os campos só existem no
+  HTML da view. Microfones (`CurVolMic*`) não são tocados, mesma regra do
+  V-series: é ganho de entrada e forçá-lo ao máximo tende a gerar eco.
+- **Hotline (linha direta) no TIP 125i**, na configuração padrão do ambiente. É
+  o que cumpre o papel do atalho neste modelo, que **não tem teclas
+  programáveis** — a `TAB_SOFTKEY` existe no firmware, mas o aparelho não tem as
+  teclas, e oferecê-las gerava configuração sem efeito nenhum. O catálogo passou
+  a declarar por fabricante o que existe (`softkeys`/`hotline`) e a UI se ajusta.
+  Faixas lidas da tela do próprio telefone: número obrigatório quando ligada
+  (≤50 caracteres), tempo de 0 a 7 s.
+- **A tela de Ambientes importa o `.mwrbak` que ela mesma exporta.** O "Exportar
+  selecionados" gera um pacote portável, e o "Importar" recusava esse arquivo
+  mandando o operador para outra tela — a tela produzia um arquivo que ela não
+  abria. Agora aceita `.mwrenv` (um ambiente) e `.mwrbak` (vários), criando
+  ambientes **novos** numa transação só, sem sobrescrever nada; pacote sem
+  ambientes é recusado com mensagem clara. Atualizar o que já existe, decidindo
+  item a item, segue em Sistema → Backup.
+
+## [2.10.1] — 2026-08-28 (não publicada — saiu na 2.11.0)
+
+### Fixed
+- **A tela Config padrão do Configurador não carregava — desde a v2.8.0.** Um
+  `await` dentro de uma função não `async` (`collectFKs`), colado no lugar errado
+  ao trazer a hora herdada do servidor (#45), é `SyntaxError`: o navegador
+  **descarta o módulo inteiro** e nenhum handler é registrado. Os sintomas não
+  pareciam sintaxe — *"ao clonar o ambiente vem tudo zerado"* (o `reload()` nunca
+  rodava para preencher os campos) e *"ao salvar não redireciona, preciso sair e
+  entrar de novo"* (o clique do Salvar nunca era ligado — ele não salvava nada).
+  A chamada voltou para o fim do `reload()`, onde sempre pertenceu.
+- **Nada no pipeline olhava para o JavaScript**, e é por isso que o erro
+  sobreviveu a três releases: `ruff` e `mypy` só veem Python, e os testes
+  exercitam a API, nunca a página. Agora todo módulo servido passa pelo parse do
+  `node` (o mesmo motor do navegador) em `tests/unit/web/test_static_js_syntax.py`,
+  e o CI ganhou o passo *Setup Node* para o teste nunca ser pulado lá.
+- **Intelbras TIP 125i ficava preso na sessão SIP anterior — e o endpoint que
+  resolve muda com o firmware.** Depois de gravar a config, o aparelho seguia
+  registrado com a credencial antiga; o `notify.cgi` não põe a conta em vigor
+  (no fw 4.3 ele nem sequer a derruba quando ela é desativada). O reinício certo
+  depende da versão, e escolher só um deixa metade do parque parado:
+  `restart_control_call.cgi` existe no **fw 5.0.x** e reinicia apenas a pilha de
+  chamadas (registro volta em ~2 s, sem reboot); no **fw 4.3.x** ele responde
+  **404** e o único caminho é `restart.cgi`, que reinicia o aparelho (~45 s fora
+  do ar). O adapter tenta o leve e cai no pesado. Medido nos dois firmwares, com
+  aparelho em campo: reboot detectado, telefone de volta e registrado em 44 s.
+- ~~**Intelbras TIP 125i ficava preso na sessão SIP anterior.**~~ Gravar a config e
+  notificar não refaz o registro: o aparelho seguia com a credencial antiga. E o
+  caminho intuitivo não resolve — desativar a conta derruba o registro em 1 s,
+  mas religar **não** o traz de volta. Quem religa é o
+  `restart_control_call.cgi` (o mesmo que a interface do telefone usa), agora
+  chamado ao fim de toda aplicação. Ele normalmente **não responde** — reinicia a
+  pilha que está servindo a própria request —, então o timeout ali é o caminho
+  feliz e não uma falha.
+- **TIP 125i: `;` em qualquer valor quebrava a aplicação com o diagnóstico
+  errado.** O CGI do aparelho separa os statements por `;` antes do SQL, então um
+  `;` dentro de aspas parte o comando e o telefone responde **401** — que seria
+  lido como "credencial recusada", mandando o pipeline tentar a outra senha e
+  reportar um problema de autenticação inexistente. Valor com `;` ou caractere de
+  controle agora é recusado **com o nome do campo**, em vez de limpado em
+  silêncio: numa senha SIP, trocar o caractere sem avisar deixaria o ramal sem
+  registrar e ninguém entenderia por quê.
+- **TIP 125i: `affected: 0` passava por sucesso.** O contador conta linhas que
+  casaram com o `WHERE` (gravar o mesmo valor ainda devolve 1), então 0 é sempre
+  erro real — conta SIP fora do alcance do aparelho, ou um `nova_web_user` que
+  não existe nele: a senha web "trocava" sem trocar.
+
 ## [2.10.0] — 2026-08-28
 
 ### Added

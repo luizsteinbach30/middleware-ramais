@@ -335,3 +335,84 @@ def test_secao_ausente_no_arquivo_nao_apaga_nada_em_replace(db: Session) -> None
 
     assert len(uscall_repo.list_servers(db)) == 1
     assert len(mqtt_repo.list_brokers(db)) == 1
+
+
+# ------------------------------------------------------- escopo do pacote
+# Incidente de 2026-08-31: o dono exportou 2 ambientes na tela de Ambientes e
+# importou o arquivo em Sistema → Backup no modo "substituir". Os outros 4
+# ambientes do sistema — com 73 ramais e o histórico de aplicação — foram
+# apagados, porque o `replace` leu "não está no arquivo" como "foi removido".
+# Um export de SELEÇÃO não é o retrato do sistema; agora o pacote diz o que é.
+
+
+def test_export_de_selecao_marca_a_secao_como_parcial(db: Session) -> None:
+    _povoar(db)
+    env = ec_repo.list_environments(db)[0]
+    parcial = bundle_mod.build(db, ("environments",), environment_ids=(env.id,))
+    completo = bundle_mod.build(db, ("environments",))
+    assert parcial["scope"]["environments"] == bundle_mod.SCOPE_SELECTION
+    assert completo["scope"]["environments"] == bundle_mod.SCOPE_FULL
+
+
+def test_replace_com_export_de_selecao_nao_apaga_os_outros_ambientes(
+    db: Session,
+) -> None:
+    """A reprodução do incidente: o pacote leva um ambiente, o sistema tem dois."""
+    _povoar(db)
+    escolhido = ec_repo.list_environments(db)[0]
+    pacote = bundle_mod.build(db, ("environments",), environment_ids=(escolhido.id,))
+    outro = ec_repo.create_environment(db, nome="Não exportado", modelo_telefone="HTEK UC912")
+    db.commit()
+
+    relatorio = bundle_mod.apply(db, pacote, sections=("environments",), mode="replace")
+
+    assert {e.id for e in ec_repo.list_environments(db)} == {escolhido.id, outro.id}
+    grupo = relatorio["applied"]["environments"]
+    assert grupo["removidos"] == 0
+    assert grupo["preservados"] == 1
+    assert grupo["motivo_preservacao"] == "selecao"
+
+
+def test_pacote_sem_escopo_nao_apaga(db: Session) -> None:
+    """Pacote de versão anterior não diz se é completo ou seleção. Sem saber, o
+    desempate é preservar: um replace que remove demais não se desfaz."""
+    _povoar(db)
+    pacote = bundle_mod.build(db, ("environments",))
+    del pacote["scope"]  # como vinham os pacotes até a v2.10.1
+    outro = ec_repo.create_environment(db, nome="Antigo", modelo_telefone="HTEK UC912")
+    db.commit()
+
+    relatorio = bundle_mod.apply(db, pacote, sections=("environments",), mode="replace")
+
+    assert outro.id in {e.id for e in ec_repo.list_environments(db)}
+    grupo = relatorio["applied"]["environments"]
+    assert grupo["removidos"] == 0
+    assert grupo["motivo_preservacao"] == "pacote_sem_escopo"
+
+
+def test_replace_de_pacote_completo_continua_removendo(db: Session) -> None:
+    """A função não morreu: export completo segue substituindo o sistema."""
+    _povoar(db)
+    pacote = bundle_mod.build(db, ("environments",))
+    ec_repo.create_environment(db, nome="Antigo", modelo_telefone="HTEK UC912")
+    db.commit()
+
+    relatorio = bundle_mod.apply(db, pacote, sections=("environments",), mode="replace")
+
+    assert [e.nome for e in ec_repo.list_environments(db)] == ["Loja 14"]
+    assert relatorio["applied"]["environments"]["removidos"] == 1
+
+
+def test_diff_nao_promete_remocao_que_o_import_nao_fara(db: Session) -> None:
+    """A tela lê `removable` para avisar o que será apagado — ele tem de contar a
+    mesma história que o `apply`, senão o aviso vira mentira nos dois sentidos."""
+    _povoar(db)
+    escolhido = ec_repo.list_environments(db)[0]
+    pacote = bundle_mod.build(db, ("environments",), environment_ids=(escolhido.id,))
+    ec_repo.create_environment(db, nome="Não exportado", modelo_telefone="HTEK UC912")
+    db.commit()
+
+    grupo = bundle_mod.diff(db, pacote, ("environments",))["groups"]["environments"]
+    assert grupo["ausentes_total"] == 1
+    assert grupo["removable"] is False
+    assert grupo["scope"] == bundle_mod.SCOPE_SELECTION

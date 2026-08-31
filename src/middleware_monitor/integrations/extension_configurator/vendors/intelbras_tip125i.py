@@ -66,26 +66,33 @@ Pegadinha do fuso (SYSTimeTimeZone):
   explicitamente, e o fallback (offset cru) so vale para os offsets sem
   ambiguidade. Lista lida de `timeZones` no app.js do proprio aparelho.
 
-Device actions: nenhuma homologada ainda. O `normalize` (volume no maximo + DND
-  desligado) nao entra sem prova: o DND e claro (TAB_SERVICE_CODE.DND), mas o
-  volume vive em TAB_SOFT_CURRENTCONFIG e essa plataforma NAO tem tela web de
-  volume — o valor maximo nao foi confirmado em hardware. Fica para a proxima
-  bancada em vez de virar chute.
+Device actions: `normalize` homologado em 2026-08-31 (fw 4.3.17, ver
+  `execute_action`). A versao anterior desta nota dizia que a plataforma "nao
+  tem tela web de volume" e por isso o maximo seria chute — estava errado: a
+  tela existe (fieldset "Controle de Ganho" em `views/system/phone.html`) e
+  declara a escala nos proprios `<select>`, 1..10 para os volumes e 0..10 para
+  a campainha. Procurar por "volume" no `app.js` nao acha nada porque os campos
+  so aparecem no HTML da view; o `app.js` os carrega pelo schema
+  (`schemaPhoneSoftCurrentConfig`).
 """
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import re
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
 from middleware_monitor.core.logging import get_logger
 
 from .base import (
+    ACTION_NORMALIZE,
+    ActionResult,
     DiscoveryResult,
+    VendorActionUnsupported,
     VendorAdapter,
     VendorAuthError,
     VendorCredentials,
@@ -118,19 +125,34 @@ _WHITELIST: frozenset[str] = frozenset({
     "TAB_SYSTEM_PHONE.SYSPhoneLanguage",
     "TAB_SYSTEM_PHONE.SYSPhonePin",
     "TAB_SYSTEM_PHONE.SYSPhoneLockPhone",
-    # Teclas programaveis (TAB_SOFTKEY).
+    # Hotline / linha direta (TAB_SERVICE_CODE). Substitui a tecla de atalho
+    # neste modelo, que NAO tem teclas programaveis.
+    "TAB_SERVICE_CODE.Hotline",
+    "TAB_SERVICE_CODE.HotlineNumber",
+    "TAB_SERVICE_CODE.HotlineTime",
+    # Teclas programaveis (TAB_SOFTKEY). A tabela existe no firmware (e comum a
+    # linha TIP), mas o 125i NAO tem essas teclas no aparelho — ver
+    # `_render_softkeys`, que so emite para quem configurou explicitamente.
     "TAB_SOFTKEY.Type",
     "TAB_SOFTKEY.Value",
     "TAB_SOFTKEY.Account",
     "TAB_SOFTKEY.Number",
     # Senha do admin web (TAB_SECURITY_ACCOUNT).
     "TAB_SECURITY_ACCOUNT.SECPassword",
+    # Device action `normalize` (ver `execute_action`). Volumes de RECEPCAO —
+    # os de microfone (`CurVolMic*`) ficam de fora de proposito.
+    "TAB_SOFT_CURRENTCONFIG.CurVolumeHandPhone",
+    "TAB_SOFT_CURRENTCONFIG.CurVolumeHeadPhone",
+    "TAB_SOFT_CURRENTCONFIG.CurVolumeSpeaker",
+    "TAB_SOFT_CURRENTCONFIG.CurVolumeRing",
+    "TAB_SERVICE_CODE.DND",
 })
 
 # Tabelas que o `notify.cgi` precisa conhecer depois do UPDATE, na ordem em que
 # a propria web UI as envia ao salvar uma conta.
 _NOTIFY_TABLES: tuple[str, ...] = (
     "TAB_VOIP_ACCOUNT",
+    "TAB_SERVICE_CODE",  # hotline vive aqui, e a UI do aparelho tambem notifica
     "TAB_TEL_ACCOUNT",
     "TAB_SYSTEM_TIME",
     "TAB_SYSTEM_PHONE",
@@ -207,15 +229,43 @@ _STATEMENT_RE = re.compile(
 _ASSIGN_RE = re.compile(r"(?P<col>\w+)\s*=")
 
 
-def _sql_str(value: Any) -> str:
+class TIP125iValorInvalido(ValueError):
+    """Valor que o firmware do TIP nao consegue receber (ver `_sql_str`)."""
+
+
+def _sql_str(value: Any, campo: str = "") -> str:
     """Literal SQL de texto, com a aspa simples escapada.
 
     A web UI do aparelho faz `.replace(/'/,"''")` — sem a flag `g`, ou seja, so
     escapa a PRIMEIRA aspa (bug do firmware que quebraria um nome como
     `D'Avila's`). Aqui escapamos todas. O `#` nao precisa de tratamento:
     comprovado em bancada que atravessa o db.cgi intacto.
+
+    Ja o `;` e uma quebra que NAO da para escapar: o CGI separa os statements
+    por `;` antes de entregar ao SQL, entao um `;` dentro de aspas parte o
+    comando ao meio. Medido em bancada: o aparelho responde **401** — a request
+    morre antes do CGI e o adapter leria "credencial recusada", mandando o
+    pipeline tentar a outra senha e reportar um problema de autenticacao que nao
+    existe. Caracteres de controle (nova linha, tab) sao o mesmo tipo de
+    problema: gravam sujeira e quebram o re-parse da whitelist.
+
+    Por isso o valor e RECUSADO, e nao silenciosamente limpado: numa senha SIP,
+    trocar o caractere sem avisar deixaria o ramal sem registrar e ninguem
+    entenderia por que. Falha cedo, com o nome do campo.
     """
-    return "'" + str(value if value is not None else "").replace("'", "''") + "'"
+    texto = str(value if value is not None else "")
+    if ";" in texto:
+        raise TIP125iValorInvalido(
+            f"TIP 125i: o campo {campo or 'de texto'} contém ';', que o firmware do "
+            f"aparelho não aceita (ele corta o comando nesse ponto). Remova o "
+            f"ponto-e-vírgula do valor.",
+        )
+    if any(c < " " or c == "\x7f" for c in texto):
+        raise TIP125iValorInvalido(
+            f"TIP 125i: o campo {campo or 'de texto'} tem caractere de controle "
+            f"(quebra de linha ou tab), que o firmware do aparelho não aceita.",
+        )
+    return "'" + texto.replace("'", "''") + "'"
 
 
 def _sql_int(value: Any, default: int = 0) -> int:
@@ -229,12 +279,27 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
     vendor_id = "intelbras_tip125i"
 
     _TIMEOUT = 8.0
+    # O restart do controle de chamadas costuma nao responder (ver
+    # `_restart_call_control`): timeout curto, para nao segurar o pipeline em
+    # massa por 8 s por telefone sem necessidade.
+    _RESTART_TIMEOUT = 3.0
+    # 401 neste firmware nem sempre e sobre credencial (ver `_executar_com_retry`).
+    _AUTH_RETRIES = 2
+    _AUTH_RETRY_DELAY_S = 1.5
     _BASE = "https://{ip}"
 
     _DB = "/db.cgi"
     _NOTIFY = "/notify.cgi"
     _STATUS = "/status.cgi"
     _BACKUP = "/backup.cgi"
+    # Reinicio pos-config. O endpoint MUDA com a versao do firmware, e a
+    # escolha errada faz o telefone ficar preso na sessao SIP anterior:
+    #   fw 5.0.x  -> /restart_control_call.cgi  reinicia SO a pilha de chamadas
+    #   fw 4.3.x  -> NAO existe (404); so ha /restart.cgi, que reinicia o
+    #                aparelho inteiro (~1 min fora do ar)
+    # Medido em bancada nos dois: 404 no 4.3.41, executa no 5.0.2.
+    _RESTART_CALL = "/restart_control_call.cgi"
+    _RESTART_SYSTEM = "/restart.cgi"
 
     # ------------------------------------------------------------------ HTTP
     @classmethod
@@ -335,13 +400,13 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
         linhas: list[str] = [
             "UPDATE TAB_VOIP_ACCOUNT SET "
             + ",".join([
-                f"PhoneNumber={_sql_str(conta_sip)}",
-                f"AuthUserName={_sql_str(row.get('auth_id') or conta_sip)}",
-                f"AuthPassword={_sql_str(row.get('senha_sip', ''))}",
-                f"CallerIDName={_sql_str(nome)}",
-                f"ServerAddress={_sql_str(servidor)}",
+                f"PhoneNumber={_sql_str(conta_sip, 'ramal')}",
+                f"AuthUserName={_sql_str(row.get('auth_id') or conta_sip, 'usuário de autenticação')}",
+                f"AuthPassword={_sql_str(row.get('senha_sip', ''), 'senha SIP')}",
+                f"CallerIDName={_sql_str(nome, 'nome visível')}",
+                f"ServerAddress={_sql_str(servidor, 'servidor SIP')}",
                 f"ServerPort={_sql_int(template.get('sip_port'), 5060)}",
-                f"Transport={_sql_str(transport)}",
+                f"Transport={_sql_str(transport, 'transporte')}",
                 f"SendRegister={active}",
                 f"RegisterTimer={_sql_int(template.get('register_expiration'), 30)}",
             ])
@@ -351,18 +416,19 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             + ",".join([
                 "SYSTimeManual=0",
                 f"SYSTimeEnableNTP={_NTP_ON}",
-                f"SYSTimeNTPFirstAddress={_sql_str(template.get('ntp_server', 'a.ntp.br'))}",
+                f"SYSTimeNTPFirstAddress={_sql_str(template.get('ntp_server', 'a.ntp.br'), 'servidor NTP')}",
                 f"SYSTimeTimeZone={self._timezone_id(template)}",
             ])
             + " WHERE PK = 1;",
             "UPDATE TAB_SYSTEM_PHONE SET "
             + ",".join([
-                f"SYSPhoneLanguage={_sql_str(self._lcd_language(template))}",
-                f"SYSPhonePin={_sql_str(pin)}",
+                f"SYSPhoneLanguage={_sql_str(self._lcd_language(template), 'idioma')}",
+                f"SYSPhonePin={_sql_str(pin, 'PIN de bloqueio')}",
                 f"SYSPhoneLockPhone={1 if _sql_int(template.get('keylock_enable'), 2) else 0}",
             ])
             + " WHERE PK = 1;",
         ]
+        linhas.extend(self._render_hotline(template, account))
         linhas.extend(self._render_softkeys(template.get("function_keys", []) or [], row, account))
         linhas.extend(self._render_web_admin(template))
 
@@ -394,6 +460,50 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
     def _lcd_language(template: dict[str, Any]) -> str:
         raw = str(template.get("lcd_language", "pt-BR") or "pt-BR").lower()
         return _LCD_LANGUAGES.get(raw, "pt_BR")
+
+    @staticmethod
+    def _render_hotline(template: dict[str, Any], account: int) -> list[str]:
+        """Hotline (linha direta) — `TAB_SERVICE_CODE`, por conta.
+
+        Este modelo **nao tem teclas programaveis**, entao a hotline e o que
+        cumpre o papel do atalho: ao tirar do gancho, o telefone disca sozinho o
+        numero configurado. Campos lidos da tela do proprio aparelho
+        (`views/account/redirect.html`):
+
+          Hotline        0/1   "Habilitar Hotline"
+          HotlineNumber  texto "Número de Hotline" (maxlength 50, obrigatorio
+                               quando habilitada)
+          HotlineTime    0..7  "Tempo de Hotline" — segundos de espera antes de
+                               discar; 0 disca assim que tira do gancho. O
+                               `<select>` do firmware so oferece 0 a 7, entao o
+                               valor e limitado a essa faixa.
+
+        Desligada, ainda emitimos `Hotline=0`: e o que desfaz uma hotline que
+        ficou ligada num aparelho reaproveitado. Mas so mexemos no numero e no
+        tempo quando ela esta ligada — desligada, o numero antigo fica no
+        aparelho sem efeito, e apaga-lo nao traria beneficio nenhum.
+        """
+        ligada = _sql_int(template.get("hotline_enable"), 0) == 1
+        if not ligada:
+            return [f"UPDATE TAB_SERVICE_CODE SET Hotline=0 WHERE Account = {account};"]
+
+        numero = str(template.get("hotline_number") or "").strip()
+        if not numero:
+            raise TIP125iValorInvalido(
+                "TIP 125i: a hotline está habilitada mas o número está vazio. "
+                "Informe o número da hotline na configuração padrão do ambiente "
+                "ou desligue a hotline.",
+            )
+        tempo = min(max(_sql_int(template.get("hotline_time"), 0), 0), 7)
+        return [
+            "UPDATE TAB_SERVICE_CODE SET "
+            + ",".join([
+                "Hotline=1",
+                f"HotlineNumber={_sql_str(numero, 'número da hotline')}",
+                f"HotlineTime={tempo}",
+            ])
+            + f" WHERE Account = {account};",
+        ]
 
     @classmethod
     def _render_softkeys(
@@ -437,7 +547,7 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             else:
                 acct = max(_sql_int(fk.get("account", 1), 1), 1) - 1
             out.append(
-                f"UPDATE TAB_SOFTKEY SET Type={tipo},Value={_sql_str(valor)},"
+                f"UPDATE TAB_SOFTKEY SET Type={tipo},Value={_sql_str(valor, 'valor da tecla')},"
                 f"Account={acct},Number='' WHERE PK = {pk};",
             )
         return out
@@ -455,8 +565,8 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             return []
         nova_user = str(template.get("nova_web_user", "") or "").strip() or "admin"
         return [
-            f"UPDATE TAB_SECURITY_ACCOUNT SET SECPassword={_sql_str(nova_pwd)} "
-            f"WHERE SECAccount = {_sql_str(nova_user)};",
+            f"UPDATE TAB_SECURITY_ACCOUNT SET SECPassword={_sql_str(nova_pwd, 'nova senha web')} "
+            f"WHERE SECAccount = {_sql_str(nova_user, 'novo usuário web')};",
         ]
 
     # -------------------------------------------------------------- whitelist
@@ -488,10 +598,23 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
     async def send_config(
         self, ip: str, creds: VendorCredentials, cfg: bytes, *, fmt: str = "sql",
     ) -> None:
-        """Executa o SQL no aparelho e AVISA o firmware (`notify.cgi`).
+        """Grava o SQL, avisa o firmware (`notify.cgi`) e REINICIA o controle de
+        chamadas — as tres etapas sao obrigatorias.
 
-        As duas etapas sao obrigatorias: sem o notify o valor fica no banco e o
-        telefone continua operando com o antigo ate reiniciar.
+        Sem o `notify` o valor fica so no banco e o aparelho segue operando com o
+        antigo. E sem o `restart_control_call.cgi` o telefone **fica preso na
+        sessao SIP anterior**: medido em bancada, ele continua registrado com a
+        credencial velha mesmo depois do notify, e a conta nova nunca sobe. Pior,
+        o caminho intuitivo nao resolve — desativar a conta
+        (``AccountActive=0`` + notify) derruba o registro em 1 s, mas religar
+        (``=1`` + notify, nas duas tabelas) **nao** faz voltar: o banco diz ativo
+        e o aparelho fica fora do ar. Quem religa e o restart, que devolveu o
+        registro em 2 s. E o mesmo endpoint que a web UI do telefone chama
+        quando a versao do TLS muda.
+
+        O restart reinicia SO a pilha de chamadas (nao o aparelho), mas derruba
+        chamada em curso — daí `ActionResult.rebooted` nao se aplica aqui:
+        `send_config` ja e uma operacao de janela de manutencao no pipeline.
         """
         if fmt not in ("sql", "xml"):  # 'xml' tolerado por compat de assinatura
             raise ValueError(f"TIP 125i: fmt deve ser 'sql', recebido {fmt!r}")
@@ -499,10 +622,96 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
         self._assert_whitelist(sql)  # defesa em profundidade tambem no envio
 
         async with self._client(ip, creds) as client:
-            resp = await self._execute(client, sql)
+            resp = await self._executar_com_retry(client, sql, ip)
             self._raise_for_db_error(resp, ip)
             await client.get(self._NOTIFY, params={"tables": ",".join(_NOTIFY_TABLES)})
-        log.info("tip125i: config aplicada", ip=ip, statements=sql.count(";"))
+            rebootou = await self._restart_call_control(client, ip)
+        log.info(
+            "tip125i: config aplicada",
+            ip=ip, statements=sql.count(";"), reiniciou_aparelho=rebootou,
+        )
+
+    @classmethod
+    async def _executar_com_retry(
+        cls, client: httpx.AsyncClient, sql: str, ip: str,
+    ) -> httpx.Response:
+        """Reenvia o SQL quando o aparelho responde 401 com a credencial certa.
+
+        Visto em campo com `admin`/`admin` confirmado no aparelho e o mesmo SQL
+        passando segundos depois pela mesma credencial: **o 401 deste firmware
+        nem sempre é sobre credencial**. Ele também sai quando o servidorzinho
+        embarcado recusa a request antes de chegar ao CGI — foi o que medimos
+        com Base64 cru contendo `+`/`/`, e é o mesmo código que aparece sob
+        concorrência, logo após um reinício da pilha, ou numa aplicação em massa.
+
+        Como um 401 vira `VendorAuthError`, ele faz o pipeline gastar a cadeia de
+        credenciais e reportar "credencial recusada" — mandando o operador
+        conferir uma senha que está certa. Então tentamos de novo antes de
+        acreditar no 401. Se a credencial estiver mesmo errada, todas as
+        tentativas falham e o erro sai igual (só ~2 s mais tarde).
+
+        O retry é seguro porque cada statement é um `UPDATE` idempotente: grava
+        o mesmo valor, no mesmo `WHERE`, quantas vezes for.
+        """
+        resp = await cls._execute(client, sql)
+        for tentativa in range(1, cls._AUTH_RETRIES + 1):
+            if resp.status_code not in (401, 403):
+                return resp
+            log.warning(
+                "tip125i: 401/403 com a credencial informada — tentando de novo",
+                ip=ip, tentativa=tentativa, de=cls._AUTH_RETRIES,
+            )
+            await asyncio.sleep(cls._AUTH_RETRY_DELAY_S)
+            resp = await cls._execute(client, sql)
+        return resp
+
+    @classmethod
+    async def _restart_call_control(cls, client: httpx.AsyncClient, ip: str) -> bool:
+        """Poe a config nova em vigor. Devolve True se o APARELHO foi reiniciado.
+
+        Sem este passo o telefone **fica preso na sessao SIP anterior**: segue
+        registrado com a credencial velha e a conta nova nunca sobe. O
+        `notify.cgi` nao resolve — no fw 4.3 ele nem sequer derruba a conta
+        quando ela e desativada, ou seja, a pilha SIP simplesmente nao reage.
+
+        Qual reinicio usar depende do firmware, e e por isso que a primeira
+        versao desta correcao nao ajudou os aparelhos em campo: ela so conhecia
+        o endpoint do fw 5.0.x, que responde **404** no 4.3.x. Entao tentamos o
+        leve primeiro e caimos no pesado quando ele nao existe:
+
+          * `/restart_control_call.cgi` (fw 5.0.x) reinicia so a pilha de
+            chamadas — o aparelho nao reinicia e o registro volta em ~2 s.
+          * `/restart.cgi` (fw 4.3.x) reinicia o aparelho inteiro, ~1 min fora
+            do ar. E o unico caminho la: nao existe reinicio parcial.
+
+        Nenhum dos dois costuma responder — ambos derrubam o processo que serve
+        a propria request. Timeout aqui e o caminho feliz; tratar como erro
+        faria toda aplicacao bem-sucedida ser reportada como falha.
+        """
+        try:
+            resp = await client.post(cls._RESTART_CALL, timeout=cls._RESTART_TIMEOUT)
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            log.debug(
+                "tip125i: reinicio da pilha de chamadas sem resposta (esperado)",
+                ip=ip, erro=type(exc).__name__,
+            )
+            return False
+        if resp.status_code != 404:
+            return False
+
+        # Firmware antigo: so o reboot completo aplica a conta.
+        log.info(
+            "tip125i: firmware sem reinicio parcial — reiniciando o aparelho "
+            "para a conta SIP entrar em vigor",
+            ip=ip,
+        )
+        try:
+            await client.post(cls._RESTART_SYSTEM, timeout=cls._RESTART_TIMEOUT)
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            log.debug(
+                "tip125i: reboot sem resposta (esperado)", ip=ip, erro=type(exc).__name__,
+            )
+        return True
 
     @classmethod
     async def _execute(cls, client: httpx.AsyncClient, sql: str) -> httpx.Response:
@@ -548,9 +757,22 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             data = json.loads(resp.text)
         except ValueError:
             raise RuntimeError(f"TIP 125i {ip}: resposta do db.cgi nao e JSON") from None
-        for item in data if isinstance(data, list) else [data]:
-            if isinstance(item, dict) and item.get("error"):
+        for pos, item in enumerate(data if isinstance(data, list) else [data], start=1):
+            if not isinstance(item, dict):
+                continue
+            if item.get("error"):
                 raise RuntimeError(f"TIP 125i {ip}: {item['error']}")
+            # `affected` conta as linhas que casaram com o WHERE (grava o mesmo
+            # valor e ainda vem 1). Entao 0 significa que a linha nao existe —
+            # conta SIP fora do alcance do aparelho, tecla inexistente, ou
+            # `nova_web_user` que nao e um usuario cadastrado. O UPDATE nao faz
+            # nada e, sem esta checagem, isso viraria "aplicado com sucesso".
+            if item.get("affected") == 0:
+                raise RuntimeError(
+                    f"TIP 125i {ip}: o comando {pos} não encontrou o registro para "
+                    f"atualizar (0 linhas). Verifique a conta SIP escolhida e, se "
+                    f"estiver trocando a senha web, se o usuário existe no aparelho.",
+                )
 
     # ----------------------------------------------------------- backup_config
     async def backup_config(self, ip: str, creds: VendorCredentials) -> bytes | None:
@@ -571,3 +793,76 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
         except Exception as exc:  # backup e best-effort: nao derruba a aplicacao
             log.warning("tip125i: backup falhou", ip=ip, erro=str(exc))
             return None
+
+    # ------------------------------------------------------------ device actions
+    # `normalize` — homologado ao vivo em 2026-08-31 (TIP 125i, fw 4.3.17, o
+    # firmware do parque). O problema real e o operador que abaixa o volume ou
+    # liga o DND pela tecla e depois reclama que "o telefone nao toca".
+    #
+    # A descoberta que destravou: nesta plataforma **a tecla fisica escreve no
+    # banco**. Medido — o dono ligou o DND na tecla e `TAB_SERVICE_CODE.DND`
+    # virou 1 nas QUATRO contas; ele baixou a campainha e `CurVolumeRing` foi de
+    # 10 a 0. Ou seja, aqui o banco E o estado de runtime, e por isso o
+    # `normalize` e so `UPDATE` + `notify` — sem a segunda camada que a V-series
+    # precisa (la o DND da tecla e runtime puro e o Action URI `DNDOff` e que
+    # resolve; ver `intelbras.py`).
+    #
+    # Escala 1..10 (campainha 0..10), lida dos `<select>` do fieldset "Controle
+    # de Ganho" em `views/system/phone.html` do proprio aparelho — a mesma fonte
+    # que ensinou a plataforma inteira.
+    #
+    # Volumes de MICROFONE (`CurVolMic*`) NAO sao tocados, mesma regra do
+    # V-series: e ganho de entrada, e forca-lo ao maximo tende a gerar eco.
+    #
+    # O DND e zerado em TODAS as contas (sem `WHERE Account`): a tecla liga nas
+    # quatro, entao desligar so a provisionada deixaria o telefone mudo nas
+    # outras. Nao ha reinicio aqui — nem o parcial nem o reboot: o `notify`
+    # basta, e no fw 4.3.x reiniciar custaria ~1 min de telefone fora do ar por
+    # uma acao que o operador dispara com o aparelho em uso.
+    _VOLUME_MAX = 10
+    _NORMALIZE_VOLUME_FIELDS: ClassVar[tuple[str, ...]] = (
+        "CurVolumeHandPhone",  # recepcao do monofone
+        "CurVolumeHeadPhone",  # recepcao do headset
+        "CurVolumeSpeaker",    # recepcao do viva-voz
+        "CurVolumeRing",       # campainha (unico que aceita 0 = mudo)
+    )
+    # `TAB_SOFT_CURRENTCONFIG` tem uma linha so (PK=1) — o WHERE mantem o padrao
+    # do adapter e faz `affected: 0` denunciar a linha ausente.
+    _SOFT_CURRENTCONFIG_PK = 1
+    # A web UI notifica esta tabela com o nome em camelCase (`tab_soft_currentConfig`
+    # no app.js), diferente do nome real no `sqlite_master`. Mandamos igual a ela.
+    _NORMALIZE_NOTIFY_TABLES: ClassVar[tuple[str, ...]] = (
+        "tab_soft_currentConfig",
+        "TAB_SERVICE_CODE",
+    )
+
+    def capabilities(self) -> frozenset[str]:
+        return frozenset({ACTION_NORMALIZE})
+
+    async def execute_action(
+        self, ip: str, creds: VendorCredentials, action: str, params: dict[str, Any],
+    ) -> ActionResult:
+        if action != ACTION_NORMALIZE:
+            raise VendorActionUnsupported(f"TIP 125i: acao {action!r} nao suportada")
+        volumes = ", ".join(
+            f"{campo} = {self._VOLUME_MAX}" for campo in self._NORMALIZE_VOLUME_FIELDS
+        )
+        sql = (
+            f"UPDATE TAB_SOFT_CURRENTCONFIG SET {volumes} "
+            f"WHERE PK = {self._SOFT_CURRENTCONFIG_PK};\n"
+            f"UPDATE TAB_SERVICE_CODE SET DND = 0;"
+        )
+        self._assert_whitelist(sql)
+        async with self._client(ip, creds) as client:
+            resp = await self._executar_com_retry(client, sql, ip)
+            self._raise_for_db_error(resp, ip)
+            await client.get(
+                self._NOTIFY, params={"tables": ",".join(self._NORMALIZE_NOTIFY_TABLES)},
+            )
+        log.info("tip125i: normalize aplicado", ip=ip, volume=self._VOLUME_MAX)
+        return ActionResult(
+            ok=True,
+            detail=f"volumes de recepção e campainha em {self._VOLUME_MAX} (máximo) "
+                   f"e DND desligado nas contas",
+            rebooted=False,
+        )
