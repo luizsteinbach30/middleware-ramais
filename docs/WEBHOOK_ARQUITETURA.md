@@ -116,3 +116,30 @@ de push. Atrito: endpoint REST com paginação e idempotency.
 
 Trocar JSON por MessagePack/Protobuf é a otimização de **menor ROI** —
 deixa pra depois.
+
+---
+
+## Este documento deixou de ser hipotético (2026-08-31)
+
+Ele nasceu como nota de referência, com o aviso de que **não era roadmap**. Passou a
+ser: o **NOC WorkConnect** é o receptor de verdade, e o canal que ele exige é
+exatamente o que está descrito acima.
+
+O que sai daqui para a implementação:
+
+- **A arquitetura D (pull com outbox e cursor)** é o canal de comando do NOC. A
+  diferença é o sentido: em vez de o cliente puxar eventos do middleware, é o
+  **middleware que puxa tarefas** do NOC — mesma inversão de controle, mesma
+  propriedade de nunca travar por excesso de push. Vira `GET /agente/v1/fila?aguardar=25`.
+- **A arquitetura B (fila persistente)** é como o NOC recebe a telemetria: responde
+  202 e processa fora do caminho HTTP.
+- **Os itens 1 e 2 da recomendação de ROI** — gzip e `Idempotency-Key` — deixam de ser
+  otimização e viram requisito da Fase 1. O `Idempotency-Key`, em particular, conserta
+  um problema que já existe: com `RETRY_DELAYS_S = (0, 5, 30)`
+  (`domain/webhooks/sender.py:33`), um 200 perdido na volta faz o middleware reenviar,
+  e nada no protocolo permite ao receptor perceber.
+- **MQTT (transporte C)** fica para a Fase 6, e quando entrar será por extensão do
+  `integrations/mqtt_client.py` que já existe — falta só o `publish`.
+
+Ver `AGENTE-NOC.md` neste repositório, e
+`C:\Projetos\noc-workconnect\docs\CONTRATO-DO-AGENTE.md`.
