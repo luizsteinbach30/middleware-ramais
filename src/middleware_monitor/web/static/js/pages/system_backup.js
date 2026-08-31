@@ -114,9 +114,16 @@ function contagens(g) {
   if (g.conflitos_total) partes.push(`<span class="text-yellow-300">${g.conflitos_total} em conflito</span>`);
   if (g.identicos) partes.push(`${g.identicos} igual(is), ignorado(s)`);
   if (g.ausentes_total) {
+    // "mantido(s)" tem dois motivos diferentes, e o operador precisa saber qual:
+    // o grupo nunca é apagável (usuários, devices), ou este PACOTE não autoriza
+    // apagar — export de seleção não é retrato do sistema, e pacote de versão
+    // antiga não diz o que é. Ver `pode_remover` no bundle.
+    const porque = g.scope === 'selection'
+      ? ' — o arquivo traz uma <strong>seleção</strong>, não apaga'
+      : (g.scope ? '' : ' — pacote sem escopo (versão antiga), não apaga');
     partes.push(g.removable
       ? `<span class="text-red-300/80">${g.ausentes_total} só no sistema (apagado(s) em "substituir")</span>`
-      : `${g.ausentes_total} só no sistema (mantido(s))`);
+      : `${g.ausentes_total} só no sistema (mantido(s)${porque})`);
   }
   return partes.join(' · ') || 'nada a fazer';
 }
@@ -252,12 +259,21 @@ async function importar() {
         decisions: Object.fromEntries(decisoes),
       },
     });
-    const total = (campo) => Object.values(r.applied).reduce((n, g) => n + g[campo], 0);
+    const total = (campo) => Object.values(r.applied).reduce((n, g) => n + (g[campo] || 0), 0);
     toast.success(
       `Restaurado — ${total('novos')} novo(s), ${total('atualizados')} atualizado(s), `
       + `${total('identicos')} já igual(is), ${total('mantidos')} mantido(s), `
       + `${total('removidos')} removido(s)`,
     );
+    // "Substituir" que não removeu nada precisa dizer por quê, senão o operador
+    // conclui que apagou e sai procurando o que sumiu (ou repete a operação).
+    const preservados = total('preservados');
+    if (preservados) {
+      const motivo = Object.values(r.applied).some((g) => g.motivo_preservacao === 'selecao')
+        ? 'o arquivo traz uma seleção de ambientes, não o sistema inteiro'
+        : 'o pacote é de uma versão que não registrava escopo';
+      toast.info(`${preservados} item(ns) que só existem aqui foram PRESERVADOS: ${motivo}.`);
+    }
     // O que era conflito agora está resolvido: a tela tem de mostrar o estado
     // depois da aplicação, não o de antes.
     await recomparar();

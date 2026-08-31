@@ -930,6 +930,50 @@ Em aberto:
    contenção sob escrita, que a medição atual não cobre (roda com a ingestão
    parada). Medir isso primeiro.
 
+### 15.9 ✅ Import de pacote apagou ambientes (2026-08-31)
+
+**O que aconteceu.** O dono exportou **2 ambientes** pela tela de Ambientes
+(“Exportar selecionados” → `.mwrbak`) e importou o arquivo em
+**Sistema → Backup** no modo *Substituir*. Os outros **4 ambientes** do sistema
+foram apagados, com os 73 ramais e o histórico de aplicação deles. Log:
+
+```
+11:20:36 ec_environment_imported ambientes=2 env_ids=['assai-137','loja-318'] lines=49
+11:21:25 backup_imported         mode=replace identicos=2 removidos=4
+```
+
+**Recuperado no mesmo dia** pelo WAL do SQLite: o `app.db` não sofria checkpoint
+desde 28/08, então o `-wal` guardava o histórico inteiro. Truncando o arquivo no
+commit anterior ao apagamento (`@845`) o banco voltou a mostrar os 6 ambientes, e
+os 4 apagados foram reinseridos no banco de produção (240 registros: ambientes,
+linhas, runs e itens de run). **Isso foi sorte, não processo** — a pasta
+`backups\` estava vazia, o backup automático nunca havia rodado nesta
+instalação, e um único checkpoint teria fechado a janela.
+
+**A causa.** `replace` apagava tudo o que estivesse no banco e não no arquivo,
+sem perguntar de onde o arquivo veio. Um export de **seleção** não é o retrato do
+sistema: “não está no arquivo” ali significa “não foi escolhido”, nunca “foi
+removido”. A informação existia no export (`environment_ids`) e se perdia.
+
+**A correção.** O pacote passou a declarar o **escopo** de cada seção
+(`scope: {"environments": "full" | "selection"}`), e `pode_remover()` só autoriza
+a remoção quando a seção se declara completa. Pacote de seleção **nunca** apaga;
+pacote sem `scope` (gerado até a v2.10.1) também não, porque não dá para
+distinguir depois — um `replace` que deixa de remover se conserta com dois
+cliques, um que remove demais não se desfaz. O `diff` devolve `removable: false`
+com o motivo, e a tela diz por que preservou, em vez de silenciar.
+
+**De quebra:** o pacote passou a levar o **histórico de aplicação** das linhas
+(`ultimo_status`, `ultimo_hash_aplicado`, ...) e o `id` delas. Sem isso o
+ambiente importado nascia inteiro como *pendente* mesmo com os telefones já
+provisionados, e o operador reaplicaria dezenas de ramais à toa. Esses campos
+ficam **fora da comparação** (`_comparavel`): dois sistemas que aplicaram o mesmo
+ambiente em horários diferentes não estão em conflito de configuração.
+
+**Em aberto:** o backup automático diário existe (§16) mas **nunca rodou** nesta
+instalação — investigar se está desligado por padrão ou se o agendamento falha no
+modo desktop. Recuperação dependendo do WAL não é plano de recuperação.
+
 ### 15.8 🐛 A cadeia de credenciais não é percorrida (relatado 2026-08-28)
 
 **Relato do dono:** ao aplicar, o sistema **não tenta todas as credenciais** — a
@@ -1011,11 +1055,35 @@ O adapter tenta o leve e cai no pesado no 404. Onde há reinício parcial o
 aparelho **não** é rebootado. Medido nos dois firmwares, o 4.3.41 em aparelho de
 campo.
 
-**O que falta:** nenhuma *device action* homologada. O `normalize` (volume no
-máximo + DND desligado) não entra sem prova — o DND é claro
-(`TAB_SERVICE_CODE.DND`), mas o volume vive em `TAB_SOFT_CURRENTCONFIG` e essa
-plataforma **não tem tela web de volume**, então o valor máximo não foi
-confirmado em hardware. Fica para a próxima bancada em vez de virar chute.
+**Device action `normalize` — homologada em 2026-08-31** (fw **4.3.17**, aparelho
+de campo em `192.168.0.220`; detalhe em
+[`docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md`](design/DEVICE_ACTIONS_HOMOLOGACAO.md)).
+Duas coisas mudaram em relação à nota anterior, que dizia que a ação só poderia
+sair de um chute:
+
+1. **A tela web de volume existe** — fieldset *Controle de Ganho* em
+   `views/system/phone.html`, e ela declara a escala nos próprios `<select>`:
+   **1..10** para os volumes e **0..10** para a campainha (0 = mudo). A busca
+   anterior falhou porque procurou "volume" no `app.js`, e lá os campos só
+   aparecem pelo schema (`schemaPhoneSoftCurrentConfig`); o HTML é que os tem.
+2. **A tecla física escreve no banco.** Medido com o dono no aparelho: DND
+   ligado pela tecla → `TAB_SERVICE_CODE.DND` = 1 nas **quatro** contas;
+   campainha abaixada pela tecla → `CurVolumeRing` 10 → 0. Aqui o banco **é** o
+   estado de runtime, o oposto do V-series (onde o DND da tecla exige o Action
+   URI `DNDOff`). Então o normalize é `UPDATE` + `notify.cgi`, sem reboot — o
+   que importa muito no 4.3.x, onde o único reinício disponível derruba o
+   aparelho por ~1 min e o operador dispara a ação com o telefone em uso.
+
+Microfones (`CurVolMic*`) ficam de fora de propósito (ganho de entrada → eco), e
+o DND é zerado sem `WHERE Account`, porque a tecla liga nas quatro contas.
+
+**Em aberto — inventário da linha TIP.** O firmware distingue `tip125`, `tip425`,
+`tip120`, `tip1001` e `tdmi400` (`ng-show` da própria view), e os recortes
+importam para o normalize: `tip120`/`tip1001`/`tdmi400` **não têm viva-voz**,
+então `CurVolumeSpeaker` não se aplica a eles. O `tip425` compartilha os mesmos
+campos do 125 e é o candidato mais provável a funcionar sem mudança. Hoje o
+produto declara **só o TIP 125i**; antes de estender, confirmar quais modelos
+existem no parque e homologar com aparelho — [firmware é dimensão de teste].
 
 ---
 
