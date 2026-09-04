@@ -2,6 +2,72 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.12.0] — 2026-09-04
+
+Instalar no Linux virou **uma linha** — e o `.run` da 2.11.0, que nunca tinha
+rodado de ponta a ponta, foi refeito. Descoberto instalando de verdade num
+Ubuntu 24.04: quatro defeitos em cadeia, cada um escondido atrás do anterior.
+
+### Added
+
+- **Instalador de uma linha (Linux):**
+  `curl -fsSL https://github.com/luizsteinbach30/middleware-ramais/releases/latest/download/install.sh | sudo bash`.
+  Baixa a release mais nova (ou `MM_VERSION=x.y.z`), confere o SHA256 e roda o
+  `.run`. **O mesmo comando atualiza** no lugar. Publicado como asset
+  `install.sh` de cada release (`packaging/linux/install.sh`).
+- **CPython embutido no `.run`** (python-build-standalone 3.11, x86_64): o
+  servidor não precisa de `python3`, apt nem PyPI. As wheels são resolvidas
+  pelo próprio interpretador embutido a partir da wheel do projeto — acabou a
+  lista manual que ficava para trás — e o build as instala num Python
+  descartável com `--no-index` antes de empacotar: se faltar algo, quebra na
+  máquina de build, não no cliente.
+- **Atualização no Linux que funciona:** unidade `middleware-monitor-update`
+  (root) + timer diário + `.path` que atende o botão **Atualizar agora** do
+  painel (`APP_UPDATE_MODE=systemd`, `updater/systemd.py`). O serviço só deixa
+  `update.request` em `APP_DATA_DIR`; quem baixa, confere, faz backup do banco,
+  troca o runtime, migra e reinicia é o root. Rollback automático se a nova
+  versão não responder em 60 s. O timer por padrão **só avisa** (regra do
+  painel: agendamento nunca instala); `middleware-monitor-ctl auto-update on`
+  liga a instalação automática (`APP_UPDATE_AUTO_INSTALL`).
+- `middleware-monitor-ctl`: `version`, `check-update`, `update`,
+  `auto-update on|off|status`, `update-logs`.
+- `install.sh --download-only` para servidores sem internet; `--check` para
+  comparar instalada × disponível.
+
+### Fixed
+
+- **O `.run` não executava o script embutido.** O makeself 2.5 cita o startup
+  script como um único nome, e `env MM_VERSION=… bash ./install-bundle.sh .`
+  virava um arquivo inexistente ("No such file or directory", linha 709).
+  Agora o script é um caminho sem argumentos e a versão vai no arquivo
+  `VERSION` do bundle.
+- **Wheels faltando no bundle** (`passlib`, `paho-mqtt`, `openpyxl`, `fpdf2`,
+  `tzdata`…): a lista do `build_installer.sh` era manual e não acompanhou o
+  `pyproject`. Com `--no-index` o pip parava em "No matching distribution
+  found for passlib>=1.7.4".
+- **Wheels cp311 sobre o Python do sistema:** Ubuntu 22.04 (3.10) abortava na
+  checagem de versão e 24.04 (3.12) passava na checagem e quebrava no pip.
+  Resolvido pelo Python embutido.
+- **Migrations dependiam do cwd:** `alembic.ini` agora usa `%(here)s`. Antes,
+  rodar o alembic de fora da raiz (instalador, updater) dava "Path doesn't
+  exist" — e o makeself extrai numa pasta `700` de root, que o usuário
+  `mmonitor` nem atravessava (`PermissionError` no `env.py`).
+- **O auto-update do Linux nunca poderia ter funcionado:** o serviço (usuário
+  `mmonitor`, `ProtectSystem=strict`) não escrevia em `/opt`, não podia
+  `systemctl restart`, e trocar o symlink `current` não mudava o código, que
+  roda do pacote instalado no runtime. Substituído pelo mecanismo acima.
+- Log da instalação em `/var/lib/middleware-monitor/logs/install.log` — o
+  `ctl install-log` procurava lá e o script gravava em `/tmp`.
+
+### Changed
+
+- Layout Linux: `/opt/middleware-monitor/python/` (runtime completo) no lugar
+  de `venv/`; a `venv/` antiga é removida no primeiro upgrade. Arquivos do
+  bundle chegam como `root` (antes vinham com o uid do runner do GitHub).
+- `release.yml`: o job Linux publica também o `install.sh`.
+- Settings: `APP_UPDATE_MODE` (`auto`|`systemd`|`legacy`) e
+  `APP_UPDATE_AUTO_INSTALL`.
+
 ## [2.11.0] — 2026-08-31
 
 Reúne o que ficou commitado e não publicado na 2.10.1 (as quatro correções que o

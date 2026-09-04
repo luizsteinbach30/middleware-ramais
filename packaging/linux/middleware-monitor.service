@@ -9,10 +9,14 @@ User=mmonitor
 Group=mmonitor
 WorkingDirectory=/opt/middleware-monitor/current
 EnvironmentFile=/etc/middleware-monitor/env
-ExecStart=/opt/middleware-monitor/venv/bin/python -m middleware_monitor
+# Runtime próprio (CPython + dependências) instalado pelo .run — nada do
+# python3 do sistema. O código vem do pacote instalado nesse runtime.
+ExecStart=/opt/middleware-monitor/python/bin/python3 -m middleware_monitor
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=4096
+# /opt fica somente-leitura para o serviço: quem atualiza é a unidade
+# middleware-monitor-update (root), nunca o próprio processo.
 ProtectSystem=strict
 ReadWritePaths=/var/lib/middleware-monitor
 NoNewPrivileges=yes

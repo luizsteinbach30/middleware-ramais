@@ -72,6 +72,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Só para o script de injeção do token. O .run leva CPython próprio
+      # (python-build-standalone), baixado por packaging/linux/build_installer.sh,
+      # e é com ele que as wheels são resolvidas — não com este Python.
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -92,15 +95,19 @@ jobs:
           VERSION: ${{ needs.build-tarball.outputs.version }}
         run: bash packaging/linux/build_installer.sh
 
+      - name: Stage one-line installer (install.sh)
+        run: cp packaging/linux/install.sh dist/install.sh
+
       - name: Hash installer
         run: |
-          ( cd dist && sha256sum middleware-monitor-installer-*.run > SHA256SUMS_linux.txt )
+          ( cd dist && sha256sum middleware-monitor-installer-*.run install.sh > SHA256SUMS_linux.txt )
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-installer
           path: |
             dist/middleware-monitor-installer-*.run
+            dist/install.sh
             dist/SHA256SUMS_linux.txt
 
   build-windows-exe:
@@ -195,5 +202,6 @@ jobs:
             dist/app-v*.tar.gz
             dist/MiddlewareMonitor-*.exe
             dist/middleware-monitor-installer-*.run
+            dist/install.sh
             dist/SHA256SUMS
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}

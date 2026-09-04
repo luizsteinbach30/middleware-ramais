@@ -1,0 +1,13 @@
+[Unit]
+Description=Middleware USCall Monitor — verificação diária de atualização
+
+[Timer]
+# Todo dia à meia-noite (hora do servidor), com até 30 min de atraso aleatório
+# para vários servidores não baterem no GitHub no mesmo segundo. Se a máquina
+# estava desligada no horário, roda ao ligar (Persistent).
+OnCalendar=daily
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
