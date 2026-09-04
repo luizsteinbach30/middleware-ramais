@@ -62,8 +62,9 @@ ping -c 1 10.20.30.40   # do servidor, para um IP esperado
 
 **Diagnóstico:**
 - Abra a linha para ver o erro.
-- Verifique `journalctl -u middleware-monitor-updater` (Linux) ou
-  Event Viewer / Stdout do NSSM (Windows).
+- Linux: `middleware-monitor-ctl update-logs` (journal da unidade
+  `middleware-monitor-update`) e `/var/lib/middleware-monitor/logs/install.log`.
+  Windows: aba "Log de execução" do `.exe`.
 
 | Erro | Mitigação |
 |---|---|
@@ -73,19 +74,28 @@ ping -c 1 10.20.30.40   # do servidor, para um IP esperado
 | `healthcheck_failed` | Nova versão não responde em 60s; rollback automático aplicado; investigar logs da nova versão antes de tentar de novo |
 | `update_check_failed` com 401/404 | Token de leitura de releases inválido/expirado — ver §4.1 abaixo |
 
-Restaurar manualmente uma versão anterior:
+Restaurar manualmente uma versão anterior (Linux). Desde a 2.12.0 o código
+roda do pacote instalado no runtime `/opt/middleware-monitor/python/`, então
+trocar o symlink `current` não muda nada — reinstale a versão desejada:
 ```bash
-ln -sfn /opt/middleware-monitor/app/2.0.0 /opt/middleware-monitor/current
-systemctl restart middleware-monitor
+MM_VERSION=2.11.0 middleware-monitor-ctl update
 ```
+O banco de antes da tentativa fica em
+`/var/lib/middleware-monitor/backups/pre-upgrade_<de>_to_<para>_<data>.db`
+(migrations não voltam sozinhas; se a versão antiga não abrir o banco novo,
+pare o serviço e restaure esse arquivo em `db/app.db`).
 
 ### 4.1 Token de leitura de releases (repo privado)
 
-O repositório de releases é **privado**. Todo build distribuído sai com um
-token **fine-grained somente-leitura** (Contents: Read apenas deste repo)
-embutido pelo pipeline (`scripts/inject_update_token.py`, secret
-`UPDATE_READ_TOKEN`). Sem token válido o updater recebe 404 da API do GitHub
-e nunca enxerga release nenhuma.
+O repositório está **público desde 2026-09**: o updater, o `install.sh` e o
+link `releases/latest/download/…` funcionam sem token. Esta seção vale se ele
+voltar a ser privado. O pipeline continua embutindo o token fine-grained
+somente-leitura (Contents: Read apenas deste repo) via
+`scripts/inject_update_token.py` / secret `UPDATE_READ_TOKEN` — e **falha o
+build se o secret sumir**; para dispensá-lo, exporte `ALLOW_EMPTY_UPDATE_TOKEN=1`
+nos jobs do `release.yml`. Sem token válido num repo privado o updater recebe
+404 da API do GitHub e nunca enxerga release nenhuma. No Linux, a linha de
+instalação aceita `MM_TOKEN=…` e o persiste como `APP_UPDATE_TOKEN` no env.
 
 > O token embutido fica em base64 no binário — isso **não é segurança**, é só
 > redução de exposição acidental. A proteção real é o escopo mínimo do token

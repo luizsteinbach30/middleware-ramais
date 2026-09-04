@@ -44,15 +44,14 @@ Login com a senha temporária. A primeira ação obrigatória é trocar a senha.
 
 ## Instalação em servidor cliente
 
-### Linux (one-liner)
+### Linux (uma linha — instala e atualiza)
 ```bash
-curl -fsSL https://github.com/<org>/middleware-monitor/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/luizsteinbach30/middleware-ramais/releases/latest/download/install.sh | sudo bash
 ```
+Traz Python próprio e todas as dependências; não precisa de `python3`, apt nem PyPI no servidor. Depois: `middleware-monitor-ctl status|logs|update|auto-update on`.
 
-### Windows (PowerShell admin)
-```powershell
-iwr -useb https://github.com/<org>/middleware-monitor/releases/latest/download/install.ps1 | iex
-```
+### Windows
+Baixe `MiddlewareMonitor-X.Y.Z.exe` da [última release](https://github.com/luizsteinbach30/middleware-ramais/releases/latest) e dê clique duplo — é standalone.
 
 Detalhes em [docs/INSTALACAO.md](docs/INSTALACAO.md).
 

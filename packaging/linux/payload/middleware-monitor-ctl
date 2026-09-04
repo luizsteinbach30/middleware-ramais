@@ -1,43 +1,82 @@
 #!/usr/bin/env bash
-# middleware-monitor-ctl — start/stop/restart/status/open/logs for the
-# Middleware USCall Monitor service. Installed to /usr/local/bin by the
-# bundled installer.
+# middleware-monitor-ctl — operar o serviço do Middleware USCall Monitor.
+# Instalado em /usr/local/bin pelo instalador (.run).
 set -euo pipefail
 
 SERVICE=middleware-monitor
+UPDATE_UNIT=middleware-monitor-update
 URL="${MM_URL:-http://localhost:8080/}"
 DATA_DIR="${MM_DATA_DIR:-/var/lib/middleware-monitor}"
+ETC="${MM_ETC:-/etc/middleware-monitor}"
+PREFIX="${MM_PREFIX:-/opt/middleware-monitor}"
 
 usage() {
   cat <<EOF
 Uso: middleware-monitor-ctl <comando>
 
-Comandos:
-  start       inicia o serviço
-  stop        finaliza o serviço
-  restart     reinicia o serviço
-  status      mostra o status atual
-  open        abre o painel no navegador padrão
-  logs        acompanha os logs em tempo real (Ctrl+C para sair)
-  install-log mostra o log da instalação
+Serviço:
+  start | stop | restart   controla o serviço
+  status                   estado do serviço, do timer e do gatilho de atualização
+  logs                     acompanha os logs em tempo real (Ctrl+C para sair)
+  open                     abre o painel no navegador padrão
+  version                  versão instalada
 
-Atalhos:
-  Se o seu desktop suporta XDG, há um atalho "Middleware USCall Monitor"
-  no menu de aplicações que abre o painel no navegador.
+Atualização (release do GitHub):
+  check-update             mostra a versão instalada e a disponível
+  update                   instala a última release agora (ou MM_VERSION=x.y.z)
+  auto-update on|off       o timer diário instala sozinho (on) ou só avisa (off)
+  auto-update status       mostra a configuração atual
+  update-logs              logs das atualizações (timer e botão do painel)
+  install-log              log da última instalação
+
+Arquivos: $ETC/env (config) · $DATA_DIR (banco, backups, logs)
 EOF
 }
 
+installed_version() {
+  local py
+  for py in "$PREFIX/python/bin/python3" "$PREFIX/venv/bin/python"; do
+    [[ -x "$py" ]] && "$py" -c 'from middleware_monitor.version import __version__; print(__version__)' 2>/dev/null && return 0
+  done
+  echo "desconhecida"
+}
+
+set_env_key() {  # set_env_key CHAVE VALOR (precisa de root)
+  if grep -q "^$1=" "$ETC/env"; then
+    sudo sed -i "s|^$1=.*|$1=$2|" "$ETC/env"
+  else
+    printf '%s=%s\n' "$1" "$2" | sudo tee -a "$ETC/env" >/dev/null
+  fi
+}
+
 cmd="${1:-status}"
+shift || true
 case "$cmd" in
-  start)        sudo systemctl start  "$SERVICE" ;;
-  stop)         sudo systemctl stop   "$SERVICE" ;;
+  start)        sudo systemctl start "$SERVICE" ;;
+  stop)         sudo systemctl stop "$SERVICE" ;;
   restart)      sudo systemctl restart "$SERVICE" ;;
-  status)       systemctl status "$SERVICE" --no-pager ;;
+  status)
+    systemctl status "$SERVICE" --no-pager || true
+    echo
+    systemctl list-timers "$UPDATE_UNIT.timer" --no-pager 2>/dev/null || true
+    printf 'gatilho do painel (%s.path): %s\n' "$UPDATE_UNIT" "$(systemctl is-active "$UPDATE_UNIT.path" 2>/dev/null || echo inativo)"
+    ;;
+  logs)         sudo journalctl -u "$SERVICE" -f ;;
   open)
     if command -v xdg-open >/dev/null; then xdg-open "$URL"
-    elif command -v open >/dev/null; then open "$URL"
     else echo "Abra manualmente: $URL"; fi ;;
-  logs)         sudo journalctl -u "$SERVICE" -f ;;
+  version)      installed_version ;;
+  check-update) /usr/local/bin/middleware-monitor-update --check "$@" || true ;;
+  update)       sudo -E /usr/local/bin/middleware-monitor-update "$@" ;;
+  auto-update)
+    case "${1:-status}" in
+      on)     set_env_key APP_UPDATE_AUTO_INSTALL true;  echo "auto-update: LIGADO — o timer diário instala releases novas sozinho" ;;
+      off)    set_env_key APP_UPDATE_AUTO_INSTALL false; echo "auto-update: desligado — o painel avisa, você decide quando instalar" ;;
+      status) printf 'auto-update: %s\n' "$(grep -E '^APP_UPDATE_AUTO_INSTALL=' "$ETC/env" 2>/dev/null | cut -d= -f2 || echo false)"
+              systemctl list-timers "$UPDATE_UNIT.timer" --no-pager 2>/dev/null || true ;;
+      *)      usage; exit 2 ;;
+    esac ;;
+  update-logs)  sudo journalctl -u "$UPDATE_UNIT.service" -n 200 --no-pager "$@" ;;
   install-log)  cat "$DATA_DIR/logs/install.log" 2>/dev/null || echo "Sem log em $DATA_DIR/logs/install.log" ;;
   -h|--help|help) usage ;;
   *)            usage; exit 2 ;;
