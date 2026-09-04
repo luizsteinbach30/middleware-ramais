@@ -1,0 +1,11 @@
+[Unit]
+Description=Middleware USCall Monitor — instalar a release mais nova do GitHub
+# Disparada pelo timer (diário) e pelo .path (botão "Atualizar agora" do painel).
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# --if-newer: só instala se a release for mais nova que a instalada. Sem pedido
+# do painel (arquivo update.request), respeita APP_UPDATE_AUTO_INSTALL do env.
+ExecStart=/usr/local/bin/middleware-monitor-update --if-newer

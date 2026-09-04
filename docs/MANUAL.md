@@ -11,7 +11,7 @@ A partir do [GitHub Releases](https://github.com/luizsteinbach30/middleware-rama
 | Servidor | Arquivo | Como usar |
 |---|---|---|
 | **Windows** 10 / Server 2019+ | `MiddlewareMonitor-X.Y.Z.exe` | Clique duplo. Pronto. |
-| **Linux** Debian/Ubuntu/RHEL | `middleware-monitor-installer-X.Y.Z.run` | `sudo bash middleware-monitor-installer-X.Y.Z.run` |
+| **Linux** Ubuntu/Debian/RHEL x86_64 | nada — uma linha baixa e instala | `curl -fsSL https://github.com/luizsteinbach30/middleware-ramais/releases/latest/download/install.sh | sudo bash` |
 
 Não há instalador no Windows. **Um único `.exe` contém tudo**: Python embutido, servidor web, banco de dados, scheduler, painel — cerca de **30 MB**.
 
@@ -90,39 +90,49 @@ Você também pode forçar a checagem com o botão **Verificar atualização**.
 
 ---
 
-## 3. Linux — `middleware-monitor-installer-X.Y.Z.run`
+## 3. Linux — uma linha
 
-No Linux mantemos a instalação como **serviço systemd** (mais natural no Linux).
-
-### 3.1 Instalar
+### 3.1 Instalar (ou atualizar)
 
 ```bash
-sudo bash middleware-monitor-installer-X.Y.Z.run
+curl -fsSL https://github.com/luizsteinbach30/middleware-ramais/releases/latest/download/install.sh | sudo bash
 ```
 
-Cria usuário `mmonitor`, monta `/opt/middleware-monitor`, registra `middleware-monitor.service` e inicia. URL: `http://<ip>:8080/`.
+Baixa a release mais nova, confere o SHA256 e instala: cria o usuário `mmonitor`, monta `/opt/middleware-monitor` (com **Python próprio** — não usa nem precisa do `python3` do sistema), registra o serviço `middleware-monitor` e inicia. URL: `http://<ip>:8080/`.
+
+O **mesmo comando atualiza** uma instalação existente: mantém configuração e banco, faz backup do banco antes de migrar e volta sozinho para a versão anterior se a nova não responder em 60 s.
+
+Exige Linux x86_64 com systemd e `curl`. Versão específica: `curl -fsSL … | sudo MM_VERSION=2.12.0 bash`. Servidor sem internet: em outra máquina, `curl -fsSL … | bash -s -- --download-only`, leve o `.run` e rode `sudo bash middleware-monitor-installer-X.Y.Z.run --accept`.
+
+> ⚠️ Faça o primeiro login **antes** de liberar a porta 8080 no firewall — enquanto a senha for `admin/admin` qualquer máquina da rede entra. Num servidor sem navegador, use um túnel: `ssh -L 8080:127.0.0.1:8080 usuario@servidor` e abra `http://localhost:8080/` na sua estação.
 
 ### 3.2 CLI rápida — `middleware-monitor-ctl`
 
 ```bash
-middleware-monitor-ctl status
-middleware-monitor-ctl start
-middleware-monitor-ctl stop
-middleware-monitor-ctl restart
-middleware-monitor-ctl open       # abre o painel no navegador
-middleware-monitor-ctl logs       # acompanha logs em tempo real
+middleware-monitor-ctl status          # serviço + timer + gatilho de atualização
+middleware-monitor-ctl start|stop|restart
+middleware-monitor-ctl logs            # acompanha logs em tempo real
+middleware-monitor-ctl version
+middleware-monitor-ctl check-update    # instalada × disponível
+middleware-monitor-ctl update          # instala a última release agora
+middleware-monitor-ctl auto-update on  # timer diário passa a instalar sozinho (off = só avisa)
+middleware-monitor-ctl update-logs     # o que o timer/botão fizeram
+middleware-monitor-ctl install-log     # log da última instalação
 ```
 
 ### 3.3 Dados
 
 ```
 /var/lib/middleware-monitor/db/app.db        (banco)
+/var/lib/middleware-monitor/backups/         (inclui um pre-upgrade_*.db antes de cada atualização)
 /etc/middleware-monitor/env                  (config + APP_SECRET_KEY)
 ```
 
-### 3.4 Atualização automática (Linux)
+### 3.4 Atualização (Linux)
 
-O serviço consulta o GitHub a cada dia às 00:00 UTC e baixa o tarball novo. Layout versionado em `/opt/middleware-monitor/app/<versão>/` com rollback automático. Sem ação manual necessária.
+- **Painel → Sistema → Atualizações → Atualizar agora.** O sistema baixa a release, confere o SHA256, faz backup do banco, troca a versão e reinicia o serviço (alguns segundos fora do ar). Se a nova versão não responder em 60 s, volta sozinho para a anterior.
+- **Timer diário (00:00).** Por padrão só verifica e avisa no painel — agendamento nunca instala sozinho. Para instalar automaticamente: `middleware-monitor-ctl auto-update on`.
+- **Na mão:** `middleware-monitor-ctl update` (ou `MM_VERSION=2.11.0 middleware-monitor-ctl update` para fixar/voltar uma versão).
 
 ---
 
@@ -184,7 +194,9 @@ Mais detalhes em [RUNBOOK.md](RUNBOOK.md).
 │ Windows:  baixe MiddlewareMonitor-X.Y.Z.exe → clique duplo.   │
 │           Nenhuma dependência. Não precisa Administrador.     │
 │                                                               │
-│ Linux:    sudo bash middleware-monitor-installer-X.Y.Z.run    │
+│ Linux:    curl -fsSL https://github.com/luizsteinbach30/    │
+│           middleware-ramais/releases/latest/download/         │
+│           install.sh | sudo bash   (instala E atualiza)       │
 └───────────────────────────────────────────────────────────────┘
 ┌─ ABRIR / FECHAR (Windows) ────────────────────────────────────┐
 │ Abrir:    clique duplo no .exe (janela com status + log).     │
@@ -201,6 +213,7 @@ Mais detalhes em [RUNBOOK.md](RUNBOOK.md).
 └───────────────────────────────────────────────────────────────┘
 ┌─ ATUALIZAÇÃO ─────────────────────────────────────────────────┐
 │ Windows:  banner amarelo "Nova versão disponível" + 1 clique  │
-│ Linux:    cron diário 00:00 UTC, sem ação manual              │
+│ Linux:    painel "Atualizar agora" ou middleware-monitor-ctl  │
+│           update · timer diário só avisa (auto-update on)     │
 └───────────────────────────────────────────────────────────────┘
 ```

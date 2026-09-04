@@ -138,8 +138,9 @@ document.getElementById('upd-apply').addEventListener('click', async () => {
     i++;
   }, 1500);
   try {
-    await api('/api/system/update', { method: 'POST' });
-    toast.success('Update agendado. O serviço pode reiniciar.');
+    const r = await api('/api/system/update', { method: 'POST' });
+    if (r && r.mode === 'systemd') toast.success('Atualização pedida ao sistema. O serviço reinicia em instantes.');
+    else toast.success('Update agendado. O serviço pode reiniciar.');
   } catch { toast.error('Falha'); }
 });
 

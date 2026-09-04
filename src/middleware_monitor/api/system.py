@@ -255,6 +255,17 @@ async def apply_update() -> dict[str, object]:
             "shutdown_in_seconds": 1,
         }
 
+    # Instalação Linux pelo .run (systemd): o serviço roda como `mmonitor`
+    # com /opt somente-leitura e não pode se atualizar. Só deixa o pedido em
+    # APP_DATA_DIR/update.request; a unidade middleware-monitor-update.path
+    # aciona o instalador como root (ver updater/systemd.py).
+    if get_settings().resolved_update_mode() == "systemd":
+        from middleware_monitor.updater.systemd import request_update
+
+        target = str(getattr(release, "version", ""))
+        request_update(target)
+        return {"ok": True, "mode": "systemd", "started_for": target}
+
     # Legacy tarball-based path (kept for non-frozen installations that
     # ship with their own service supervisor).
     spawn(install_release(release))  # type: ignore[arg-type]

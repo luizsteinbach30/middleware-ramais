@@ -1,0 +1,12 @@
+[Unit]
+Description=Middleware USCall Monitor — gatilho do botão "Atualizar agora"
+# O serviço (usuário mmonitor, /opt somente-leitura) não pode se atualizar.
+# Ao clicar em "Atualizar agora" ele grava este arquivo; o systemd aciona a
+# unidade de atualização como root, que apaga o arquivo e instala a release.
+
+[Path]
+PathExists=/var/lib/middleware-monitor/update.request
+Unit=middleware-monitor-update.service
+
+[Install]
+WantedBy=multi-user.target

@@ -13,6 +13,10 @@ from pathlib import Path
 from pydantic import Field, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Arquivo de ambiente que o instalador Linux (.run) cria. Existir = instalação
+# com systemd, onde quem atualiza é a unidade middleware-monitor-update.
+LINUX_INSTALL_MARKER = Path("/etc/middleware-monitor/env")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -45,6 +49,17 @@ class Settings(BaseSettings):
     # Token de leitura das releases (o repo é privado). Precedência:
     # APP_UPDATE_TOKEN no .env > token embutido no build (_embedded.py).
     update_token: str = ""
+    # Como "Atualizar agora" aplica a atualização fora do .exe:
+    #   auto    = systemd se existir o env da instalação Linux pelo .run
+    #             (LINUX_INSTALL_MARKER); senão o caminho legado
+    #   systemd = o serviço só grava APP_DATA_DIR/update.request; a unidade
+    #             middleware-monitor-update (root) baixa e instala a release
+    #   legacy  = o próprio processo baixa o tarball e troca o symlink
+    update_mode: str = "auto"
+    # true = o timer diário do Linux instala releases novas sozinho. Lido pelo
+    # script middleware-monitor-update, não pela aplicação; está aqui só para
+    # o .env documentado não ser rejeitado.
+    update_auto_install: bool = False
 
     metrics_enabled: bool = False
 
@@ -52,6 +67,13 @@ class Settings(BaseSettings):
     @classmethod
     def _expand_data_dir(cls, value: object) -> Path:
         return Path(str(value)).expanduser().resolve()
+
+    def resolved_update_mode(self) -> str:
+        """``auto`` decide pela presença da instalação Linux pelo ``.run``."""
+        mode = (self.update_mode or "auto").strip().lower()
+        if mode != "auto":
+            return mode
+        return "systemd" if LINUX_INSTALL_MARKER.exists() else "legacy"
 
     # Propriedade simples (NÃO computed_field): o token nunca deve aparecer
     # em model_dump()/serialização.
