@@ -359,6 +359,9 @@ hora do aperto:
 ### Perguntas que aparecem
 
 - **Perdi a passphrase do `.mwrbak`.** Não há recuperação. Gere um novo export.
+- **Esqueci a senha do admin.** Rode `scripts/reset-admin.sh` (Linux) ou
+  `scripts\reset-admin.bat` (Windows): o login volta a `admin`/`admin` com troca
+  obrigatória. Detalhes em `docs/RUNBOOK.md` §7.
 - **Importei e não mudou nada.** Provavelmente estava tudo igual — a tela mostra
   quantos itens foram ignorados por já baterem com o arquivo. Reimportar o mesmo
   pacote duas vezes não faz nada na segunda vez.
