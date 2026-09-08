@@ -146,21 +146,39 @@ sudo -u mmonitor sqlite3 /var/lib/middleware-monitor/db/app.db \
 
 ## 7. Senha do admin perdida
 
+Não há "esqueci a senha" no painel: o usuário é único e a troca exige a senha
+atual. Os scripts abaixo gravam no banco um hash novo e devolvem o login
+`admin` / `admin`, com troca obrigatória no próximo acesso (mínimo 12
+caracteres, com letras e números). Também zeram o bloqueio de tentativas e
+recriam o `admin` se ele tiver sumido. Não exigem Python instalado na máquina
+(o Linux usa o runtime que o `.run` já traz) nem parar o serviço: a senha nova
+vale no próximo login.
+
+**Linux (instalação pelo `.run`):**
 ```bash
-# Linux:
-sudo -u mmonitor /opt/middleware-monitor/venv/bin/python -c "
-from middleware_monitor.core.db import init_engine, session_factory
-from middleware_monitor.core.security import hash_password
-init_engine()
-with session_factory() as db:
-    from middleware_monitor.core.models import User
-    u = db.query(User).filter_by(username='admin').one()
-    u.password_hash = hash_password('SenhaTemporaria123')
-    u.must_change_password = True
-    db.commit()
-    print('OK — senha resetada para SenhaTemporaria123')
-"
+sudo bash /opt/middleware-monitor/current/scripts/reset-admin.sh
 ```
+Lê `APP_DATA_DIR` de `/etc/middleware-monitor/env` e executa como `mmonitor`
+com o Python do runtime (`/opt/middleware-monitor/python`) — como root, os
+arquivos `app.db-wal`/`-shm` nasceriam do root e o serviço pararia de escrever.
+Instalação anterior a esta versão: baixe `scripts/reset-admin.sh` do repositório
+e rode do mesmo jeito. Outro caminho de banco: passe como argumento.
+
+**Windows (serviço NSSM ou aplicativo `.exe`):** dois cliques em
+`scripts\reset-admin.bat`, ou no `cmd`:
+```bat
+reset-admin.bat
+```
+Usa o `winsqlite3.dll` do próprio Windows, via PowerShell. Encontra o banco em
+`%LOCALAPPDATA%\MiddlewareMonitor\db\app.db` (aplicativo) ou em
+`%ProgramData%\MiddlewareMonitor\db\app.db` (serviço); se os dois existirem,
+passe o caminho do `app.db` como argumento. O aplicativo guarda o banco no perfil
+de quem o abre: rode o `.bat` com o mesmo usuário do Windows. Para o serviço,
+execute como administrador.
+
+**O que não resolve:** restaurar um backup traz o hash antigo junto; apagar o
+`app.db` recria `admin`/`admin`, mas perde toda a configuração. Sessões já
+abertas continuam válidas por até 12 h após o reset.
 
 ## 8. Como ler logs
 
