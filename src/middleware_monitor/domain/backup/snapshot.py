@@ -139,7 +139,10 @@ def list_backups() -> list[BackupFile]:
             modified_at=datetime.fromtimestamp(st.st_mtime),
             kind=_kind_of(p.name),
         ))
-    out.sort(key=lambda b: b.modified_at, reverse=True)
+    # Desempate pelo nome (que carrega a data ate o segundo): dois arquivos com
+    # o mesmo mtime — relogio/sistema de arquivos com resolucao grossa — nao
+    # podem trocar de ordem, senao a poda apaga o backup errado.
+    out.sort(key=lambda b: (b.modified_at, b.name), reverse=True)
     return out
 
 
@@ -185,7 +188,7 @@ def prune(*, keep: int, max_bytes: int) -> list[str]:
         total = sum(b.size_bytes for b in restantes)
         # Do mais antigo para o mais novo, sempre preservando o ultimo backup:
         # ficar sem nenhuma copia por causa do teto seria o pior resultado.
-        for b in sorted(restantes, key=lambda x: x.modified_at)[:-1]:
+        for b in sorted(restantes, key=lambda x: (x.modified_at, x.name))[:-1]:
             if total <= max_bytes:
                 break
             try:
