@@ -63,6 +63,9 @@ const STATUS_META = {
   outdated:   { color: "yellow", label: "desatualizado" },
   pending:    { color: "gray",   label: "pendente" },
   error:      { color: "red",    label: "erro" },
+  // valor que o aparelho não recebe (ex.: ";" numa célula do TIP 125i): a
+  // linha fica salva, o motivo vai na coluna Erro, e ela não é aplicada.
+  invalid:    { color: "orange", label: "inválido" },
 };
 const statusLabel = (s) => (STATUS_META[s] || STATUS_META.pending).label;
 
@@ -128,7 +131,7 @@ function rowToArray(l) {
       case "_modelo":  return l.ultimo_modelo || "";
       case "_mac":     return l.ultimo_mac || "";
       case "_ultima":  return l.ultima_aplicacao || "";
-      case "_erro":    return l.ultimo_erro || "";
+      case "_erro":    return l.erro_config || l.ultimo_erro || "";
       default:         return (l[c.name] != null ? String(l[c.name]) : "");
     }
   });
@@ -228,6 +231,15 @@ function setSaveStatus(state) {
   el.className = SAVE_STATUS_CLASSES[state] ?? SAVE_STATUS_CLASSES.idle;
 }
 
+// Aviso repetido a cada autosave viraria spam: cada mensagem aparece uma vez,
+// e volta a aparecer só quando o texto muda (outra causa).
+let _ultimoAviso = '';
+function avisarUmaVez(msg, tipo = 'warn') {
+  if (msg === _ultimoAviso) return;
+  _ultimoAviso = msg;
+  (toast[tipo] || toast.warn)(msg);
+}
+
 // Debounce 1200ms: cada edicao reseta o timer; quando o usuario para de
 // digitar por 1,2s, dispara save() em modo silencioso (sem toast).
 let _autosaveTimer = null;
@@ -241,8 +253,11 @@ function scheduleAutosave() {
       await save({ silent: true });
       setSaveStatus("saved");
       setTimeout(() => { if (!_autosaveTimer) setSaveStatus("idle"); }, 2200);
-    } catch (_e) {
+    } catch (e) {
       setSaveStatus("dirty");  // mantem o aviso pra usuario perceber falha
+      // A falha era muda: a planilha dizia "Edição não salva" e ninguém sabia
+      // por quê. Agora a mensagem do servidor aparece (uma vez por causa).
+      avisarUmaVez('Não foi possível salvar a planilha: ' + ((e && e.message) || e), 'error');
     }
   }, 1200);
 }
@@ -662,7 +677,7 @@ function setCell(rowIdx, fieldName, value) {
 }
 
 function renderStatusPills(linhas) {
-  const counts = { applied: 0, registered: 0, outdated: 0, pending: 0, error: 0 };
+  const counts = { applied: 0, registered: 0, outdated: 0, pending: 0, error: 0, invalid: 0 };
   linhas.forEach(l => {
     const s = l.status || "pending";
     counts[s] = (counts[s] || 0) + 1;
@@ -723,12 +738,19 @@ async function save({ silent = false } = {}) {
       setCellSilent(i, "_preview", l.id ? "👁" : "");  // habilita o olho em linhas recém-salvas
       setCellSilent(i, "_actions", (l.id && envCapabilities.length) ? "⋮" : "");
       setCellSilent(i, "_status", statusLabel(l.status || "pending"));
+      setCellSilent(i, "_erro", l.erro_config || l.ultimo_erro || "");
       setCellSilent(i, "_device", deviceCellLabel(l));
       lineDeviceMap.set(l.id, l.device_id ? {
         device_id: l.device_id, device_name: l.device_name,
       } : null);
     });
     renderStatusPills(env.linhas);
+    const invalidas = env.linhas.filter((l) => l.status === 'invalid');
+    if (invalidas.length) {
+      const aviso = `${invalidas.length} linha(s) com valor que o aparelho não aceita — `
+        + `veja a coluna Erro. ${invalidas[0].erro_config || ''}`;
+      if (silent) avisarUmaVez(aviso); else toast.warn(aviso);
+    }
     return env;
   } catch (e) {
     if (!silent) toast.error('Erro ao salvar: ' + e.message);

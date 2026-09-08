@@ -65,10 +65,12 @@ from middleware_monitor.domain.extension_configurator.service import (
     compute_line_hash,
     compute_statuses,
     line_status,
+    validate_config_padrao,
 )
 from middleware_monitor.domain.extension_configurator.softkeys import softkey_catalog_for
 from middleware_monitor.integrations.extension_configurator.vendors import (
     VendorActionUnsupported,
+    VendorConfigError,
 )
 from middleware_monitor.integrations.network import make_arp_probe, make_ping_probe
 from middleware_monitor.integrations.network.base import is_valid_ip
@@ -165,6 +167,9 @@ def _line_dict(
         "ultimo_mac": line.ultimo_mac,
         "status": status.get("status", "pending"),
         "hash_atual": status.get("hash_atual", ""),
+        # Preenchido so em `invalid`: o motivo pelo qual o aparelho nao
+        # receberia esta linha (mensagem do adapter, para o operador).
+        "erro_config": status.get("erro_config"),
         "device_id": (device_info or {}).get("device_id"),
         "device_name": (device_info or {}).get("device_name"),
         "device_ip": (device_info or {}).get("device_ip"),
@@ -691,6 +696,14 @@ def update_environment(
     repo.update_environment(
         db, env, nome=payload.nome, config_padrao=payload.config_padrao,
     )
+    if payload.config_padrao is not None:
+        # Recusa aqui, com a mensagem, o que quebraria a planilha depois
+        # (hotline ligada sem numero, `;` no NTP...). Nada foi commitado ainda.
+        try:
+            validate_config_padrao(env.modelo_telefone, repo.merged_config_padrao(env))
+        except VendorConfigError as exc:
+            db.rollback()
+            raise HTTPException(422, str(exc)) from exc
     db.commit()
     return _env_summary(env, repo.list_lines(db, env_id))
 
@@ -747,6 +760,9 @@ async def apply_environment(
             operador=user.username,
             rolling_delay_ms=rolling_delay_ms,
         )
+    except VendorConfigError as exc:
+        # Dado que o aparelho nao recebe: erro do operador (422), nao 404.
+        raise HTTPException(422, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from exc
     return {"run_id": run_id, "total": total}

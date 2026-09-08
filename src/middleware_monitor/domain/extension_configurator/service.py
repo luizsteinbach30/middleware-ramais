@@ -22,6 +22,7 @@ from middleware_monitor.integrations.extension_configurator.vendors import (
     IntelbrasS3002Adapter,
     IntelbrasTIP125iAdapter,
     VendorAdapter,
+    VendorConfigError,
     YealinkAdapter,
 )
 
@@ -145,15 +146,52 @@ def line_status(line: ExtensionLine, hash_atual: str) -> str:
 def compute_statuses(
     env: ExtensionEnvironment, lines: list[ExtensionLine],
 ) -> list[dict[str, str]]:
-    """`[{id, hash_atual, status}]` por linha. Linhas sem IP ficam `pending`."""
+    """`[{id, hash_atual, status}]` por linha. Linhas sem IP ficam `pending`.
+
+    Uma linha cujo valor o aparelho nao recebe (``VendorConfigError`` — ex.: `;`
+    numa senha do TIP 125i, hotline ligada sem numero) vira ``invalid`` e leva
+    a mensagem em ``erro_config``. Antes a excecao subia daqui e derrubava a
+    tela do ambiente inteira (500 ao salvar E em todo carregamento seguinte)
+    por causa de UMA celula — o operador nao via qual, e ninguem conseguia
+    mais editar a planilha.
+    """
     out: list[dict[str, str]] = []
     for ln in lines:
         if not ln.ip:
             out.append({"id": ln.id, "hash_atual": "", "status": "pending"})
             continue
-        h = compute_line_hash(env, ln)
+        try:
+            h = compute_line_hash(env, ln)
+        except VendorConfigError as exc:
+            out.append({
+                "id": ln.id, "hash_atual": "", "status": "invalid",
+                "erro_config": str(exc),
+            })
+            continue
         out.append({"id": ln.id, "hash_atual": h, "status": line_status(ln, h)})
     return out
+
+
+def validate_config_padrao(modelo_telefone: str, cfg: dict[str, Any]) -> None:
+    """Levanta ``VendorConfigError`` se a config padrao nao renderiza para o modelo.
+
+    Renderiza uma linha de sonda valida: o que sobrar de erro e da config em si
+    (hotline ligada sem numero, `;` no servidor NTP...). A tela de config padrao
+    recusa o salvamento com a mensagem — em vez de aceitar e deixar a planilha
+    inteira `invalid` na tela seguinte.
+    """
+    adapter = adapter_for(modelo_telefone)
+    sonda = {
+        "conta_sip": "1000",
+        "senha_sip": "sonda",
+        "servidor_sip": cfg.get("sip_server") or "192.0.2.1",
+        "label": "1000",
+        "display_name": "1000",
+        "auth_id": "1000",
+        "numero_abreviado": "",
+        "account_active": 1,
+    }
+    adapter.generate_config(build_template(cfg), sonda)
 
 
 def pick_lines_to_apply(
@@ -162,9 +200,12 @@ def pick_lines_to_apply(
     *,
     force: bool,
     selected_ids: list[str] | None,
+    invalid: list[tuple[ExtensionLine, str]] | None = None,
 ) -> list[tuple[ExtensionLine, str]]:
     """Devolve `[(line, hash_esperado)]` que vao para o pipeline.
 
+    - linhas cujo valor o aparelho nao recebe (`VendorConfigError`) nao entram;
+      se `invalid` for dado, recebem `(line, mensagem)` para o run reportar;
     - linhas sem IP sao puladas (nao tem onde aplicar);
     - se `selected_ids` for dado, processa SO essas linhas (ignora status);
     - senao com `force=True` processa todas com IP;
@@ -180,7 +221,14 @@ def pick_lines_to_apply(
             continue
         if selected_ids is not None and ln.id not in wanted:
             continue
-        payload = adapter.generate_config(template, build_row(ln, cfg))
+        try:
+            payload = adapter.generate_config(template, build_row(ln, cfg))
+        except VendorConfigError as exc:
+            # Nao ha o que mandar para o aparelho: quem chamou decide como
+            # reportar (o run registra a linha como erro, sem tocar no telefone).
+            if invalid is not None:
+                invalid.append((ln, str(exc)))
+            continue
         h = hashlib.sha256(payload).hexdigest()
         # Pula quem já está OK por padrão: aplicado por nós OU já registrado no PBX.
         # (force=True ou seleção manual ignoram isto e aplicam mesmo assim.)

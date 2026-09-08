@@ -20,6 +20,17 @@ class VendorActionUnsupported(RuntimeError):
     """O adapter não suporta (ou não homologou) a ação pedida."""
 
 
+class VendorConfigError(ValueError):
+    """A linha ou a config padrão tem um valor que este aparelho não recebe.
+
+    Levantada por ``generate_config`` quando o dado é recusado pelo firmware
+    (ex.: ``;`` num campo do TIP 125i, hotline ligada sem número). A mensagem é
+    escrita para o operador ler na tela. Quem calcula status trata isto como
+    ``invalid`` por linha — nunca como erro do servidor: uma célula ruim não
+    pode tirar a planilha inteira do ar.
+    """
+
+
 @dataclass(slots=True)
 class ActionResult:
     """Resultado de uma ação remota num telefone."""

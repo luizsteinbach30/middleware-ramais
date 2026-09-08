@@ -7,6 +7,7 @@ from .base import (
     VendorActionUnsupported,
     VendorAdapter,
     VendorAuthError,
+    VendorConfigError,
     VendorCredentials,
 )
 from .flyingvoice import FlyingVoiceAdapter
@@ -46,6 +47,7 @@ __all__ = [
     "VendorActionUnsupported",
     "VendorAdapter",
     "VendorAuthError",
+    "VendorConfigError",
     "VendorCredentials",
     "YealinkAdapter",
     "discover_vendor",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.domain.extension_configurator import (
@@ -133,3 +134,42 @@ def test_pick_lines_to_apply_selected_filtra_sem_ip(db: DBSession) -> None:
         env, list(by_ramal.values()), force=False, selected_ids=[sem_ip.id],
     )
     assert picked == []
+
+
+def test_compute_statuses_marca_invalid_em_vez_de_levantar(db: DBSession) -> None:
+    """`;` numa célula do TIP 125i: a linha vira `invalid` com a mensagem e as
+    outras seguem normais — antes a exceção subia e derrubava a tela inteira."""
+    env, by_ramal = _env_with_lines(db, "Intelbras TIP 125i")
+    ruim = by_ramal["3660"]
+    ruim.senha_sip = "abc;def"
+    db.commit()
+    statuses = {s["id"]: s for s in service.compute_statuses(env, list(by_ramal.values()))}
+    assert statuses[ruim.id]["status"] == "invalid"
+    assert "senha SIP" in statuses[ruim.id]["erro_config"]
+    assert statuses[by_ramal["3661"].id]["status"] == "pending"
+
+
+def test_pick_lines_to_apply_separa_as_invalidas(db: DBSession) -> None:
+    env, by_ramal = _env_with_lines(db, "Intelbras TIP 125i")
+    ruim = by_ramal["3660"]
+    ruim.senha_sip = "abc;def"
+    db.commit()
+    invalidas: list = []
+    picked = service.pick_lines_to_apply(
+        env, list(by_ramal.values()), force=True, selected_ids=None, invalid=invalidas,
+    )
+    assert ruim.id not in [ln.id for ln, _ in picked]
+    assert by_ramal["3661"].id in [ln.id for ln, _ in picked]
+    assert [(ln.id, "senha SIP" in msg) for ln, msg in invalidas] == [(ruim.id, True)]
+
+
+def test_validate_config_padrao_recusa_hotline_sem_numero() -> None:
+    from middleware_monitor.domain.extension_configurator.defaults import default_config_padrao
+    from middleware_monitor.integrations.extension_configurator.vendors import VendorConfigError
+
+    cfg = default_config_padrao()
+    service.validate_config_padrao("Intelbras TIP 125i", cfg)  # default e valido
+    cfg["hotline_enable"] = 1
+    cfg["hotline_number"] = ""
+    with pytest.raises(VendorConfigError, match="hotline"):
+        service.validate_config_padrao("Intelbras TIP 125i", cfg)

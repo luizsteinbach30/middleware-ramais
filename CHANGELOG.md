@@ -2,6 +2,46 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.12.1] — 2026-09-08
+
+Uma célula com `;` numa planilha do Intelbras TIP 125i tirava o ambiente
+inteiro do ar: salvar respondia 500 `internal_error`, e a partir daí **toda**
+abertura da planilha e da config padrão também. Relatado no cliente como
+"erro ao salvar a planilha ou editar". Reproduzido com a base real e corrigido
+na camada certa — o valor que o aparelho não recebe é problema **da linha**,
+nunca do servidor.
+
+### Fixed
+
+- **Planilha não cai mais por causa de uma célula.** `generate_config` roda ao
+  salvar e ao carregar (é de onde sai o hash de status). Quando o adapter recusa
+  um valor (`VendorConfigError`, classe nova; `TIP125iValorInvalido` agora
+  herda dela), a linha vira **`inválido`** — pílula laranja, motivo na coluna
+  **Erro** (`erro_config`) — e as demais seguem normais. Salvar e carregar
+  respondem 200. Corrigiu a célula, o status volta sozinho.
+- **Config padrão recusa o que quebraria a planilha depois.** Hotline ligada sem
+  número (ou `;` no servidor NTP, no PIN…) voltava 200 e derrubava a tela
+  seguinte. Agora `PUT /environments/{id}` renderiza uma linha de sonda e
+  responde **422 com a mensagem**; nada é gravado. A tela também trava no
+  navegador e leva o cursor ao campo do número.
+- **Aplicar com linha inválida não falha o ambiente inteiro.** O run registra a
+  linha como erro com a mensagem, sem tocar no telefone, e segue com as outras
+  (`pick_lines_to_apply(..., invalid=)`). Erro de dado no Aplicar responde 422
+  em vez do 404 antigo.
+- **Autosave deixou de falhar em silêncio.** A planilha mostrava só "Edição não
+  salva"; agora a mensagem do servidor aparece (uma vez por causa).
+- **Erro de valor aponta a coluna da planilha**, não "valor da tecla": a seção
+  de teclas fica escondida no TIP, então `;` em *Nº abreviado* acusava um campo
+  que o operador não via.
+- **`ping` ausente no servidor Linux** (conteiner, instalação mínima): a
+  validação de conectividade dizia "host não responde" para todo IP. Agora o
+  erro da linha diz que falta o `iputils-ping` (ou para desligar a validação).
+- Testes do modo desktop (Tk) são pulados em servidor Linux sem `libtk` — a
+  suíte completa passa em `python:3.11-slim`.
+- **Poda de backups determinística.** A ordem dos arquivos desempata pelo nome
+  (que carrega a data até o segundo): dois backups com o mesmo mtime não
+  trocam mais de lugar, então a poda por quantidade nunca apaga o mais novo.
+
 ## [2.12.0] — 2026-09-04
 
 Instalar no Linux virou **uma linha** — e o `.run` da 2.11.0, que nunca tinha
