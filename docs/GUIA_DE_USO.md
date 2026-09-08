@@ -202,6 +202,11 @@ Campos mesclados com os defaults na leitura. Principais:
 | `nova_web_user` / `nova_web_password` | **nova credencial** a gravar no aparelho; também usada como **fallback** de login |
 | `menu_password`, `keylock_*` | bloqueio de menu/teclado (Intelbras) |
 | `function_keys` | teclas programáveis (line / speed_dial / blf / disabled) |
+| `hotline_*` | linha direta (modelos sem tecla programável, como o TIP 125i): ao tirar do gancho disca o número. **Ligada exige número** — a tela recusa salvar sem ele |
+
+Salvar valida a config contra o modelo do ambiente: o que o aparelho não
+receberia (hotline sem número, `;` num campo do TIP…) volta com a mensagem e
+nada é gravado.
 
 ### 5.3 Planilha de linhas (ramais)
 Por linha: **IP**, número do ramal, user auth, senha SIP, servidor SIP
@@ -221,7 +226,11 @@ numa aplicação anterior), tenta automaticamente a **nova credencial**
 recusadas.
 
 Estados por linha: `pending` → nunca aplicado · `applied` → aplicado e em dia ·
-`outdated` → config mudou após aplicar · `error` → última aplicação falhou.
+`outdated` → config mudou após aplicar · `error` → última aplicação falhou ·
+`inválido` → a linha tem um valor que **este modelo não recebe** (ex.: `;`
+numa célula do TIP 125i, que o firmware usa como separador de comando). A
+linha fica salva, o motivo aparece na coluna **Erro**, e ela não é enviada ao
+aparelho até ser corrigida — as outras seguem normalmente.
 
 ### 5.5 Relatórios de execução (`/extension-configurator/runs`) *(v2.5.0)*
 Cada execução vira um relatório com cartões (total/OK/falha/duração/**operador**)

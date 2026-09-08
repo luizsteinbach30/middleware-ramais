@@ -17,6 +17,8 @@ Regras herdadas do autocfg-ramais:
 from __future__ import annotations
 
 import asyncio
+import platform
+import shutil
 import time
 import uuid
 from typing import Any
@@ -53,6 +55,17 @@ from .service import (
 from .verify import verify_registration_batch, verify_registration_one
 
 log = get_logger("extension_configurator.apply")
+
+
+def _ping_disponivel() -> bool:
+    """O servidor consegue pingar? No Windows o `ping.exe` sempre existe; no
+    Linux o binario vem do `iputils-ping`, que servidor minimo e conteiner
+    costumam nao ter. Sem ele a sonda devolve None para TODO IP, e o erro
+    por linha diria "host nao responde" — mentira que manda o operador
+    conferir a rede em vez do servidor."""
+    if platform.system().lower().startswith("win"):
+        return True
+    return shutil.which("ping") is not None
 
 
 async def _ping_host(ip: str, timeout_ms: int = 1500) -> bool:
@@ -139,6 +152,12 @@ async def _apply_row(
     try:
         if validar_conectividade:
             row.stage = "ping"
+            if not _ping_disponivel():
+                raise RuntimeError(
+                    "o servidor nao tem o comando 'ping' (instale o pacote "
+                    "iputils-ping) — ou desative 'Validar conectividade' na "
+                    "config do ambiente.",
+                )
             if not await _ping_host(row.ip):
                 raise RuntimeError(
                     "host nao responde ao ping (offline ou ICMP bloqueado). "
@@ -218,8 +237,9 @@ async def run_apply(
             raise ValueError(f"ambiente '{env_id}' nao existe")
         cfg = repo.merged_config_padrao(env)
         lines = repo.list_lines(db, env_id)
+        invalidas: list[tuple[ExtensionLine, str]] = []
         targets = pick_lines_to_apply(
-            env, lines, force=force, selected_ids=selected_ids,
+            env, lines, force=force, selected_ids=selected_ids, invalid=invalidas,
         )
         creds_chain = build_creds_chain(cfg)
         validar = bool(cfg.get("validar_conectividade", True))
@@ -250,6 +270,23 @@ async def run_apply(
                 status_antes=line_status(line, hash_esperado),
             )
             run_line_ids[line.id] = rl.id
+        # Linhas que o aparelho nao receberia (VendorConfigError) entram no run
+        # ja como erro, com a mensagem — sem tocar no telefone. Antes a excecao
+        # subia e o botao Aplicar falhava para o ambiente inteiro.
+        rows_invalidas: list[RowState] = []
+        for line, msg in invalidas:
+            rl = repo.create_run_line(
+                db, run_id=db_run_id, line_id=line.id, numero_ramal=line.numero_ramal,
+                ip=line.ip, nome_visivel=line.nome_visivel, status_antes="invalid",
+            )
+            repo.finish_run_line(db, rl, status_depois="erro", erro=msg)
+            repo.update_line_status(db, line, status="erro", erro=msg)
+            agora = time.time()
+            rows_invalidas.append(RowState(
+                line_id=line.id, ip=line.ip, numero_ramal=line.numero_ramal,
+                stage="error", msg=msg, started_at=agora, finished_at=agora,
+            ))
+            log.warning("apply_row_invalid", env_id=env_id, line_id=line.id, error=msg)
         db.commit()
 
     run_id = uuid.uuid4().hex[:12]
@@ -258,18 +295,22 @@ async def run_apply(
         with session_factory() as db:
             empty_run = db.get(ExtensionApplyRun, db_run_id)
             if empty_run is not None:
-                repo.finish_run(db, empty_run, ok=0, falha=0)
+                repo.finish_run(db, empty_run, ok=0, falha=len(rows_invalidas))
                 db.commit()
         rs = RunState(run_id=run_id, env_id=env_id, db_run_id=db_run_id)
+        rs.rows.extend(rows_invalidas)
         rs.finished_at = time.time()
         run_state.register(rs)
-        return run_id, 0
+        return run_id, len(rows_invalidas)
 
     rs = RunState(run_id=run_id, env_id=env_id, db_run_id=db_run_id)
     for line_id, ip, ramal, hash_esperado, _payload in prepared:
         rs.rows.append(RowState(
             line_id=line_id, ip=ip, numero_ramal=ramal, hash_esperado=hash_esperado,
         ))
+    # Depois das preparadas: o worker indexa `rs.rows[idx]` pela posicao em
+    # `prepared`, entao as invalidas (ja finalizadas) ficam no fim.
+    rs.rows.extend(rows_invalidas)
     run_state.register(rs)
     run_state.prune()
 

@@ -61,6 +61,9 @@ from middleware_monitor.core.scheduler import (
     start as scheduler_start,
 )
 from middleware_monitor.domain.mqtt.service import get_ingestor
+from middleware_monitor.integrations.extension_configurator.vendors import (
+    VendorConfigError,
+)
 from middleware_monitor.jobs import register_all
 from middleware_monitor.settings import get_settings
 from middleware_monitor.version import __version__
@@ -194,6 +197,13 @@ def create_app() -> FastAPI:
 
     # Web routers (HTML)
     app.include_router(web_pages.router)
+
+    @app.exception_handler(VendorConfigError)
+    async def _config_invalida(_request: Request, exc: VendorConfigError) -> JSONResponse:
+        # Valor que o aparelho nao recebe e erro do dado, nao do servidor: a
+        # mensagem do adapter e para o operador ler na tela (422), em vez do
+        # "internal_error" generico que escondia a causa.
+        return JSONResponse({"detail": str(exc)}, status_code=422)
 
     @app.exception_handler(Exception)
     async def _unhandled(_request: Request, exc: Exception) -> JSONResponse:

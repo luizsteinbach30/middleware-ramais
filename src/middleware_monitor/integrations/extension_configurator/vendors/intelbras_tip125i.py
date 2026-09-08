@@ -95,6 +95,7 @@ from .base import (
     VendorActionUnsupported,
     VendorAdapter,
     VendorAuthError,
+    VendorConfigError,
     VendorCredentials,
 )
 
@@ -229,8 +230,12 @@ _STATEMENT_RE = re.compile(
 _ASSIGN_RE = re.compile(r"(?P<col>\w+)\s*=")
 
 
-class TIP125iValorInvalido(ValueError):
-    """Valor que o firmware do TIP nao consegue receber (ver `_sql_str`)."""
+class TIP125iValorInvalido(VendorConfigError):
+    """Valor que o firmware do TIP nao consegue receber (ver `_sql_str`).
+
+    E um `VendorConfigError`: a camada de status marca a linha como `invalid`
+    com esta mensagem, em vez de deixar a excecao derrubar a tela.
+    """
 
 
 def _sql_str(value: Any, campo: str = "") -> str:
@@ -537,9 +542,14 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
                 continue
             tipo = _SOFTKEY_TYPES.get(str(fk.get("type", "disabled")).lower(), 0)
             if fk.get("value_source") == "linha":
-                valor = str(row.get(fk.get("value_field") or "numero_abreviado", "") or "")
+                coluna = str(fk.get("value_field") or "numero_abreviado")
+                valor = str(row.get(coluna, "") or "")
+                # A secao de teclas fica escondida para este modelo, entao o
+                # erro precisa apontar a COLUNA da planilha, nao a tecla.
+                campo = f"{coluna} (coluna da planilha, usada pela tecla {fk.get('key')})"
             else:
                 valor = str(fk.get("value_fixed", "") or "")
+                campo = f"valor da tecla {fk.get('key')}"
             # `Account` da tecla: 0-based como o resto do firmware. Tipo 0
             # (nao definido) exige Auto — e o que a propria UI grava.
             if tipo == 0:
@@ -547,7 +557,7 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
             else:
                 acct = max(_sql_int(fk.get("account", 1), 1), 1) - 1
             out.append(
-                f"UPDATE TAB_SOFTKEY SET Type={tipo},Value={_sql_str(valor, 'valor da tecla')},"
+                f"UPDATE TAB_SOFTKEY SET Type={tipo},Value={_sql_str(valor, campo)},"
                 f"Account={acct},Number='' WHERE PK = {pk};",
             )
         return out

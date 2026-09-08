@@ -15,6 +15,8 @@ import time
 
 import pytest
 
+pytest.importorskip("tkinter", exc_type=ImportError)  # servidor Linux sem Tk: o modo desktop nao existe la
+
 from middleware_monitor.desktop import ServerThread
 
 

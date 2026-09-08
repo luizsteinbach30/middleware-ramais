@@ -258,6 +258,13 @@ async function save() {
   body.config_padrao.function_keys = collectFKs();
   // No aparelho a hotline é 0/1, não booleano — mandamos no formato do campo.
   body.config_padrao.hotline_enable = $('#cfg-hotline_enable')?.checked ? 1 : 0;
+  // O aparelho exige número com a hotline ligada. O servidor também recusa
+  // (422 com a mensagem), mas aqui o operador já cai no campo certo.
+  if (body.config_padrao.hotline_enable === 1 && !String(body.config_padrao.hotline_number || '').trim()) {
+    toast.error('Hotline habilitada sem número: informe o número da hotline ou desligue a hotline.');
+    $('#cfg-hotline_number')?.focus();
+    return;
+  }
   try {
     await api(`/api/extension-configurator/environments/${encodeURIComponent(envId)}`, {
       method: 'PUT', body,
