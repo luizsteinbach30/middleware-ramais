@@ -38,6 +38,9 @@ nunca do servidor.
   erro da linha diz que falta o `iputils-ping` (ou para desligar a validação).
 - Testes do modo desktop (Tk) são pulados em servidor Linux sem `libtk` — a
   suíte completa passa em `python:3.11-slim`.
+- **Poda de backups determinística.** A ordem dos arquivos desempata pelo nome
+  (que carrega a data até o segundo): dois backups com o mesmo mtime não
+  trocam mais de lugar, então a poda por quantidade nunca apaga o mais novo.
 
 ## [2.12.0] — 2026-09-04
 
