@@ -138,5 +138,11 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# `tests/api/test_extension_configurator_invalid.py` importa um helper de outro
+# módulo de teste (`from tests.api...`). Com `python -m pytest` a raiz do repo
+# entra no sys.path e funciona; com o script `pytest` (como o CI chama) não —
+# e a main ficou vermelha desde a 2.12.1 sem ninguém notar. Fixar a raiz aqui
+# torna as duas formas de chamar equivalentes.
+pythonpath = ["."]
 addopts = "-q --strict-markers"
 filterwarnings = ["ignore::DeprecationWarning"]
