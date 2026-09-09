@@ -87,6 +87,9 @@ def build_template(cfg: dict[str, Any]) -> dict[str, Any]:
         "hotline_enable": cfg.get("hotline_enable", 0),
         "hotline_number": cfg.get("hotline_number", ""),
         "hotline_time": cfg.get("hotline_time", 0),
+        # TIP 125i: por padrao o apply desliga o auto-provisionamento do aparelho
+        # (senao o XML antigo sobrescreve a conta no reboot). True = preservar.
+        "manter_autoprovisionamento": cfg.get("manter_autoprovisionamento", False),
     }
 
 
