@@ -50,7 +50,7 @@ systemd-run --wait --pipe --collect -p User=mmonitor -p NoNewPrivileges=yes   -p
 
 | Causa | Mitigação |
 |---|---|
-| `ping_indisponivel` com `Operation not permitted` | `sysctl -w net.ipv4.ping_group_range="0 2147483647"` (e em `/etc/sysctl.d/`), ou `AmbientCapabilities=CAP_NET_RAW` num drop-in da unidade |
+| `ping_indisponivel` com `Operation not permitted` | Desde a **2.12.3** a unidade traz `AmbientCapabilities=CAP_NET_RAW` (atualize). Em versão anterior: drop-in em `/etc/systemd/system/middleware-monitor.service.d/ping.conf` com `[Service]`, `AmbientCapabilities=CAP_NET_RAW`, `CapabilityBoundingSet=CAP_NET_RAW` + `daemon-reload` + restart; ou `sysctl -w net.ipv4.ping_group_range="0 2147483647"` (e em `/etc/sysctl.d/`) |
 | `ping_indisponivel` com `Network is unreachable` | Falta rota do servidor até a rede dos telefones (`ip route`) |
 | `ping_indisponivel` com `comando 'ping' não encontrado` | `apt install iputils-ping` |
 | ICMP bloqueado por firewall | Liberar ICMP egress no servidor |

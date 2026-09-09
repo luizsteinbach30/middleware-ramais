@@ -21,6 +21,14 @@ ProtectSystem=strict
 ReadWritePaths=/var/lib/middleware-monitor
 NoNewPrivileges=yes
 PrivateTmp=yes
+# O monitor pinga os telefones com /usr/bin/ping. NoNewPrivileges ignora a
+# capability de arquivo do binário (cap_net_raw=ep), e o ICMP sem privilégio
+# depende do sysctl net.ipv4.ping_group_range — que num host do cliente estava
+# "1 0" (desligado): todo aparelho aparecia offline com "socket: Operation not
+# permitted" (2026-09-09). A capability ambiente atravessa o execve mesmo sob
+# NoNewPrivileges e não depende do sysctl. É a única que o serviço recebe.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
 
 [Install]
 WantedBy=multi-user.target

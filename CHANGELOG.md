@@ -2,6 +2,24 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.12.3] — 2026-09-09
+
+### Fixed
+
+- **Linux: todo aparelho "offline" porque o serviço não podia abrir socket
+  ICMP.** Medido no host do cliente: `NoNewPrivileges=yes` ignora a capability
+  de arquivo do `/usr/bin/ping` (`cap_net_raw=ep`), e o host tinha
+  `net.ipv4.ping_group_range = 1 0` (ICMP sem privilégio desligado; o padrão
+  do Ubuntu é `0 2147483647`). Dentro do sandbox o `ping` morria em
+  `socket: Operation not permitted` — e a 2.12.2 já mostrava isso no log como
+  `ping_indisponivel`. A unidade entregue pelo `.run` passa a ter
+  `AmbientCapabilities=CAP_NET_RAW` + `CapabilityBoundingSet=CAP_NET_RAW`: a
+  capability ambiente atravessa o `execve` mesmo sob `NoNewPrivileges` e não
+  depende do sysctl. O resto do endurecimento (`ProtectSystem=strict`,
+  `PrivateTmp`, `NoNewPrivileges`) fica como está; `tests/unit/test_linux_unit.py`
+  prende o acordo. Instalações antigas: o `install.sh` reescreve a unidade na
+  atualização; um drop-in com as mesmas duas linhas resolve sem atualizar.
+
 ## [2.12.2] — 2026-09-09
 
 O host do cliente, já na 2.12.1 pelo `.run` Linux, continuava com **internal
