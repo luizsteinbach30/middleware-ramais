@@ -2,6 +2,17 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [Unreleased]
+
+### Added
+
+- **Instalador Linux avisa o que ele não muda no host.** No fim da instalação,
+  `install-bundle.sh` acusa `ping` ausente (`apt install iputils-ping`; sem
+  ele o monitor marca todo aparelho como offline) e host em UTC (ambientes com
+  hora "herdar" mandam UTC aos telefones; `timedatectl set-timezone
+  America/Sao_Paulo` ou fuso na config padrão). Os dois casos apareceram no
+  host do cliente em 2026-09-09.
+
 ## [2.12.3] — 2026-09-09
 
 ### Fixed

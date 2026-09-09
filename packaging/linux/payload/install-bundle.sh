@@ -165,6 +165,32 @@ rollback() {
   log "   Log completo: $LOG_FILE"
 }
 die() { log "ERRO: $*"; rollback; exit 1; }
+
+# O que o instalador não muda no host, mas o operador precisa saber agora — não
+# quando todo aparelho aparecer offline ou com a hora errada (caso de campo
+# 2026-09-09: host sem `ping` no PATH do serviço e em UTC com ambientes "herdar").
+avisos_do_host() {
+  local n=0 tz=""
+  if ! command -v ping >/dev/null 2>&1; then
+    n=$((n+1))
+    log "    AVISO: comando 'ping' ausente — o monitor e a validação de conectividade"
+    log "           marcam todo aparelho como offline. Instale: apt install iputils-ping"
+  fi
+  if command -v timedatectl >/dev/null 2>&1; then
+    tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+  fi
+  [[ -n "$tz" ]] || tz="$(cat /etc/timezone 2>/dev/null || true)"
+  [[ -n "$tz" ]] || tz="$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')"
+  case "$tz" in
+    UTC|Etc/UTC|Etc/UCT|Universal|Zulu)
+      n=$((n+1))
+      log "    AVISO: o host está em $tz — ambientes com hora 'herdar' mandam UTC aos"
+      log "           telefones. Ajuste: timedatectl set-timezone America/Sao_Paulo"
+      log "           (ou defina o fuso na config padrão de cada ambiente)."
+      ;;
+  esac
+  return 0
+}
 # Só no shell principal: os subshells dos pipelines herdam o trap (set -E) e
 # imprimiriam o rollback duas vezes.
 trap '[[ $BASH_SUBSHELL == 0 ]] && rollback' ERR
@@ -243,3 +269,4 @@ else
   log "    Sem systemd aqui: para rodar à mão,"
   log "    cd $PREFIX/current && runuser -u $USER_SVC -- env \$(grep -E '^[A-Z_]+=' $ETC/env | xargs) $PY -m middleware_monitor"
 fi
+avisos_do_host
