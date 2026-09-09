@@ -140,6 +140,16 @@ _WHITELIST: frozenset[str] = frozenset({
     "TAB_SOFTKEY.Number",
     # Senha do admin web (TAB_SECURITY_ACCOUNT).
     "TAB_SECURITY_ACCOUNT.SECPassword",
+    # Auto-provisionamento do proprio aparelho (TAB_UPDATE_PROVISIONING). O
+    # middleware DESLIGA os tres gatilhos ao aplicar: URL fixa, DHCP opcao 66 e
+    # PnP. Caso de campo 2026-09-09 (loja 10.141): os telefones tinham
+    # `UPDProvisioningEnable=1` apontando para um servidor de 2024, e como no fw
+    # 4.3 o apply termina em reboot, o XML antigo sobrescrevia a conta no boot
+    # seguinte — "aplicado" no painel, 403 no aparelho. A URL e o caminho ficam
+    # gravados (so o gatilho e desligado), para o operador poder religar.
+    "TAB_UPDATE_PROVISIONING.UPDProvisioningEnable",
+    "TAB_UPDATE_PROVISIONING.UPDProvisioningDHCPEnable",
+    "TAB_UPDATE_PROVISIONING.UPDProvisioningPNPEnable",
     # Device action `normalize` (ver `execute_action`). Volumes de RECEPCAO —
     # os de microfone (`CurVolMic*`) ficam de fora de proposito.
     "TAB_SOFT_CURRENTCONFIG.CurVolumeHandPhone",
@@ -159,6 +169,7 @@ _NOTIFY_TABLES: tuple[str, ...] = (
     "TAB_SYSTEM_PHONE",
     "TAB_SOFTKEY",
     "TAB_SECURITY_ACCOUNT",
+    "TAB_UPDATE_PROVISIONING",  # gatilhos de auto-provisionamento desligados no apply
 )
 
 # `Transport` do TAB_VOIP_ACCOUNT (VARCHAR). Indices do array
@@ -436,12 +447,33 @@ class IntelbrasTIP125iAdapter(VendorAdapter):
         linhas.extend(self._render_hotline(template, account))
         linhas.extend(self._render_softkeys(template.get("function_keys", []) or [], row, account))
         linhas.extend(self._render_web_admin(template))
+        linhas.extend(self._render_autoprov(template))
 
         # SEM nova linha no fim: ver `_execute` — sobra depois do `;` final faz o
         # aparelho engolir o comando inteiro em silencio.
         sql = "\n".join(linhas)
         self._assert_whitelist(sql)
         return sql.encode("utf-8")
+
+    @staticmethod
+    def _render_autoprov(template: dict[str, Any]) -> list[str]:
+        """Desliga o auto-provisionamento do aparelho — o middleware e o provisionador.
+
+        Enquanto o telefone obedece a dois provisionadores, nenhum e fonte da
+        verdade: no fw 4.3 o apply termina em reboot, e `WhenTurnOn=1` faz o
+        aparelho baixar o XML do servidor antigo e sobrescrever a conta que
+        acabou de receber (loja 10.141, 2026-09-09: "aplicado" no painel, conta
+        apontando para 192.168.81.102 e registro 403 no aparelho). Os tres
+        gatilhos caem (URL, DHCP 66, PnP); URL e caminho ficam gravados.
+        `manter_autoprovisionamento` na config padrao preserva o comportamento
+        antigo para quem precisa do provisionamento proprio (ex.: firmware).
+        """
+        if template.get("manter_autoprovisionamento") in (True, 1, "1", "true", "on"):
+            return []
+        return [
+            "UPDATE TAB_UPDATE_PROVISIONING SET UPDProvisioningEnable=0,"
+            "UPDProvisioningDHCPEnable=0,UPDProvisioningPNPEnable=0 WHERE PK = 1;",
+        ]
 
     @staticmethod
     def _timezone_id(template: dict[str, Any]) -> int:

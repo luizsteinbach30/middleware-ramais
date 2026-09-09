@@ -842,3 +842,55 @@ async def test_acao_fora_do_catalogo_e_recusada() -> None:
 
     with pytest.raises(VendorActionUnsupported):
         await IntelbrasTIP125iAdapter().execute_action(IP, CREDS, "set_ip", {"ip": "10.0.0.9"})
+
+
+# ---------------------------------------------------------------- auto-provisionamento
+# Caso de campo 2026-09-09 (loja 10.141): TAB_UPDATE_PROVISIONING ligada apontando
+# para um servidor de 2024; no fw 4.3 o apply termina em reboot e o XML antigo
+# sobrescrevia a conta no boot seguinte — "aplicado" no painel, 403 no aparelho.
+
+
+def _row_autoprov() -> dict:
+    return {
+        "conta_sip": "14102", "auth_id": "muffato-14102", "senha_sip": "s3nh4",
+        "display_name": "14102", "servidor_sip": "", "account_active": 1,
+    }
+
+
+def test_apply_desliga_os_tres_gatilhos_de_autoprovisionamento() -> None:
+    sql = IntelbrasTIP125iAdapter().generate_config(_template(), _row_autoprov()).decode()
+    stmts = [s for s in sql.splitlines() if "TAB_UPDATE_PROVISIONING" in s]
+    assert stmts == [
+        "UPDATE TAB_UPDATE_PROVISIONING SET UPDProvisioningEnable=0,"
+        "UPDProvisioningDHCPEnable=0,UPDProvisioningPNPEnable=0 WHERE PK = 1;",
+    ]
+    # URL e caminho do servidor antigo ficam gravados: so o gatilho cai
+    assert "UPDProvisioningServerURL" not in sql
+    assert "UPDProvisioningPath" not in sql
+
+
+def test_manter_autoprovisionamento_preserva_o_comportamento_antigo() -> None:
+    sql = IntelbrasTIP125iAdapter().generate_config(
+        _template(manter_autoprovisionamento=True), _row_autoprov(),
+    ).decode()
+    assert "TAB_UPDATE_PROVISIONING" not in sql
+
+
+def test_notify_inclui_a_tabela_de_autoprovisionamento() -> None:
+    from middleware_monitor.integrations.extension_configurator.vendors import intelbras_tip125i as mod
+
+    assert "TAB_UPDATE_PROVISIONING" in mod._NOTIFY_TABLES
+    # e a whitelist deixa passar exatamente os tres gatilhos, nada mais da tabela
+    permitidos = sorted(c for c in mod._WHITELIST if c.startswith("TAB_UPDATE_PROVISIONING."))
+    assert permitidos == [
+        "TAB_UPDATE_PROVISIONING.UPDProvisioningDHCPEnable",
+        "TAB_UPDATE_PROVISIONING.UPDProvisioningEnable",
+        "TAB_UPDATE_PROVISIONING.UPDProvisioningPNPEnable",
+    ]
+
+
+def test_build_template_expoe_a_chave_com_default_desligado() -> None:
+    from middleware_monitor.domain.extension_configurator.service import build_template
+
+    assert build_template({}).get("manter_autoprovisionamento") is False
+    assert build_template({"manter_autoprovisionamento": True})["manter_autoprovisionamento"] is True

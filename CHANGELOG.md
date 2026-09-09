@@ -2,10 +2,30 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
-## [Unreleased]
+## [2.12.4] — 2026-09-09
+
+### Fixed
+
+- **TIP 125i: a configuração aplicada "sumia sozinha".** Os aparelhos de uma loja
+  tinham o auto-provisionamento próprio ligado (`TAB_UPDATE_PROVISIONING`,
+  `Enable=1`, "ao ligar"), apontando para um servidor de 2024 que entrega um
+  `tip125system.xml` com outra conta SIP. Como no firmware 4.3 o apply termina
+  em reboot, o telefone baixava o XML no boot seguinte e sobrescrevia tudo:
+  "aplicado" no painel, conta apontando para o servidor antigo e registro 403
+  no aparelho. Agora o `generate_config` do TIP **desliga os três gatilhos**
+  (`UPDProvisioningEnable`, `DHCPEnable`, `PNPEnable`) e a tabela entra no
+  `notify`; URL e caminho ficam gravados para o operador poder religar. Quem
+  precisa do provisionamento próprio (ex.: firmware) põe
+  `manter_autoprovisionamento: true` na config padrão do ambiente. **Efeito
+  colateral esperado:** o hash da config muda, então as linhas TIP aparecem
+  como "desatualizado" até a próxima aplicação.
 
 ### Added
 
+- `scripts/tip125i-sondar.sh`: sonda **somente-leitura** dos TIP 125i (HTTPS
+  com certificado autoassinado, retry no 401 esporádico do firmware): tabelas
+  SIP/codec/mídia/provisionamento por aparelho, resumo da conta, teste de TCP
+  5060 no PABX e diff entre dois aparelhos.
 - **Instalador Linux avisa o que ele não muda no host.** No fim da instalação,
   `install-bundle.sh` acusa `ping` ausente (`apt install iputils-ping`; sem
   ele o monitor marca todo aparelho como offline) e host em UTC (ambientes com
