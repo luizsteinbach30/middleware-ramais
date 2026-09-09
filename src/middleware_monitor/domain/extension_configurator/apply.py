@@ -68,12 +68,19 @@ def _ping_disponivel() -> bool:
     return shutil.which("ping") is not None
 
 
-async def _ping_host(ip: str, timeout_ms: int = 1500) -> bool:
+async def _ping_host(ip: str, timeout_ms: int = 1500) -> tuple[bool, str | None]:
+    """``(respondeu, motivo_da_sonda)``.
+
+    ``motivo_da_sonda`` vem preenchido quando foi o **servidor** que não
+    conseguiu pingar (sem permissão para ICMP, sem rota, sem binário) — a
+    sonda Linux o expõe em ``ultimo_erro``. É outra falha, com outro culpado,
+    e a mensagem por linha tem de dizer isso em vez de "host não responde".
+    """
     if not ip:
-        return False
+        return False, None
     probe = make_ping_probe()
     latency = await probe.ping(ip, timeout_ms)
-    return latency is not None
+    return latency is not None, getattr(probe, "ultimo_erro", None)
 
 
 def build_creds_chain(cfg: dict[str, Any]) -> list[VendorCredentials]:
@@ -158,7 +165,14 @@ async def _apply_row(
                     "iputils-ping) — ou desative 'Validar conectividade' na "
                     "config do ambiente.",
                 )
-            if not await _ping_host(row.ip):
+            respondeu, motivo_sonda = await _ping_host(row.ip)
+            if not respondeu and motivo_sonda:
+                raise RuntimeError(
+                    f"o servidor nao consegue pingar ({motivo_sonda}). Nao e o "
+                    "telefone: corrija o servidor (permissao de ICMP ou rota) ou "
+                    "desative 'Validar conectividade' na config do ambiente.",
+                )
+            if not respondeu:
                 raise RuntimeError(
                     "host nao responde ao ping (offline ou ICMP bloqueado). "
                     "Se a rede bloqueia ICMP, desative 'Validar conectividade' "

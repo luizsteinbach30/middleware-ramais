@@ -2,6 +2,40 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.12.2] — 2026-09-09
+
+O host do cliente, já na 2.12.1 pelo `.run` Linux, continuava com **internal
+error** ao abrir ambientes e com todos os aparelhos "offline". Os dois sintomas
+eram do servidor, não da rede nem do dado: a wheel saía **sem os templates dos
+fabricantes**, e a sonda de ping engolia o motivo de não conseguir pingar.
+
+### Fixed
+
+- **Ambientes HTEK, Intelbras V-series e Yealink respondiam 500 no Linux.**
+  `generate_config` lê `vendors/<fabricante>_template.<ext>` do disco; o `.exe`
+  Windows levava esses arquivos pelo `.spec`, mas `[tool.setuptools.package-data]`
+  não os listava, e a wheel — que é o que o `.run` instala — chegava sem eles.
+  `FileNotFoundError` dentro de `compute_statuses` derrubava **todo** `GET` do
+  ambiente (planilha e config padrão), o `PUT` da planilha e o Aplicar. TIP 125i,
+  S3002 e FlyingVoice não caíam porque renderizam a config em código. Corrigido
+  no `pyproject.toml` (padrão `*_template.*`, para o próximo fabricante com outra
+  extensão não repetir a história do Yealink no `.exe`).
+- **"Host não responde ao ping" quando era o servidor que não conseguia pingar.**
+  A sonda Linux devolvia `None` para qualquer falha do `ping`, inclusive
+  `socket: Operation not permitted` (sandbox do systemd sem a capability do
+  binário) e `Network is unreachable`. Agora distingue pelo código de saída do
+  iputils (1 = sem resposta; 2+ = a sonda falhou), expõe o motivo em
+  `ultimo_erro`, avisa **uma vez** no log (`ping_indisponivel`, com o que
+  conferir) e o Aplicar diz por linha: *"o servidor não consegue pingar (…)"*.
+
+### Added
+
+- **Guarda contra arquivo de dados fora da wheel.** `tests/unit/test_package_data.py`
+  lê o `pyproject.toml` e exige que **todo** arquivo não-Python de
+  `src/middleware_monitor` case com um padrão de `package-data`; o build do `.run`
+  (`build_installer.sh`) compara a árvore do fonte com o pacote instalado e
+  aborta se faltar algo — no build, não no cliente.
+
 ## [2.12.1] — 2026-09-08
 
 Uma célula com `;` numa planilha do Intelbras TIP 125i tirava o ambiente

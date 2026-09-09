@@ -75,6 +75,25 @@ echo "==> Verificação offline das wheels"
 "$BUILD/verify/python/bin/python3" -m pip install --quiet --disable-pip-version-check \
   --no-index --find-links "$BUILD/wheels" "${WHL}[metrics]"
 "$BUILD/verify/python/bin/python3" -c 'import middleware_monitor.app, alembic, passlib, openpyxl, fpdf, paho.mqtt, prometheus_client; print("    ok")'
+
+# A wheel instalada tem de carregar TODO arquivo que o código lê do disco
+# (templates dos fabricantes, migrations, web). A 2.12.1 saiu sem os
+# `vendors/*_template.*` — o `.exe` os levava pelo .spec, a wheel não — e todo
+# ambiente HTEK/Intelbras V/Yealink respondia 500 no Linux. Comparar a árvore
+# do fonte com o pacote instalado pega isso no build, não no cliente.
+echo "==> Verificação dos arquivos de dados da wheel"
+"$BUILD/verify/python/bin/python3" - "$ROOT/src/middleware_monitor" <<'PY'
+import sys, pathlib, middleware_monitor
+fonte = pathlib.Path(sys.argv[1]); instalado = pathlib.Path(middleware_monitor.__file__).parent
+faltando = sorted(
+    p.relative_to(fonte).as_posix() for p in fonte.rglob("*")
+    if p.is_file() and p.suffix not in {".py", ".pyc"} and "__pycache__" not in p.parts
+    and not (instalado / p.relative_to(fonte)).is_file()
+)
+if faltando:
+    sys.exit("    FALTAM na wheel (acrescente em [tool.setuptools.package-data]): " + ", ".join(faltando))
+print("    ok — todos os arquivos de dados do fonte estão no pacote instalado")
+PY
 rm -rf "$BUILD/verify" "$BUILD/tools"
 
 echo "==> Código, scripts e docs"

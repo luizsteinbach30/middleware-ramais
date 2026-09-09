@@ -68,6 +68,15 @@ middleware_monitor = [
     "web/templates/**/*.html",
     "web/static/**/*",
     "core/migrations/**/*",
+    # Templates de configuração dos aparelhos, lidos em runtime por
+    # ``Path(__file__).parent / "<vendor>_template.<ext>"``. Sem esta linha a
+    # wheel (e por tabela o .run do Linux) saía sem eles: todo ambiente HTEK,
+    # Intelbras V e Yealink respondia 500 ao abrir a planilha (caso de campo
+    # 2026-09-09, host do cliente na 2.12.1). O .exe já os levava pelo .spec.
+    # Casa pelo sufixo `_template.*`, não pela extensão — o Yealink é `.cfg`.
+    # `tests/unit/test_package_data.py` confere que nenhum arquivo de dados do
+    # pacote fica de fora destes padrões.
+    "integrations/extension_configurator/vendors/*_template.*",
 ]
 
 [tool.ruff]
