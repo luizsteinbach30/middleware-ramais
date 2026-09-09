@@ -50,6 +50,7 @@ from .base import (
     VendorAdapter,
     VendorAuthError,
     VendorCredentials,
+    avisar_uma_vez,
 )
 
 log = get_logger("vendors.htek")
@@ -318,7 +319,10 @@ class HTEKAdapter(VendorAdapter):
             return int(texto)
         if offset_minutes is not None and offset_minutes in _OFFSET_TO_ID:
             return _OFFSET_TO_ID[offset_minutes]
-        log.warning("htek_timezone_desconhecido", timezone=texto, offset=offset_minutes)
+        avisar_uma_vez(
+            log, f"{texto}|{offset_minutes}", "htek_timezone_desconhecido",
+            timezone=texto, offset=offset_minutes,
+        )
         return None
 
     @staticmethod

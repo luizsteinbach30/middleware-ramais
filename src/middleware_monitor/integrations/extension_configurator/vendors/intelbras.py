@@ -57,6 +57,7 @@ from .base import (
     VendorAdapter,
     VendorAuthError,
     VendorCredentials,
+    avisar_uma_vez,
 )
 
 # Aspas em campos de senha podem corromper o valor armazenado no aparelho
@@ -295,8 +296,8 @@ class IntelbrasAdapter(VendorAdapter):
         offset = template.get("timezone_offset_minutes")
         par = _TIMEZONE_IDS.get(offset) if isinstance(offset, int) else None
         if par is None and offset is not None:
-            log.warning(
-                "intelbras_timezone_desconhecido",
+            avisar_uma_vez(
+                log, f"{template.get('timezone')}|{offset}", "intelbras_timezone_desconhecido",
                 timezone=template.get("timezone"), offset=offset,
             )
         linhas: list[str] = []

@@ -4,6 +4,28 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
+# ---------------------------------------------------------------- avisos
+# ``generate_config`` roda por linha, em toda abertura de planilha e no cálculo
+# de status — e TODO warning vira registro em ``system_logs`` (core/logging.py,
+# ``persist_warn_error``). Um aviso de configuração que não muda por linha (fuso
+# que o firmware não conhece, por exemplo) emitido a cada chamada enche o banco:
+# host em UTC + ambiente "herdar" = dezenas de inserts por GET (host do cliente,
+# 2026-09-09). Aqui ele sai uma vez por processo e por chave.
+_avisos_emitidos: set[tuple[str, str]] = set()
+
+
+def avisar_uma_vez(log: Any, chave: str, evento: str, **campos: Any) -> None:
+    """``log.warning(evento, **campos)`` só na primeira vez de ``(evento, chave)``."""
+    marca = (evento, chave)
+    if marca in _avisos_emitidos:
+        return
+    _avisos_emitidos.add(marca)
+    log.warning(evento, **campos)
+
+
+def reset_avisos_para_testes() -> None:
+    _avisos_emitidos.clear()
+
 # ---------------------------------------------------------------- device actions
 # Ações remotas nos telefones (v2.7.0). O catálogo é fechado; cada adapter
 # declara em ``capabilities()`` o subconjunto que homologou.

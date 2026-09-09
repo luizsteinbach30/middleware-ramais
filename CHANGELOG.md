@@ -28,6 +28,13 @@ fabricantes**, e a sonda de ping engolia o motivo de não conseguir pingar.
   `ultimo_erro`, avisa **uma vez** no log (`ping_indisponivel`, com o que
   conferir) e o Aplicar diz por linha: *"o servidor não consegue pingar (…)"*.
 
+- **Aviso de fuso desconhecido inundava `system_logs`.** Host em UTC com
+  ambiente em "herdar" (`Etc/UTC`) fazia HTEK e Intelbras V emitirem
+  `*_timezone_desconhecido` **por linha, a cada abertura da planilha** — e
+  todo WARNING vira registro no banco. Agora sai uma vez por processo e por
+  fuso (`avisar_uma_vez`). O comportamento do telefone não muda: fuso que o
+  firmware não conhece continua recebendo só o NTP, sem chute.
+
 ### Added
 
 - **Guarda contra arquivo de dados fora da wheel.** `tests/unit/test_package_data.py`
