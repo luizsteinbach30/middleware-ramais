@@ -176,11 +176,19 @@ avisos_do_host() {
     log "    AVISO: comando 'ping' ausente — o monitor e a validação de conectividade"
     log "           marcam todo aparelho como offline. Instale: apt install iputils-ping"
   fi
+  # Cada fonte num `if` proprio: sob `set -e` + pipefail, um `readlink` que
+  # falha como ultimo comando de uma lista `||` derruba o instalador inteiro
+  # (medido em conteiner sem /etc/localtime na 2.12.4 — saia 1 depois do
+  # "Instalado", sem mensagem).
   if command -v timedatectl >/dev/null 2>&1; then
     tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
   fi
-  [[ -n "$tz" ]] || tz="$(cat /etc/timezone 2>/dev/null || true)"
-  [[ -n "$tz" ]] || tz="$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')"
+  if [[ -z "$tz" && -r /etc/timezone ]]; then
+    tz="$(cat /etc/timezone 2>/dev/null || true)"
+  fi
+  if [[ -z "$tz" && -L /etc/localtime ]]; then
+    tz="$( { readlink /etc/localtime 2>/dev/null || true; } | sed -n 's|.*/zoneinfo/||p')"
+  fi
   case "$tz" in
     UTC|Etc/UTC|Etc/UCT|Universal|Zulu)
       n=$((n+1))

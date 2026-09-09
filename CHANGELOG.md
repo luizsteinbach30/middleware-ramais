@@ -2,6 +2,20 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.12.5] — 2026-09-09
+
+### Fixed
+
+- **Instalador Linux saía com erro no fim, em host sem `/etc/localtime`.** O aviso
+  de fuso da 2.12.4 (`avisos_do_host`) lia o link simbólico com `readlink` como
+  último comando de uma lista `||`; sob `set -e` + `pipefail`, um host sem o
+  link (ou sem `timedatectl` e sem `/etc/timezone`) derrubava o instalador
+  **depois** do "Instalado", com código 1 e sem mensagem — a instalação estava
+  feita, mas o `install.sh` e o `middleware-monitor-update` reportavam falha.
+  Medido em `ubuntu:24.04` limpo no teste pós-release da 2.12.4; hosts com
+  `timedatectl` (o caso normal) não passavam por esse caminho. Cada fonte de
+  fuso agora vive num `if` próprio e tolera ausência.
+
 ## [2.12.4] — 2026-09-09
 
 ### Fixed
