@@ -32,8 +32,27 @@ Causas frequentes e mitigação:
 ping -c 1 10.20.30.40   # do servidor, para um IP esperado
 ```
 
+**Primeiro olhe o log** (`middleware-monitor-ctl logs`, §8). Desde a 2.12.2 a sonda
+Linux distingue *telefone não respondeu* de *o servidor não consegue pingar*: no
+segundo caso aparece **uma vez** o evento `ping_indisponivel` com o motivo
+(`ping: socket: Operation not permitted`, `Network is unreachable`, binário
+ausente), e o Aplicar diz por linha "o servidor nao consegue pingar (…)". Sem
+esse evento, o servidor pinga — o problema é rede ou o aparelho.
+
+No Linux o serviço roda em sandbox do systemd (`NoNewPrivileges=yes`), que
+**ignora a capability do `/usr/bin/ping`**; o ICMP sem privilégio depende do
+sysctl `net.ipv4.ping_group_range` (padrão do Ubuntu: `0 2147483647`). Para
+testar nas mesmas condições do serviço:
+```
+sysctl net.ipv4.ping_group_range
+systemd-run --wait --pipe --collect -p User=mmonitor -p NoNewPrivileges=yes   -p ProtectSystem=strict -p PrivateTmp=yes ping -c1 -W1 10.20.30.40
+```
+
 | Causa | Mitigação |
 |---|---|
+| `ping_indisponivel` com `Operation not permitted` | `sysctl -w net.ipv4.ping_group_range="0 2147483647"` (e em `/etc/sysctl.d/`), ou `AmbientCapabilities=CAP_NET_RAW` num drop-in da unidade |
+| `ping_indisponivel` com `Network is unreachable` | Falta rota do servidor até a rede dos telefones (`ip route`) |
+| `ping_indisponivel` com `comando 'ping' não encontrado` | `apt install iputils-ping` |
 | ICMP bloqueado por firewall | Liberar ICMP egress no servidor |
 | Servidor em VLAN errada | Validar rota com `ip route` / `route print` |
 | `ping_concurrency` alto demais para a rede | Reduzir em `/config` (default 20) |
