@@ -16,6 +16,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   job nem conexão. Nenhuma ação é executada a pedido do NOC nesta versão (`acoes: []`).
   Ver `docs/AGENTE-NOC.md`, itens 1 e 4.
 - A identidade do NOC (`noc.*`) **não viaja no pacote portável do backup**.
+- **mTLS no canal do NOC.** No enrolamento o middleware gera a própria chave (EC P-256),
+  manda só o pedido de certificado e recebe o certificado assinado pelo NOC. A chave fica
+  em `<dados>/noc/agente.key`, cifrada com senha derivada da `APP_SECRET_KEY`. O
+  certificado é renovado sozinho quando o NOC pede, sem nunca ficar sem um par que
+  funcione.
+- **Telemetria para o NOC.** A cada minuto, um lote em gzip com o retrato dos aparelhos,
+  as amostras de ping, as transições de telefonia do MQTT, os relatórios de aplicação, o
+  perfil de cada linha dos ambientes e a última coleta do USCall. Por cursor: NOC fora do
+  ar não perde nada. Nenhuma senha de aparelho vai junto. A tela **Sistema → NOC** mostra
+  a última entrega e a validade do certificado.
 
 ## [2.12.5] — 2026-09-09
 

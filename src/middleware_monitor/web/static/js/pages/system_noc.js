@@ -61,6 +61,15 @@ function render(e) {
     (desatualizado ? ` <span class="text-xs text-yellow-400">· o NOC espera ${esc(e.versao_desejada)}</span>` : '');
   $('noc-relogio').textContent = descreveRelogio(e.relogio_offset_s);
   $('noc-enrolado-em').textContent = e.enrolado_em ? fmtTs(e.enrolado_em) : '—';
+  // Falha de entrega não apaga o último envio bom: as duas coisas aparecem.
+  const tel = $('noc-telemetria');
+  tel.textContent = !e.enrolado
+    ? '—'
+    : e.telemetria_detalhe
+      ? `pendente — ${e.telemetria_detalhe}`
+      : e.telemetria_enviada_em ? `entregue ${fmtTs(e.telemetria_enviada_em)}` : 'ainda não enviada';
+  tel.className = `mt-1 ${e.telemetria_detalhe ? 'text-yellow-400 text-xs' : 'text-gray-200'}`;
+  $('noc-certificado').textContent = e.certificado_expira_em ? fmtTs(e.certificado_expira_em) : '—';
 
   $('noc-testar').classList.toggle('hidden', !e.enrolado);
   $('noc-desenrolar').classList.toggle('hidden', !e.enrolado);

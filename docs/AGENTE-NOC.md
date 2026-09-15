@@ -1,6 +1,6 @@
 # O middleware como agente do NOC WorkConnect
 
-**Data:** 2026-08-31 · **Versão de referência:** v2.11.0 · **Atualizado:** 2026-09-15 (Fase 0 feita, v2.13.0)
+**Data:** 2026-08-31 · **Versão de referência:** v2.11.0 · **Atualizado:** 2026-09-15 (Fases 0 e 1 feitas, v2.13.0)
 **Documento irmão:** `C:\Projetos\noc-workconnect\docs\CONTRATO-DO-AGENTE.md`
 
 Este documento descreve o que **este** repositório precisa ganhar para participar do
@@ -128,7 +128,15 @@ senão ele subiria a cada minuto).
 
 ### 5 — Webhook sem assinatura e sem chave de idempotência
 
-`src/middleware_monitor/domain/webhooks/sender.py:155` · **Fase 1**
+`src/middleware_monitor/domain/webhooks/sender.py:155` · **Fase 1** · ✅ **resolvido por outro caminho (v2.13.0)**
+
+**Como ficou (2026-09-15):** o dono decidiu que **tudo o que os webhooks mandam vai para
+o NOC**, e que o módulo de webhooks sai do middleware depois. Então a pendência não foi
+resolvida *no* `sender.py`: a telemetria para o NOC é canal próprio
+(`domain/noc/telemetria.py` + `jobs/noc_agent.py::run_noc_telemetria`), com
+**`Idempotency-Key` por lote** e **mTLS** no lugar do HMAC (ADR 0006 do NOC). Os
+webhooks externos continuam como estão até serem desligados — na release que vier
+**depois** do NOC em produção, para os receptores atuais não ficarem sem dado.
 
 Hoje vai só `Authorization: Bearer`. Faltam **HMAC do corpo** e **`Idempotency-Key`
 por evento**.
@@ -139,14 +147,26 @@ nada no protocolo permite ao receptor perceber que é o mesmo evento.
 
 ### 6 — Sem gzip
 
-`src/middleware_monitor/domain/webhooks/sender.py` · **Fase 1**
+`src/middleware_monitor/domain/webhooks/sender.py` · **Fase 1** · ✅ **feito no canal do NOC (v2.13.0)**
+
+O lote de telemetria vai em `Content-Encoding: gzip`. O webhook externo não ganhou gzip
+de propósito: seria mudança de contrato para um receptor que vai deixar de existir.
 
 O `docs/WEBHOOK_ARQUITETURA.md` deste repositório já marca gzip como o item de maior
 retorno: cinco linhas de cada lado, −80 % de tráfego. Está escrito e nunca foi feito.
 
 ### 7 — Só três tipos de evento
 
-`src/middleware_monitor/domain/config/repository.py:32` · **Fase 1**
+`src/middleware_monitor/domain/config/repository.py:32` · **Fase 1** · ✅ **feito no canal do NOC (v2.13.0)**
+
+**Como ficou:** o lote leva as transições de telefonia do MQTT local
+(`extension_status_events`, por cursor), e o NOC deriva sozinho a queda e a volta de
+rede e a mudança de registro comparando retratos consecutivos. A saúde do agente vai no
+heartbeat (versão, relógio) e no manifesto (USCall alcançável). Além do que os webhooks
+levavam: amostras de ping, relatórios de aplicação e o perfil de cada linha dos
+ambientes — **nunca** `senha_sip`, `user_auth` ou chave com nome de segredo.
+
+O que se pedia originalmente:
 
 `WEBHOOK_TYPES` tem `extensions`, `devices`, `results`. Faltam dois:
 
@@ -202,10 +222,10 @@ DNS, VLAN, porta HTTP ou VPN — em todos os adapters.
 | Fase | O que este repositório entrega |
 |---|---|
 | **0** ✅ | enrolamento (1) · manifesto publicado (4) · heartbeat — **v2.13.0** |
-| **1** | HMAC e `Idempotency-Key` (5) · gzip (6) · dois eventos novos (7) |
+| **1** ✅ | telemetria por cursor com `Idempotency-Key` e gzip (5, 6, 7) · **mTLS adiantado da Fase 6** — **v2.13.0** |
 | **2** | laço de long-poll (2) · executor com idempotência (3) |
 | **3** | backup diário que roda (9) · `set_ip` fora do remoto, com teste (10) |
-| **6** | `publish` no cliente MQTT (8) · mTLS |
+| **6** | `publish` no cliente MQTT (8) · ~~mTLS~~ (feito na Fase 1) |
 
 ---
 
