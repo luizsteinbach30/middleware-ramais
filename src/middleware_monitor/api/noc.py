@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session as DBSession
 from middleware_monitor.api.deps import get_current_user, get_session, require_admin, require_csrf
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import User
-from middleware_monitor.domain.noc import certificado, cliente, estado, manifesto
+from middleware_monitor.domain.noc import certificado, cliente, estado, executor, manifesto
 from middleware_monitor.jobs.noc_agent import apply_noc_schedule, run_noc_heartbeat
 from middleware_monitor.version import __version__
 
@@ -47,6 +47,7 @@ def _saida(db: DBSession) -> dict[str, object]:
         "maquina": manifesto.nome_da_maquina(),
         "url_padrao": estado.URL_PADRAO,
         "url_insegura": atual.url.startswith("http://"),
+        "tarefas": executor.resumo(),
     }
 
 

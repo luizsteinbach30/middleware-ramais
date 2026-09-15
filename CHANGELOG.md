@@ -13,7 +13,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   sha256 do manifesto de capacidades — modelos cadastrados nos ambientes, servidores
   USCall e se responderam na última coleta. **Toda conexão sai do middleware**; o NOC
   nunca chama, e a interface continua só na LAN. Sem enrolamento, nada muda: não existe
-  job nem conexão. Nenhuma ação é executada a pedido do NOC nesta versão (`acoes: []`).
+  job nem conexão.
   Ver `docs/AGENTE-NOC.md`, itens 1 e 4.
 - A identidade do NOC (`noc.*`) **não viaja no pacote portável do backup**.
 - **mTLS no canal do NOC.** No enrolamento o middleware gera a própria chave (EC P-256),
@@ -26,6 +26,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   perfil de cada linha dos ambientes e a última coleta do USCall. Por cursor: NOC fora do
   ar não perde nada. Nenhuma senha de aparelho vai junto. A tela **Sistema → NOC** mostra
   a última entrega e a validade do certificado.
+- **Tarefas do NOC (Fases 2 e 3).** O middleware passa a buscar tarefas no NOC (long-poll,
+  sempre de dentro para fora) e a executar **só** o que está na lista de permissão:
+  leituras (`ping`, `status_do_ramal`, `coletar_agora`, `inventario`, `capacidades`,
+  `logs`) e duas escritas que exigem aprovação no NOC — `normalize` e
+  `reaplicar_config_do_ambiente`, sempre num ramal só. Antes de qualquer escrita o
+  middleware faz um snapshot do banco; sem ele, não escreve. Tarefa repetida devolve o
+  resultado gravado e **escrita nunca roda duas vezes**, nem se o serviço cair no meio.
+  `set_ip` e qualquer campo de rede ficam fora do caminho remoto, com teste. A tela
+  **Sistema → NOC** mostra a última tarefa e quem pediu; a trilha local grava
+  `operador = noc:<e-mail>`. Ver `docs/AGENTE-NOC.md`, itens 2, 3 e 10.
+- **Backup automático atrasado roda no boot.** Se o app estava fechado no horário e o
+  snapshot mais novo tem mais de um dia, um backup sai 3 minutos depois de abrir
+  (`docs/AGENTE-NOC.md`, item 9).
 
 ## [2.12.5] — 2026-09-09
 

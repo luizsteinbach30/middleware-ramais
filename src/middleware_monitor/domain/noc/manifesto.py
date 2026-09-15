@@ -5,14 +5,15 @@ modelo: o que não estiver aqui não existe para ele.
 
 Duas regras:
 
-- **``acoes`` só declara o que o agente executa A PEDIDO DO NOC.** Na v2.13.0
-  isso é nada: o executor remoto nasce na Fase 2. Declarar ``normalize`` agora —
-  porque o adapter sabe normalizar localmente — seria prometer ao NOC uma ação
-  que ninguém aqui vai executar quando ele pedir. As capacidades locais vão por
-  modelo (``acoesDoAdapter``), rotuladas como o que são.
+- **``acoes`` é a lista de permissão do executor** (``executor.ACOES``), e nada
+  mais. O que o adapter sabe fazer localmente vai por modelo (``acoesDoAdapter``),
+  rotulado como o que é: ``set_ip`` existe para quem está na frente do aparelho,
+  e não aparece em ``acoes``.
 - **Nada volátil entra no corpo.** O sha256 do manifesto viaja em todo
   heartbeat, e o NOC só pede o corpo quando o hash muda: carimbo de hora aqui
-  dentro faria o manifesto inteiro subir a cada minuto.
+  dentro faria o manifesto inteiro subir a cada minuto. ``ultimoBackupEm`` é a
+  exceção que se paga: muda uma vez por backup, e é o que a tela de aprovação
+  do NOC mostra antes de alguém autorizar uma escrita.
 """
 
 from __future__ import annotations
@@ -21,17 +22,22 @@ import hashlib
 import json
 import platform
 import socket
+from datetime import UTC
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DBSession
 
+from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import ExtensionEnvironment, ExtensionLine
+from middleware_monitor.domain.noc import executor
 from middleware_monitor.domain.uscall import repository as uscall_repo
 from middleware_monitor.domain.uscall import saude as uscall_saude
 from middleware_monitor.version import __version__
 
 VERSAO_DO_CONTRATO = 1
+
+log = get_logger("noc.manifesto")
 
 
 def nome_da_maquina() -> str:
@@ -69,8 +75,9 @@ def montar(db: DBSession) -> dict[str, Any]:
         "versao": __version__,
         "maquina": nome_da_maquina(),
         "sistema": sistema(),
-        "executorRemoto": False,
-        "acoes": [],
+        "executorRemoto": True,
+        "acoes": sorted(executor.ACOES),
+        "ultimoBackupEm": ultimo_backup_em(),
         "modelos": [
             {"modelo": modelo, "quantidade": int(qtd), "acoesDoAdapter": _capacidades_do_modelo(modelo)}
             for modelo, qtd in linhas
@@ -82,6 +89,21 @@ def montar(db: DBSession) -> dict[str, Any]:
     }
     corpo["sha256"] = sha256_do_manifesto(corpo)
     return corpo
+
+
+def ultimo_backup_em() -> str | None:
+    """O snapshot de banco mais recente (automático, manual ou o que antecede uma
+    escrita remota), em UTC. Pacote portável e pré-restauração não contam."""
+    from middleware_monitor.domain.backup import snapshot
+
+    try:
+        snaps = [b for b in snapshot.list_backups() if b.kind == "snapshot"]
+    except OSError as exc:
+        log.warning("noc_manifesto_sem_backups", motivo=str(exc))
+        return None
+    if not snaps:
+        return None
+    return snaps[0].modified_at.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def sha256_do_manifesto(corpo: dict[str, Any]) -> str:

@@ -70,6 +70,16 @@ function render(e) {
       : e.telemetria_enviada_em ? `entregue ${fmtTs(e.telemetria_enviada_em)}` : 'ainda não enviada';
   tel.className = `mt-1 ${e.telemetria_detalhe ? 'text-yellow-400 text-xs' : 'text-gray-200'}`;
   $('noc-certificado').textContent = e.certificado_expira_em ? fmtTs(e.certificado_expira_em) : '—';
+  // O que o NOC executou aqui: a última tarefa e o que ainda não foi confirmado lá.
+  const t = e.tarefas || {};
+  const ult = t.ultima;
+  const tar = $('noc-tarefas');
+  tar.textContent = !ult
+    ? (e.enrolado ? 'nenhuma recebida' : '—')
+    : `${ult.tipo} ${ult.ok ? 'ok' : 'falhou'} · ${fmtTs(ult.concluida_em)}` +
+      (ult.pedida_por ? ` · ${ult.pedida_por}` : '') +
+      (t.a_entregar ? ` · ${t.a_entregar} resultado(s) a entregar` : '');
+  tar.className = `mt-1 ${ult && !ult.ok ? 'text-yellow-400 text-xs' : 'text-gray-200'}`;
 
   $('noc-testar').classList.toggle('hidden', !e.enrolado);
   $('noc-desenrolar').classList.toggle('hidden', !e.enrolado);

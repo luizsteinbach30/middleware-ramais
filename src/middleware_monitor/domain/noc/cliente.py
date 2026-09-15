@@ -75,17 +75,25 @@ def _cabecalhos(credencial: str | None = None) -> dict[str, str]:
 async def _pedir(
     url: str,
     caminho: str,
-    corpo: dict[str, Any],
+    corpo: dict[str, Any] | None,
     credencial: str | None = None,
     *,
     tls: ssl.SSLContext | None = None,
+    metodo: str = "POST",
+    extras: dict[str, str] | None = None,
+    timeout_s: float = TIMEOUT_S,
 ) -> httpx.Response:
     try:
         contexto = tls or cert.contexto_do_servidor()
-        async with httpx.AsyncClient(timeout=TIMEOUT_S, verify=contexto) as http:
-            resposta = await http.post(f"{url}{caminho}", json=corpo, headers=_cabecalhos(credencial))
+        async with httpx.AsyncClient(timeout=timeout_s, verify=contexto) as http:
+            resposta = await http.request(
+                metodo,
+                f"{url}{caminho}",
+                json=corpo,
+                headers={**_cabecalhos(credencial), **(extras or {})},
+            )
     except httpx.TimeoutException as exc:
-        raise ErroDoNoc("SEM_CONEXAO", f"O NOC não respondeu em {int(TIMEOUT_S)} s.") from exc
+        raise ErroDoNoc("SEM_CONEXAO", f"O NOC não respondeu em {int(timeout_s)} s.") from exc
     except httpx.ConnectError as exc:
         # TLS recusado (certificado do NOC não confere) chega aqui como ConnectError:
         # a mensagem da exceção diz qual dos dois.
@@ -221,3 +229,37 @@ async def enviar_telemetria(url: str, credencial: str, lote: dict[str, Any]) -> 
     if dado.get("recebido") is not True:
         raise ErroDoNoc("RESPOSTA_INVALIDA", "O NOC respondeu 202 sem confirmar o recebimento do lote.")
     return dado.get("duplicado") is True
+
+
+async def buscar_tarefas(url: str, credencial: str, *, espera_s: int) -> list[dict[str, Any]]:
+    """Long-poll: o NOC segura o pedido até ``espera_s`` e devolve assim que houver
+    tarefa. O timeout daqui é maior que a espera — senão todo ciclo vazio viraria
+    "sem conexão"."""
+    resposta = await _pedir(
+        url,
+        f"/agente/v1/tarefas?espera={int(espera_s)}",
+        None,
+        credencial,
+        tls=cert.contexto_do_agente(),
+        metodo="GET",
+        timeout_s=espera_s + TIMEOUT_S,
+    )
+    tarefas = _json(resposta).get("tarefas")
+    if not isinstance(tarefas, list):
+        raise ErroDoNoc("RESPOSTA_INVALIDA", "O NOC respondeu a fila sem a lista de tarefas.")
+    return [t for t in tarefas if isinstance(t, dict)]
+
+
+async def enviar_resultado(
+    url: str, credencial: str, tarefa_id: str, idempotencia: str, corpo: dict[str, Any]
+) -> None:
+    """``Idempotency-Key`` é a chave que veio NA tarefa: reenviar o mesmo resultado
+    não reprocessa nada do lado de lá."""
+    await _pedir(
+        url,
+        f"/agente/v1/tarefas/{tarefa_id}/resultado",
+        corpo,
+        credencial,
+        tls=cert.contexto_do_agente(),
+        extras={"Idempotency-Key": idempotencia},
+    )

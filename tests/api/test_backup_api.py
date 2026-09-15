@@ -305,3 +305,28 @@ def test_exportar_ambiente_inexistente(client, db: Session) -> None:
         headers={"X-CSRF-Token": csrf},
     )
     assert r.status_code == 404
+
+
+def test_backup_atrasado_no_boot_so_quando_o_ultimo_e_velho(db: Session) -> None:
+    """AGENTE-NOC item 9: o cron das 02:30 não roda com o app fechado. No boot, um
+    snapshot com mais de um dia (ou nenhum) agenda um backup; um recente, não."""
+    import os
+    from datetime import datetime, timedelta
+
+    from middleware_monitor.core.scheduler import get_scheduler, remove_job
+    from middleware_monitor.domain.backup.settings import BackupSettings
+    from middleware_monitor.jobs.backup import BACKUP_ATRASADO_JOB_ID, agendar_backup_atrasado
+
+    try:
+        assert agendar_backup_atrasado(BackupSettings(auto_enabled=False)) is False
+        assert agendar_backup_atrasado(BackupSettings()) is True  # nenhum snapshot
+        assert get_scheduler().get_job(BACKUP_ATRASADO_JOB_ID) is not None
+        remove_job(BACKUP_ATRASADO_JOB_ID)
+
+        arquivo = snap.create_snapshot(label="manual")
+        assert agendar_backup_atrasado(BackupSettings()) is False  # recente: manual conta
+        velho = (datetime.now() - timedelta(days=2)).timestamp()
+        os.utime(arquivo, (velho, velho))
+        assert agendar_backup_atrasado(BackupSettings()) is True
+    finally:
+        remove_job(BACKUP_ATRASADO_JOB_ID)

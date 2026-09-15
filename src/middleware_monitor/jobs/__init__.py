@@ -33,7 +33,7 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     """Register every recurring job. Imports happen lazily so the scheduler
     module stays decoupled from concrete jobs.
     """
-    from middleware_monitor.jobs.backup import apply_backup_schedule
+    from middleware_monitor.jobs.backup import agendar_backup_atrasado, apply_backup_schedule
     from middleware_monitor.jobs.bundle_probe import (
         PROBE_JOB_ID,
         PROBE_SECONDS,
@@ -93,6 +93,8 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     apply_update_schedule(upd)
     # Backup diário: horário e retenção configuráveis pela tela.
     apply_backup_schedule(bkp)
+    # E o de ontem, se o app estava fechado às 02:30 (AGENTE-NOC item 9).
+    agendar_backup_atrasado(bkp)
     # Heartbeat do NOC: só existe depois do enrolamento (jobs/noc_agent.py).
     apply_noc_schedule(noc, imediato=True)
     # Sonda do bundle: só existe diretório de extração para vigiar quando o app

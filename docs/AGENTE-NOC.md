@@ -70,7 +70,7 @@ O `client_code` não mudou: continua como rótulo.
 ### 2 — Não existe canal de entrada
 
 **Novo `src/middleware_monitor/jobs/noc_agent.py`, ao lado dos jobs que já existem** ·
-**Fase 2**
+**Fase 2** · ✅ **feito (v2.13.0)**
 
 Hoje só há push (`domain/webhooks/sender.py`). Falta o laço de long-poll:
 
@@ -84,9 +84,25 @@ Pontos que o job precisa acertar, e que são fáceis de errar:
 - **reconexão imediata** após cada ciclo, incluindo o 204 de "nada a fazer".
 - **um só laço**, no scheduler que já existe — não uma segunda thread paralela.
 
+**Como ficou (2026-09-15):** `run_noc_tarefas` em `jobs/noc_agent.py`. A rota final é
+`GET /agente/v1/tarefas?espera=25` (o NOC corta no teto dele, abaixo do timeout do
+proxy) e `POST /agente/v1/tarefas/{id}/resultado` com `Idempotency-Key` = a chave que
+veio na tarefa. Três decisões:
+
+- **Job de disparo único que se re-agenda**, e não job de intervalo: um long-poll de
+  25 s mais uma escrita de minutos atropelaria o disparo seguinte (`max_instances=1`
+  pula e loga). Terminou bem → o próximo sai em 1 s; NOC fora → *full jitter* até 5 min.
+  O heartbeat serve de vigia: se o laço sumiu, ele o rearma.
+- **Outbox antes da fila.** Resultado que o NOC não confirmou fica em `noc_tarefas`
+  (`concluida_em` preenchido, `entregue_em` vazio) e sai **antes** do próximo
+  long-poll. 404/422 do NOC (tarefa que não é mais deste agente, ou reoferecida com
+  outra chave) descarta: reenviar não muda a resposta e travaria o outbox inteiro.
+- **Revogado para o laço**, como o heartbeat.
+
 ### 3 — Não existe executor de tarefa remota nem registro de idempotência
 
-`src/middleware_monitor/domain/extension_configurator/actions.py` · **Fase 2**
+`src/middleware_monitor/domain/extension_configurator/actions.py` · **Fase 2** ·
+✅ **feito (v2.13.0)**
 
 As ações **já existem e estão homologadas**; só a tela as dispara. Falta a camada que
 recebe uma tarefa do NOC, valida contra o manifesto, chama a ação existente e devolve
@@ -96,6 +112,28 @@ o resultado.
 que executou e **tarefa repetida devolve o resultado gravado sem reexecutar**.
 `send_config` reinicia o aparelho — uma reentrega por retry de rede derrubaria o
 telefone duas vezes.
+
+**Como ficou (2026-09-15):** `domain/noc/executor.py` + tabela `noc_tarefas` (migration
+`0012`). Nenhuma ação nova: `normalize` chama `run_action_on_line`, reaplicar chama
+`run_apply` com `selected_ids=[linha]`. As regras que o código carrega:
+
+- **Tarefa repetida devolve o gravado.** Leitura reoferecida com **outra** chave roda de
+  novo (repetir leitura não custa nada); escrita, com qualquer chave, nunca.
+- **`iniciada_em` é confirmado no banco antes de tocar o aparelho.** Serviço que cai no
+  meio de uma escrita volta dizendo "interrompida, resultado desconhecido" — e não
+  reexecuta. Leitura interrompida é esquecida: o NOC reoferece quando o lease vence.
+- **Escrita sem prazo não começa** (menos de 60 s de lease pela frente) e **sem backup
+  não começa** (`create_snapshot(label="noc")` antes; falhou, a escrita não sai).
+- **Escrita mira uma linha.** Ramal em duas linhas de ambiente é recusado — escolher
+  uma seria palpite.
+- **O raio é o daqui.** O NOC chamar de LEITURA algo que aqui é escrita é recusa.
+- **Leitura não muda estado.** `ping` a pedido do NOC não grava em `devices`: marcar
+  online um aparelho offline engoliria a volta que o vigia de recuperação usa para
+  reaplicar config. Pelo mesmo motivo `coletar_agora` roda só a coleta do USCall, não
+  o ciclo de ping.
+- **Quem pediu fica na trilha local**: `operador = noc:<e-mail>` em
+  `device_action_events` e `extension_apply_runs`, e a tela Sistema → NOC mostra a
+  última tarefa.
 
 ### 4 — O manifesto de capacidades não é publicado para fora
 
@@ -114,10 +152,12 @@ manifesto é recusado com `NAO_SUPORTADO` — nunca tentado em melhor esforço.
 do manifesto; o NOC pede o corpo quando o hash não bate (nada volátil entra no corpo,
 senão ele subiria a cada minuto).
 
-- **`acoes` vai vazio, de propósito.** O executor remoto é a Fase 2 (itens 2 e 3).
-  Declarar `normalize` agora, porque o adapter sabe normalizar localmente, seria
-  prometer ao NOC uma ação que ninguém aqui executa quando ele pedir. As capacidades
-  locais vão por modelo, em `acoesDoAdapter`, e `executorRemoto: false` diz o resto.
+- **`acoes` é a lista de permissão do executor** (`executor.ACOES`), desde a Fase 2.
+  Na Fase 0 ia vazio, de propósito: declarar `normalize` antes do executor existir
+  seria prometer ao NOC uma ação que ninguém aqui executaria. As capacidades locais
+  vão por modelo, em `acoesDoAdapter` — `set_ip` aparece ali e nunca em `acoes`.
+- **`ultimoBackupEm`** (Fase 3): o snapshot mais novo. Muda uma vez por backup, e é o
+  que a tela de aprovação do NOC mostra antes de alguém autorizar uma escrita.
 - **Modelo é o do ambiente** (`ExtensionEnvironment.modelo_telefone`), com a quantidade
   de linhas — o cadastro é a fonte da verdade, não o que o aparelho respondeu.
 - **`uscall[].alcancavel` vem da última coleta** (`domain/uscall/saude.py`, em memória):
@@ -189,7 +229,7 @@ escreve outro.
 
 ### 9 — O backup automático diário nunca roda de fato
 
-`src/middleware_monitor/jobs/backup.py` · **Fase 3, e é pré-requisito**
+`src/middleware_monitor/jobs/backup.py` · **Fase 3, e é pré-requisito** · ✅ **feito (v2.13.0)**
 
 Ele só dispara com o app aberto às 02:30. Numa instalação desktop que fica fechada, o
 backup simplesmente não acontece.
@@ -197,10 +237,15 @@ backup simplesmente não acontece.
 Isso deixa de ser inconveniência e vira bloqueio: **escrita remota exige backup
 recente**. Correção mínima: rodar o backup atrasado no boot.
 
+**Como ficou (2026-09-15):** `agendar_backup_atrasado` no boot — snapshot mais novo com
+mais de 26 h (ou nenhum) agenda um backup para 3 min depois. Olha os **arquivos**, não o
+`last_run_at`: backup manual conta, registro "ok" com a pasta apagada não conta. E toda
+escrita remota faz o próprio snapshot antes, então nenhuma depende só deste.
+
 ### 10 — `ACTION_SET_IP` precisa sair do caminho remoto
 
 `src/middleware_monitor/integrations/extension_configurator/vendors/base.py:37` ·
-**Fase 3**
+**Fase 3** · ✅ **feito (v2.13.0)**
 
 `DEVICE_ACTIONS` (`base.py:36-38`) contém `set_ip`. Para uso local, com alguém na
 frente do aparelho, tudo bem. **Pelo canal remoto, não.**
@@ -215,6 +260,14 @@ DNS, VLAN, porta HTTP ou VPN — em todos os adapters.
 3. **um teste que falha** se um código de rede entrar no caminho remoto. Sem o teste,
    a regra é um comentário.
 
+**Como ficou (2026-09-15):** `executor.ACOES` não tem `set_ip` nem `send_config`, e
+`tests/api/test_noc_tarefas.py` quebra se a lista mudar (acrescentar ação remota é
+decisão, não detalhe), se alguma ação de aparelho além de `normalize` entrar nela, ou
+se um campo com nome de rede (`ip`, `gateway`, `dns`, `vlan_*`, `P1234`…) passar pelo
+`conferir`. Reaplicar usa o `generate_config` dos adapters, cuja whitelist de campos já
+é testada por fabricante. O NOC recusa os mesmos campos do lado dele
+(`P_CODE_DE_REDE`) — são duas barreiras que não dependem uma da outra.
+
 ---
 
 ## Resumo por fase
@@ -223,8 +276,8 @@ DNS, VLAN, porta HTTP ou VPN — em todos os adapters.
 |---|---|
 | **0** ✅ | enrolamento (1) · manifesto publicado (4) · heartbeat — **v2.13.0** |
 | **1** ✅ | telemetria por cursor com `Idempotency-Key` e gzip (5, 6, 7) · **mTLS adiantado da Fase 6** — **v2.13.0** |
-| **2** | laço de long-poll (2) · executor com idempotência (3) |
-| **3** | backup diário que roda (9) · `set_ip` fora do remoto, com teste (10) |
+| **2** ✅ | laço de long-poll (2) · executor com idempotência (3) — **v2.13.0** |
+| **3** ✅ | backup diário que roda (9) · `set_ip` fora do remoto, com teste (10) — **v2.13.0** |
 | **6** | `publish` no cliente MQTT (8) · ~~mTLS~~ (feito na Fase 1) |
 
 ---
