@@ -43,6 +43,9 @@ from middleware_monitor.api import (
     mqtt as api_mqtt,
 )
 from middleware_monitor.api import (
+    noc as api_noc,
+)
+from middleware_monitor.api import (
     system as api_system,
 )
 from middleware_monitor.api import (
@@ -192,6 +195,7 @@ def create_app() -> FastAPI:
         api_branding.router,
         api_mqtt.router,
         api_backup.router,
+        api_noc.router,
     ):
         app.include_router(r)
 

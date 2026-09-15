@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.core.crypto import SecretBox
 from middleware_monitor.core.models import AppConfig
+from middleware_monitor.domain.noc.estado import TODAS_AS_CHAVES as _CHAVES_DO_NOC
 from middleware_monitor.settings import get_settings
 
 _PREFIX = "backup."
@@ -36,9 +37,13 @@ KEY_LAST_DETAIL = f"{_PREFIX}last_detail"
 
 # Chaves que NAO viajam no pacote portavel: passphrase e o proprio estado da
 # ultima execucao sao locais desta instalacao.
+#
+# A identidade do agente do NOC (`noc.*`) tambem nao viaja: o pacote leva a
+# configuracao para OUTRA maquina, e levar a credencial junto faria duas maquinas
+# se apresentarem ao NOC como o mesmo agente (v2.13.0).
 LOCAL_ONLY_KEYS: frozenset[str] = frozenset(
     {KEY_PASSPHRASE, KEY_LAST_AT, KEY_LAST_STATUS, KEY_LAST_DETAIL}
-)
+) | _CHAVES_DO_NOC
 
 _TRUE = {"1", "true", "True", "on", "yes"}
 

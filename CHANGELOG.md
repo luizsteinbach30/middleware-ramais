@@ -2,6 +2,21 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [Unreleased] — 2.13.0
+
+### Added
+
+- **Agente do NOC WorkConnect (Fase 0).** Tela nova **Sistema → NOC** (`/system/noc`):
+  o operador digita o código de uso único gerado no NOC e o middleware troca por uma
+  credencial própria (`ag_<id>.<segredo>`), guardada cifrada no banco. A partir daí
+  um heartbeat sai a cada 60 s (o intervalo vem do NOC) com a versão, o relógio e o
+  sha256 do manifesto de capacidades — modelos cadastrados nos ambientes, servidores
+  USCall e se responderam na última coleta. **Toda conexão sai do middleware**; o NOC
+  nunca chama, e a interface continua só na LAN. Sem enrolamento, nada muda: não existe
+  job nem conexão. Nenhuma ação é executada a pedido do NOC nesta versão (`acoes: []`).
+  Ver `docs/AGENTE-NOC.md`, itens 1 e 4.
+- A identidade do NOC (`noc.*`) **não viaja no pacote portável do backup**.
+
 ## [2.12.5] — 2026-09-09
 
 ### Fixed

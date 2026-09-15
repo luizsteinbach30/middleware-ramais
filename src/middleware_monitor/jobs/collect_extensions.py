@@ -18,6 +18,7 @@ from middleware_monitor.core.logging import get_logger
 from middleware_monitor.domain.collections.repository import save_snapshot
 from middleware_monitor.domain.devices.repository import upsert_from_uscall
 from middleware_monitor.domain.uscall import repository as uscall_repo
+from middleware_monitor.domain.uscall import saude as uscall_saude
 from middleware_monitor.domain.webhooks.sender import WebhookSender
 from middleware_monitor.integrations.uscall_client import UscallClient
 
@@ -84,6 +85,8 @@ async def run_collect_extensions() -> None:
     results: list[tuple[int, str, list[dict[str, Any]]]] = []
     per_server: dict[str, int] = {}
     for cred, r in zip(creds, raw, strict=True):
+        # O manifesto do NOC diz se cada USCall respondeu (domain/uscall/saude.py).
+        uscall_saude.registrar(cred[1], not isinstance(r, BaseException))
         if isinstance(r, BaseException):
             # Falha parcial: loga e segue — os demais servidores continuam.
             log.warning(

@@ -1,6 +1,6 @@
 # O middleware como agente do NOC WorkConnect
 
-**Data:** 2026-08-31 · **Versão de referência:** v2.11.0
+**Data:** 2026-08-31 · **Versão de referência:** v2.11.0 · **Atualizado:** 2026-09-15 (Fase 0 feita, v2.13.0)
 **Documento irmão:** `C:\Projetos\noc-workconnect\docs\CONTRATO-DO-AGENTE.md`
 
 Este documento descreve o que **este** repositório precisa ganhar para participar do
@@ -37,7 +37,7 @@ um — o valor do middleware está justamente no que ele já sabe fazer.
 
 ### 1 — `client_code` é texto livre digitado
 
-`src/middleware_monitor/domain/config/schemas.py:54` · **Fase 0**
+`src/middleware_monitor/domain/config/schemas.py:54` · **Fase 0** · ✅ **feito (v2.13.0)**
 
 O campo é digitado na tela de configuração. Dois clientes podem digitar o mesmo, e
 qualquer um pode digitar o do vizinho. Não identifica ninguém e não se revoga.
@@ -46,6 +46,26 @@ qualquer um pode digitar o do vizinho. Não identifica ninguém e não se revoga
 NOC, e o middleware o troca por `agente_id` emitido pelo servidor mais um segredo,
 guardado como os outros segredos já são. O `client_code` pode sobreviver como rótulo
 humano; não como identidade.
+
+**Como ficou (2026-09-15):** tela `/system/noc` (`web/templates/system_noc.html`) →
+`api/noc.py` → `domain/noc/cliente.py`. O navegador não fala com o NOC: quem troca o
+código pela credencial é o servidor do middleware (a CSP é `connect-src 'self'`). A
+credencial `ag_<id>.<segredo>` fica em `app_config` com prefixo `noc.`, cifrada pela
+`SecretBox` (`domain/noc/estado.py`) — nunca em `/etc` nem no `.env`. Heartbeat em
+`jobs/noc_agent.py`, agendado só depois do enrolamento (sem enrolamento não existe
+conexão nenhuma com o NOC). Três decisões que valem dizer:
+
+- **Nenhuma chave `noc.*` viaja no pacote portável** (`LOCAL_ONLY_KEYS` em
+  `domain/backup/settings.py`): levar a credencial para outra máquina faria duas
+  máquinas se apresentarem como o mesmo agente. O *snapshot* do banco, que restaura
+  tudo, ainda leva — restaurar um snapshot antigo depois de um reenrolamento dá
+  `credencial_recusada`, e o caminho é enrolar de novo.
+- **Revogado para o laço; credencial recusada continua tentando.** Revogar é ato
+  deliberado. Recusa pode ser o NOC com banco restaurado — parar a frota inteira seria
+  uma visita por site.
+- **Log só na mudança de situação** — todo WARNING vira linha em `system_logs`.
+
+O `client_code` não mudou: continua como rótulo.
 
 ### 2 — Não existe canal de entrada
 
@@ -79,16 +99,32 @@ telefone duas vezes.
 
 ### 4 — O manifesto de capacidades não é publicado para fora
 
-`src/middleware_monitor/integrations/extension_configurator/vendors/base.py:101` ·
-**Fase 0**
+`src/middleware_monitor/integrations/extension_configurator/vendors/base.py:134` ·
+**Fase 0** · ✅ **feito (v2.13.0)**
 
 A matéria-prima já existe: `capabilities()` por adapter e
-`GET /environments/{id}/capabilities` por ambiente. Falta agregar e enviar ao NOC no
+`GET /api/extension-configurator/environments/{id}/capabilities` por ambiente. Falta agregar e enviar ao NOC no
 registro e em cada heartbeat: unidades cobertas, servidores USCall e se estão
 alcançáveis, ações homologadas, modelos presentes, versão e desvio de relógio.
 
 **O NOC não infere nada** a partir de versão ou modelo. O que não estiver no
 manifesto é recusado com `NAO_SUPORTADO` — nunca tentado em melhor esforço.
+
+**Como ficou (2026-09-15):** `domain/noc/manifesto.py`. O heartbeat leva só o sha256
+do manifesto; o NOC pede o corpo quando o hash não bate (nada volátil entra no corpo,
+senão ele subiria a cada minuto).
+
+- **`acoes` vai vazio, de propósito.** O executor remoto é a Fase 2 (itens 2 e 3).
+  Declarar `normalize` agora, porque o adapter sabe normalizar localmente, seria
+  prometer ao NOC uma ação que ninguém aqui executa quando ele pedir. As capacidades
+  locais vão por modelo, em `acoesDoAdapter`, e `executorRemoto: false` diz o resto.
+- **Modelo é o do ambiente** (`ExtensionEnvironment.modelo_telefone`), com a quantidade
+  de linhas — o cadastro é a fonte da verdade, não o que o aparelho respondeu.
+- **`uscall[].alcancavel` vem da última coleta** (`domain/uscall/saude.py`, em memória):
+  `null` depois de um reinício, até a primeira coleta. O teste de conexão da tela baixa
+  a lista inteira de ramais e é pesado demais para rodar a cada heartbeat.
+- **Unidades não vão no manifesto**: quem diz quais unidades um agente cobre é o NOC,
+  na hora de gerar o código.
 
 ### 5 — Webhook sem assinatura e sem chave de idempotência
 
@@ -143,10 +179,10 @@ recente**. Correção mínima: rodar o backup atrasado no boot.
 
 ### 10 — `ACTION_SET_IP` precisa sair do caminho remoto
 
-`src/middleware_monitor/integrations/extension_configurator/vendors/base.py:15` ·
+`src/middleware_monitor/integrations/extension_configurator/vendors/base.py:37` ·
 **Fase 3**
 
-`DEVICE_ACTIONS` (`base.py:14-16`) contém `set_ip`. Para uso local, com alguém na
+`DEVICE_ACTIONS` (`base.py:36-38`) contém `set_ip`. Para uso local, com alguém na
 frente do aparelho, tudo bem. **Pelo canal remoto, não.**
 
 Errar a rede de um telefone a 800 km de distância é perder o aparelho até alguém ir
@@ -165,7 +201,7 @@ DNS, VLAN, porta HTTP ou VPN — em todos os adapters.
 
 | Fase | O que este repositório entrega |
 |---|---|
-| **0** | enrolamento (1) · manifesto publicado (4) · heartbeat |
+| **0** ✅ | enrolamento (1) · manifesto publicado (4) · heartbeat — **v2.13.0** |
 | **1** | HMAC e `Idempotency-Key` (5) · gzip (6) · dois eventos novos (7) |
 | **2** | laço de long-poll (2) · executor com idempotência (3) |
 | **3** | backup diário que roda (9) · `set_ip` fora do remoto, com teste (10) |
@@ -178,7 +214,7 @@ DNS, VLAN, porta HTTP ou VPN — em todos os adapters.
 - `WEBHOOK_ARQUITETURA.md` — a *arquitetura D* descrita ali (pull com outbox e
   cursor) é exatamente este canal, e as recomendações de gzip, `Idempotency-Key`,
   ack em 202 e `Retry-After` continuam valendo
-- `TELAS.md` — as telas deste app; o enrolamento entra em Configuração
+- `TELAS.md` — as telas deste app; o enrolamento ficou em página própria, `/system/noc`
 - `RUNBOOK.md` · `INSTALACAO.md`
 - `C:\Projetos\noc-workconnect\docs\CONTRATO-DO-AGENTE.md` — o outro lado do canal
 - `C:\Projetos\noc-workconnect\docs\CATALOGO-DE-TAREFAS.md` — o enum fechado e os raios
