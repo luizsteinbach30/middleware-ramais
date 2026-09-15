@@ -132,6 +132,7 @@ hiddenimports = [
     "middleware_monitor.domain.noc.cliente",
     "middleware_monitor.domain.noc.manifesto",
     "middleware_monitor.domain.noc.certificado",
+    "middleware_monitor.domain.noc.telemetria",
     "cryptography.x509",
     "cryptography.hazmat.primitives.asymmetric.ec",
     "cryptography.hazmat.primitives.serialization",

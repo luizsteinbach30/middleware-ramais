@@ -24,11 +24,15 @@ from datetime import UTC, datetime, timedelta
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.scheduler import add_interval_job, get_scheduler, remove_job, reschedule
-from middleware_monitor.domain.noc import certificado, cliente, estado, manifesto
+from middleware_monitor.domain.noc import certificado, cliente, estado, manifesto, telemetria
 
 log = get_logger("jobs.noc_agent")
 
 JOB_ID = "noc_heartbeat"
+JOB_TELEMETRIA = "noc_telemetria"
+INTERVALO_TELEMETRIA_S = 60
+# Uma loja que ficou dias fora esvazia a fila aos poucos, sem ocupar o ciclo inteiro.
+LOTES_POR_CICLO = 10
 
 _DETALHE_ILEGIVEL = "A chave de cifra desta instalação mudou; enrole de novo com um código do NOC."
 
@@ -101,6 +105,7 @@ async def run_noc_heartbeat(*, forcar: bool = False) -> estado.EstadoNoc:
         _registrar_transicao(atual.situacao, situacao, erro.mensagem)
         if situacao == estado.REVOGADO:
             remove_job(JOB_ID)
+            remove_job(JOB_TELEMETRIA)
         return depois
 
     valores: dict[str, str | None] = {
@@ -168,6 +173,54 @@ async def _renovar(canal: str, credencial: str) -> dict[str, str | None]:
     return {estado.KEY_CERTIFICADO_EXPIRA: expira.isoformat()}
 
 
+async def run_noc_telemetria() -> int:
+    """Entrega a telemetria pendente. Devolve quantos lotes o NOC aceitou.
+
+    O cursor só avança com 202. Qualquer falha para o ciclo e fica para o próximo,
+    com o mesmo ponto de partida — e o log só registra a mudança (ok → falha → ok).
+    """
+    entregues = 0
+    for _ in range(LOTES_POR_CICLO):
+        with session_factory() as db:
+            atual = estado.carregar(db)
+            if not atual.enrolado or atual.situacao == estado.REVOGADO:
+                return entregues
+            try:
+                credencial = estado.ler_credencial(db) or ""
+            except ValueError:
+                return entregues
+            cur = telemetria.cursores(db)
+            lote, novos, mais = telemetria.montar_lote(db, cur)
+
+        try:
+            await cliente.enviar_telemetria(atual.endereco_do_canal, credencial, lote)
+        except (cliente.ErroDoNoc, certificado.CertificadoAusente) as erro:
+            mensagem = getattr(erro, "mensagem", str(erro))
+            with session_factory() as db:
+                if not estado.carregar(db).telemetria_detalhe:
+                    log.warning("noc_telemetria_falhou", motivo=mensagem)
+                estado.gravar(db, {estado.KEY_TELEMETRIA_DETALHE: mensagem[:500]})
+                db.commit()
+            return entregues
+
+        with session_factory() as db:
+            if estado.carregar(db).telemetria_detalhe:
+                log.info("noc_telemetria_voltou")
+            estado.gravar(
+                db,
+                {
+                    **{estado.CURSORES[nome]: str(valor) for nome, valor in novos.items()},
+                    estado.KEY_TELEMETRIA_EM: datetime.now(UTC).replace(tzinfo=None).isoformat(),
+                    estado.KEY_TELEMETRIA_DETALHE: None,
+                },
+            )
+            db.commit()
+        entregues += 1
+        if not mais:
+            break
+    return entregues
+
+
 def apply_noc_schedule(atual: estado.EstadoNoc, *, imediato: bool = False) -> None:
     """Agenda (ou remove) o heartbeat conforme o estado. Chamado no boot, no
     enrolamento e no desenrolamento.
@@ -181,7 +234,11 @@ def apply_noc_schedule(atual: estado.EstadoNoc, *, imediato: bool = False) -> No
     """
     if not atual.enrolado or atual.situacao == estado.REVOGADO:
         remove_job(JOB_ID)
+        remove_job(JOB_TELEMETRIA)
         return
+    if not get_scheduler().get_job(JOB_TELEMETRIA):
+        extra_t = {"next_run_time": datetime.now(UTC) + timedelta(seconds=20)} if imediato else {}
+        add_interval_job(run_noc_telemetria, job_id=JOB_TELEMETRIA, seconds=INTERVALO_TELEMETRIA_S, **extra_t)
     if get_scheduler().get_job(JOB_ID):
         reschedule(JOB_ID, atual.intervalo_s)
         return

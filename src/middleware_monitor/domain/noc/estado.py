@@ -47,6 +47,19 @@ KEY_MANIFESTO_EM = f"{_PREFIX}manifesto_enviado_em"
 # O canal mTLS que o NOC indica no enrolamento (e confirma a cada heartbeat).
 KEY_URL_CANAL = f"{_PREFIX}url_canal"
 KEY_CERTIFICADO_EXPIRA = f"{_PREFIX}certificado_expira_em"
+# Telemetria: um cursor por fonte (último id entregue com 202) e o último envio.
+KEY_CURSOR_AMOSTRAS = f"{_PREFIX}cursor_amostras"
+KEY_CURSOR_EVENTOS = f"{_PREFIX}cursor_eventos"
+KEY_CURSOR_APLICACOES = f"{_PREFIX}cursor_aplicacoes"
+KEY_CURSOR_COLETA = f"{_PREFIX}cursor_coleta"
+KEY_TELEMETRIA_EM = f"{_PREFIX}telemetria_enviada_em"
+KEY_TELEMETRIA_DETALHE = f"{_PREFIX}telemetria_detalhe"
+CURSORES = {
+    "amostras": KEY_CURSOR_AMOSTRAS,
+    "eventos": KEY_CURSOR_EVENTOS,
+    "aplicacoes": KEY_CURSOR_APLICACOES,
+    "coleta": KEY_CURSOR_COLETA,
+}
 
 TODAS_AS_CHAVES: frozenset[str] = frozenset(
     {
@@ -65,6 +78,12 @@ TODAS_AS_CHAVES: frozenset[str] = frozenset(
         KEY_MANIFESTO_EM,
         KEY_URL_CANAL,
         KEY_CERTIFICADO_EXPIRA,
+        KEY_CURSOR_AMOSTRAS,
+        KEY_CURSOR_EVENTOS,
+        KEY_CURSOR_APLICACOES,
+        KEY_CURSOR_COLETA,
+        KEY_TELEMETRIA_EM,
+        KEY_TELEMETRIA_DETALHE,
     }
 )
 
@@ -105,6 +124,8 @@ class EstadoNoc:
     manifesto_enviado_em: datetime | None
     url_canal: str | None
     certificado_expira_em: datetime | None
+    telemetria_enviada_em: datetime | None
+    telemetria_detalhe: str | None
 
     @property
     def endereco_do_canal(self) -> str:
@@ -132,6 +153,8 @@ class EstadoNoc:
             "manifesto_enviado_em": iso_utc(self.manifesto_enviado_em),
             "url_canal": self.url_canal,
             "certificado_expira_em": iso_utc(self.certificado_expira_em),
+            "telemetria_enviada_em": iso_utc(self.telemetria_enviada_em),
+            "telemetria_detalhe": self.telemetria_detalhe,
         }
 
 
@@ -185,7 +208,15 @@ def carregar(db: DBSession) -> EstadoNoc:
         manifesto_enviado_em=_data(r.get(KEY_MANIFESTO_EM)),
         url_canal=r.get(KEY_URL_CANAL) or None,
         certificado_expira_em=_data(r.get(KEY_CERTIFICADO_EXPIRA)),
+        telemetria_enviada_em=_data(r.get(KEY_TELEMETRIA_EM)),
+        telemetria_detalhe=r.get(KEY_TELEMETRIA_DETALHE) or None,
     )
+
+
+def carregar_cursores(db: DBSession) -> dict[str, int | None]:
+    """Os cursores guardados; ``None`` onde ainda não existe (primeiro envio)."""
+    r = {k: v.value for k, v in _linhas(db).items()}
+    return {nome: _int(r.get(chave)) for nome, chave in CURSORES.items()}
 
 
 def gravar(db: DBSession, valores: dict[str, str | None], *, user_id: int | None = None) -> None:

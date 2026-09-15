@@ -15,6 +15,8 @@ Três escolhas:
 
 from __future__ import annotations
 
+import gzip
+import json
 import ssl
 from dataclasses import dataclass
 from typing import Any
@@ -186,3 +188,36 @@ async def renovar_certificado(url: str, credencial: str, csr: str) -> str:
     if not isinstance(pem, str) or "BEGIN CERTIFICATE" not in pem:
         raise ErroDoNoc("RESPOSTA_INVALIDA", "A renovação não devolveu certificado.")
     return pem
+
+
+async def enviar_telemetria(url: str, credencial: str, lote: dict[str, Any]) -> bool:
+    """Envia um lote em gzip com ``Idempotency-Key`` = id do lote. Devolve se o NOC
+    disse que era duplicado (o lote já tinha chegado — o cursor pode avançar)."""
+    corpo = gzip.compress(json.dumps(lote, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    cabecalhos = {
+        **_cabecalhos(credencial),
+        "Content-Type": "application/json",
+        "Content-Encoding": "gzip",
+        "Idempotency-Key": str(lote["lote"]),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT_S * 3, verify=cert.contexto_do_agente()) as http:
+            resposta = await http.post(f"{url}/agente/v1/telemetria", content=corpo, headers=cabecalhos)
+    except httpx.TimeoutException as exc:
+        raise ErroDoNoc("SEM_CONEXAO", "O NOC não respondeu a tempo ao lote de telemetria.") from exc
+    except httpx.HTTPError as exc:
+        raise ErroDoNoc("SEM_CONEXAO", f"Não foi possível entregar a telemetria: {exc}") from exc
+    if resposta.status_code != 202:
+        codigo, mensagem = "ERRO_HTTP", f"O NOC respondeu {resposta.status_code} ao lote."
+        try:
+            dado = resposta.json()
+            codigo = str(dado.get("codigo") or codigo)
+            mensagem = str(dado.get("mensagem") or mensagem)
+        except ValueError:
+            pass
+        raise ErroDoNoc(codigo, mensagem, resposta.status_code)
+    # 202 sem o corpo esperado não é entrega confirmada.
+    dado = _json(resposta)
+    if dado.get("recebido") is not True:
+        raise ErroDoNoc("RESPOSTA_INVALIDA", "O NOC respondeu 202 sem confirmar o recebimento do lote.")
+    return dado.get("duplicado") is True
