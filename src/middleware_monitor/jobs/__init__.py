@@ -22,6 +22,7 @@ from middleware_monitor.domain.config.update_settings import (
     UpdateSettings,
     load_update_settings,
 )
+from middleware_monitor.domain.noc.estado import carregar as carregar_estado_noc
 
 log = get_logger("jobs")
 
@@ -40,6 +41,7 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     )
     from middleware_monitor.jobs.collect_extensions import run_collect_extensions
     from middleware_monitor.jobs.monitor_devices import run_monitor_devices
+    from middleware_monitor.jobs.noc_agent import apply_noc_schedule
     from middleware_monitor.jobs.rebuild_calls import run_daily_stats, run_rebuild_calls
     from middleware_monitor.jobs.retention import run_retention
 
@@ -47,6 +49,7 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
         cfg = load_config(db)
         upd = load_update_settings(db)
         bkp = load_backup_settings(db)
+        noc = carregar_estado_noc(db)
 
     # A single user-facing knob drives how often we collect from USCall and
     # ping/dispatch webhooks. Stored as minutes, applied here in seconds.
@@ -90,6 +93,8 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     apply_update_schedule(upd)
     # Backup diário: horário e retenção configuráveis pela tela.
     apply_backup_schedule(bkp)
+    # Heartbeat do NOC: só existe depois do enrolamento (jobs/noc_agent.py).
+    apply_noc_schedule(noc, imediato=True)
     # Sonda do bundle: só existe diretório de extração para vigiar quando o app
     # roda do .exe empacotado (ver jobs/bundle_probe.py).
     if resources.empacotado():

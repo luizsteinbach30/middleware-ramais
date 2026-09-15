@@ -185,6 +185,7 @@ _page("mqtt_messages.html", "/mqtt-messages")
 _page("config.html", "/config")
 _page("system_updates.html", "/system/updates")
 _page("system_backup.html", "/system/backup")
+_page("system_noc.html", "/system/noc")
 _page("account.html", "/account")
 
 
