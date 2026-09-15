@@ -573,6 +573,38 @@ class ExtensionDailyStat(Base):
     __table_args__ = (Index("ix_extension_daily_stats_dia_ramal", "dia", "ramal", unique=True),)
 
 
+class NocTarefa(Base):
+    """Tarefa recebida do NOC — a idempotência do lado do agente.
+
+    O NOC pode entregar a mesma tarefa de novo (lease que venceu com a resposta
+    no ar). Leitura repetida devolve o resultado gravado; escrita que já começou
+    **nunca** executa de novo: ``send_config`` reinicia o aparelho.
+    ``entregue_em`` nulo com ``concluida_em`` preenchido é o outbox: o resultado
+    existe e o NOC ainda não confirmou.
+    """
+
+    __tablename__ = "noc_tarefas"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(64), nullable=False)
+    raio: Mapped[str] = mapped_column(String(32), nullable=False)
+    idempotencia: Mapped[str] = mapped_column(String(64), nullable=False)
+    pedido: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    pedida_por: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    recebida_em: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    iniciada_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    concluida_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    nao_suportado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    resultado: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bruto: Mapped[str | None] = mapped_column(Text, nullable=True)
+    erro: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entregue_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    tentativas_de_entrega: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    __table_args__ = (Index("ix_noc_tarefas_entregue", "concluida_em", "entregue_em"),)
+
+
 __all__: list[str] = [
     "AppConfig",
     "Collection",
@@ -591,6 +623,7 @@ __all__: list[str] = [
     "MqttBroker",
     "MqttConnectionEvent",
     "MqttMessage",
+    "NocTarefa",
     "Session",
     "SystemLog",
     "UpdateHistory",

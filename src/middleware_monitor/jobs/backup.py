@@ -11,14 +11,14 @@ coletor — bloquear aqui pararia a ingestao.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.export_crypto import encrypt_export
 from middleware_monitor.core.logging import get_logger
-from middleware_monitor.core.scheduler import add_cron_job, remove_job, reschedule_cron
+from middleware_monitor.core.scheduler import add_cron_job, get_scheduler, remove_job, reschedule_cron
 from middleware_monitor.domain.backup import bundle as bundle_mod
 from middleware_monitor.domain.backup import snapshot as snap
 from middleware_monitor.domain.backup.settings import (
@@ -31,6 +31,11 @@ from middleware_monitor.domain.backup.settings import (
 log = get_logger("backup")
 
 BACKUP_JOB_ID = "backup_daily"
+BACKUP_ATRASADO_JOB_ID = "backup_atrasado"
+# Um dia e uma folga: o backup das 02:30 que rodou às 02:31 não conta como atrasado.
+IDADE_MAXIMA = timedelta(hours=26)
+# No boot o banco ainda está sendo migrado e os jobs estão subindo.
+ESPERA_NO_BOOT_S = 180
 
 
 def _local_timezone() -> Any:
@@ -102,3 +107,40 @@ def apply_backup_schedule(cfg: BackupSettings) -> None:
             timezone=tz,
         )
     log.info("backup_scheduled", at=f"{cfg.hour:02d}:{cfg.minute:02d}", keep=cfg.keep)
+
+
+def agendar_backup_atrasado(cfg: BackupSettings, *, agora: datetime | None = None) -> bool:
+    """No boot: se o snapshot mais novo tem mais de um dia (ou não existe), roda um
+    backup daqui a pouco — ``docs/AGENTE-NOC.md``, item 9.
+
+    O cron das 02:30 só dispara com o app aberto; numa instalação desktop que fica
+    fechada à noite, o backup simplesmente não acontecia. Com escrita remota pelo
+    NOC isso deixa de ser inconveniência: a tela de aprovação mostra a idade do
+    último backup, e ela precisa ser verdade.
+
+    Olha os **arquivos**, não o ``last_run_at``: um backup manual também conta, e
+    um registro "ok" com a pasta apagada não conta.
+    """
+    if not cfg.auto_enabled:
+        return False
+    agora = agora or datetime.now()
+    try:
+        snaps = [b for b in snap.list_backups() if b.kind == "snapshot"]
+    except OSError as exc:
+        log.warning("backup_atrasado_sem_pasta", message=str(exc))
+        snaps = []
+    if snaps and agora - snaps[0].modified_at < IDADE_MAXIMA:
+        return False
+    get_scheduler().add_job(
+        run_backup,
+        "date",
+        run_date=datetime.now(UTC) + timedelta(seconds=ESPERA_NO_BOOT_S),
+        id=BACKUP_ATRASADO_JOB_ID,
+        replace_existing=True,
+    )
+    log.info(
+        "backup_atrasado_agendado",
+        ultimo=snaps[0].name if snaps else None,
+        em_s=ESPERA_NO_BOOT_S,
+    )
+    return True

@@ -25,7 +25,7 @@ from middleware_monitor.core.models import AppConfig
 from middleware_monitor.core.scheduler import get_scheduler
 from middleware_monitor.domain.auth.service import bootstrap_admin
 from middleware_monitor.domain.backup import bundle as bundle_mod
-from middleware_monitor.domain.noc import certificado, cliente, estado, manifesto
+from middleware_monitor.domain.noc import certificado, cliente, estado, executor, manifesto
 from middleware_monitor.jobs.noc_agent import JOB_ID, run_noc_heartbeat
 
 NOC = "https://noc.teste"
@@ -386,12 +386,13 @@ def test_enrolar_exige_admin_e_csrf(client, db) -> None:
     assert client.post("/api/noc/enrolar", json={"codigo": "K7P2-9QX4-M3TD"}).status_code == 403
 
 
-def test_manifesto_nao_declara_acao_remota_nem_carrega_segredo(client, db) -> None:
-    """Nesta versão o agente não executa nada a pedido do NOC — declarar seria prometer."""
+def test_manifesto_declara_so_o_executor_e_nao_carrega_segredo(client, db) -> None:
+    """``acoes`` é a lista de permissão do executor (tests/api/test_noc_tarefas.py)."""
     _authed(client, db)
     m = client.get("/api/noc/manifesto").json()
-    assert m["acoes"] == []
-    assert m["executorRemoto"] is False
+    assert m["acoes"] == sorted(executor.ACOES)
+    assert "set_ip" not in m["acoes"]
+    assert m["executorRemoto"] is True
     assert m["versaoDoContrato"] == 1
     texto = json.dumps(m).lower()
     for proibido in ("senha", "password", "token", "credencial", "secret"):
