@@ -135,6 +135,19 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.replace(tzinfo=UTC).isoformat(timespec="seconds").replace("+00:00", "Z") if dt else None
 
 
+def _descrever(exc: BaseException) -> str:
+    """``ConnectTimeout`` do httpx chega com a mensagem vazia — e "ConnectTimeout: "
+    na tela do NOC não diz a ninguém que o aparelho não respondeu."""
+    import httpx
+
+    texto = str(exc).strip()
+    if not texto and isinstance(exc, httpx.TimeoutException):
+        texto = "o aparelho não respondeu a tempo"
+    elif not texto and isinstance(exc, httpx.ConnectError):
+        texto = "não foi possível conectar ao aparelho"
+    return f"{type(exc).__name__}: {texto}" if texto else type(exc).__name__
+
+
 def _sem_segredos(valor: Any) -> Any:
     if isinstance(valor, dict):
         return {k: ("***" if _CHAVE_SENSIVEL.search(str(k)) else _sem_segredos(v)) for k, v in valor.items()}
@@ -425,7 +438,7 @@ async def _normalize(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PL
     except VendorActionUnsupported as exc:
         return _recusa(str(exc))
     except Exception as exc:
-        return Resultado(ok=False, resultado={**base, "aplicado": False}, erro=f"{type(exc).__name__}: {exc}")
+        return Resultado(ok=False, resultado={**base, "aplicado": False}, erro=_descrever(exc))
     return Resultado(
         ok=r.ok,
         resultado={**base, "aplicado": r.ok, "detalhe": r.detail, "reiniciou": r.rebooted},
@@ -453,7 +466,7 @@ async def _reaplicar(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PL
     try:
         run_id, _total = await run_apply(env_id, force=True, selected_ids=[linha_id], operador=ctx.operador)
     except Exception as exc:
-        return Resultado(ok=False, resultado={**base, "linhas": []}, erro=f"{type(exc).__name__}: {exc}")
+        return Resultado(ok=False, resultado={**base, "linhas": []}, erro=_descrever(exc))
 
     rs = run_state.get(run_id)
     limite = time.monotonic() + TETO_DO_REAPLICAR_S
@@ -633,8 +646,8 @@ async def processar(tarefa: dict[str, Any], *, canal: str, credencial: str) -> P
         try:
             resultado = await ACOES[tipo].executar(pedido, ctx)
         except Exception as exc:  # a tarefa sempre ganha resposta
-            log.error("noc_tarefa_quebrou", tarefa=tarefa_id, tipo=tipo, erro=f"{type(exc).__name__}: {exc}")
-            resultado = Resultado(ok=False, erro=f"{type(exc).__name__}: {exc}")
+            log.error("noc_tarefa_quebrou", tarefa=tarefa_id, tipo=tipo, erro=_descrever(exc))
+            resultado = Resultado(ok=False, erro=_descrever(exc))
         if ACOES[tipo].raio != LEITURA:
             log.info(
                 "noc_escrita_executada", tarefa=tarefa_id, tipo=tipo, ok=resultado.ok, operador=ctx.operador

@@ -330,6 +330,22 @@ async def test_escrita_mira_uma_linha_so(db, aparelho) -> None:
     assert aparelho.chamadas == []
 
 
+async def test_aparelho_que_nao_responde_vira_erro_legivel(db, monkeypatch) -> None:
+    """Medido no lab (2026-09-15): o timeout do httpx chega com mensagem vazia."""
+
+    async def sem_resposta(*_a, **_k):
+        raise httpx.ConnectTimeout("")
+
+    monkeypatch.setattr(
+        "middleware_monitor.domain.extension_configurator.actions.run_action_on_line", sem_resposta
+    )
+    _ambiente(db, ("1001", "10.0.0.11"))
+    pronta = await _processar(_tarefa(tipo="normalize", raio="ESCRITA_REVERSIVEL"))
+    assert pronta.corpo["ok"] is False
+    assert pronta.corpo["erro"] == "ConnectTimeout: o aparelho não respondeu a tempo"
+    assert pronta.corpo["resultado"]["aplicado"] is False
+
+
 async def test_normalize_em_modelo_sem_homologacao_e_nao_suportado(db, aparelho) -> None:
     _ambiente(db, ("1001", "10.0.0.11"), modelo="Intelbras S3002")
     pronta = await _processar(_tarefa(tipo="normalize", raio="ESCRITA_REVERSIVEL"))
