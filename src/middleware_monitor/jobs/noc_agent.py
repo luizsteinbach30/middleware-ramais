@@ -24,7 +24,7 @@ from datetime import UTC, datetime, timedelta
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.scheduler import add_interval_job, get_scheduler, remove_job, reschedule
-from middleware_monitor.domain.noc import cliente, estado, manifesto
+from middleware_monitor.domain.noc import certificado, cliente, estado, manifesto
 
 log = get_logger("jobs.noc_agent")
 
@@ -36,7 +36,7 @@ _DETALHE_ILEGIVEL = "A chave de cifra desta instalação mudou; enrole de novo c
 def _situacao_do_erro(codigo: str) -> str:
     if codigo == "AGENTE_REVOGADO":
         return estado.REVOGADO
-    if codigo == "CREDENCIAL_INVALIDA":
+    if codigo in {"CREDENCIAL_INVALIDA", "CERTIFICADO_INVALIDO"}:
         return estado.CREDENCIAL_RECUSADA
     return estado.SEM_CONEXAO
 
@@ -63,6 +63,12 @@ async def run_noc_heartbeat(*, forcar: bool = False) -> estado.EstadoNoc:
             return atual
         try:
             credencial = estado.ler_credencial(db)
+            certificado.contexto_do_agente()
+        except certificado.CertificadoAusente as exc:
+            estado.gravar(db, {estado.KEY_SITUACAO: estado.CREDENCIAL_ILEGIVEL, estado.KEY_DETALHE: str(exc)})
+            db.commit()
+            _registrar_transicao(atual.situacao, estado.CREDENCIAL_ILEGIVEL, str(exc))
+            return estado.carregar(db)
         except ValueError:
             estado.gravar(
                 db,
@@ -79,7 +85,7 @@ async def run_noc_heartbeat(*, forcar: bool = False) -> estado.EstadoNoc:
     tentativa = {estado.KEY_ULTIMA_TENTATIVA: agora.replace(tzinfo=None).isoformat()}
     try:
         resposta = await cliente.heartbeat(
-            atual.url,
+            atual.endereco_do_canal,
             credencial or "",
             relogio_iso=agora.isoformat(timespec="seconds").replace("+00:00", "Z"),
             manifesto_sha256=corpo["sha256"],
@@ -118,7 +124,7 @@ async def run_noc_heartbeat(*, forcar: bool = False) -> estado.EstadoNoc:
 
     if resposta.get("enviarManifesto"):
         try:
-            await cliente.enviar_manifesto(atual.url, credencial or "", corpo)
+            await cliente.enviar_manifesto(atual.endereco_do_canal, credencial or "", corpo)
             valores[estado.KEY_MANIFESTO_SHA] = corpo["sha256"]
             valores[estado.KEY_MANIFESTO_EM] = agora.replace(tzinfo=None).isoformat()
         except cliente.ErroDoNoc as erro:
@@ -126,6 +132,14 @@ async def run_noc_heartbeat(*, forcar: bool = False) -> estado.EstadoNoc:
             # carregar o mesmo hash, o NOC vai pedir de novo — não precisa de
             # retentativa própria.
             valores[estado.KEY_DETALHE] = f"Manifesto não enviado: {erro.mensagem}"[:500]
+
+    canal = resposta.get("urlDoCanal")
+    if isinstance(canal, str) and canal:
+        # O NOC pode mudar o endereço do canal sem visita: ele avisa pelo próprio canal.
+        valores[estado.KEY_URL_CANAL] = cliente.normalizar_url(canal)
+
+    if resposta.get("renovarCertificado"):
+        valores.update(await _renovar(atual.endereco_do_canal, credencial or ""))
 
     with session_factory() as db:
         estado.gravar(db, valores)
@@ -137,6 +151,21 @@ async def run_noc_heartbeat(*, forcar: bool = False) -> estado.EstadoNoc:
         # O intervalo é do NOC: mudar em /configuracao lá chega aqui sem visita.
         reschedule(JOB_ID, depois.intervalo_s)
     return depois
+
+
+async def _renovar(canal: str, credencial: str) -> dict[str, str | None]:
+    """Renova o certificado pelo canal. Falhar aqui não derruba o heartbeat: o
+    certificado atual continua valendo, e o NOC volta a pedir no próximo ciclo."""
+    par = certificado.gerar_par(manifesto.nome_da_maquina())
+    try:
+        pem = await cliente.renovar_certificado(canal, credencial, par.csr_pem)
+        expira = certificado.instalar(par, pem)
+    except (cliente.ErroDoNoc, ValueError) as exc:
+        certificado.descartar_par(par)
+        log.warning("noc_certificado_nao_renovado", motivo=str(exc))
+        return {estado.KEY_DETALHE: f"Certificado não renovado: {exc}"[:500]}
+    log.info("noc_certificado_renovado", expira_em=expira.isoformat())
+    return {estado.KEY_CERTIFICADO_EXPIRA: expira.isoformat()}
 
 
 def apply_noc_schedule(atual: estado.EstadoNoc, *, imediato: bool = False) -> None:

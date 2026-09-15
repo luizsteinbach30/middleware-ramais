@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     data_dir: Path = Field(default=Path("./data"))
     db_url: str = ""
 
+    # Autoridade extra em que o agente do NOC confia, além da cadeia pública.
+    # SÓ para laboratório (NOC local com certificado de desenvolvimento). Em campo
+    # o NOC tem certificado público e esta variável não existe.
+    noc_ca_extra: Path | None = None
+
     secret_key: str = "change-me"
     cookie_secure: bool = False
     # Quando True, aborta o boot se secret_key continuar no default 'change-me'.

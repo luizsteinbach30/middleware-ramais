@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session as DBSession
 from middleware_monitor.api.deps import get_current_user, get_session, require_admin, require_csrf
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import User
-from middleware_monitor.domain.noc import cliente, estado, manifesto
+from middleware_monitor.domain.noc import certificado, cliente, estado, manifesto
 from middleware_monitor.jobs.noc_agent import apply_noc_schedule, run_noc_heartbeat
 from middleware_monitor.version import __version__
 
@@ -90,16 +90,24 @@ async def enrolar(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
+    # A chave nasce aqui, antes do pedido: o NOC recebe só o CSR (ADR 0006 do NOC).
+    par = certificado.gerar_par(manifesto.nome_da_maquina())
     try:
         enrolado = await cliente.enrolar(
             url,
             codigo=payload.codigo.strip(),
             maquina=manifesto.nome_da_maquina(),
             sistema=manifesto.sistema(),
+            csr=par.csr_pem,
         )
+        expira = certificado.instalar(par, enrolado.certificado_pem)
     except cliente.ErroDoNoc as erro:
+        certificado.descartar_par(par)
         log.warning("noc_enrolamento_recusado", codigo_erro=erro.codigo, status=erro.status, url=url)
         raise HTTPException(_STATUS_DO_ERRO.get(erro.codigo, 502), erro.mensagem) from erro
+    except ValueError as exc:
+        certificado.descartar_par(par)
+        raise HTTPException(502, str(exc)) from exc
 
     estado.guardar_credencial(
         db,
@@ -107,6 +115,11 @@ async def enrolar(
         agente_id=enrolado.agente_id,
         credencial=enrolado.credencial,
         intervalo_s=enrolado.intervalo_s,
+        user_id=user.id,
+    )
+    estado.gravar(
+        db,
+        {estado.KEY_URL_CANAL: enrolado.url_canal, estado.KEY_CERTIFICADO_EXPIRA: expira.isoformat()},
         user_id=user.id,
     )
     db.commit()
@@ -144,6 +157,7 @@ def desenrolar(
     atual = estado.carregar(db)
     estado.esquecer(db, user_id=user.id)
     db.commit()
+    certificado.apagar()
     apply_noc_schedule(estado.carregar(db))
     log.warning("noc_desenrolado", agente_id=atual.agente_id, operador=user.username)
     return _saida(db)
