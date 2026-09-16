@@ -33,6 +33,10 @@ def _povoar(db: Session) -> None:
     db.add(AppConfig(
         key="ping_timeout_ms", value="1500", is_secret=False, updated_at=_agora(),
     ))
+    # Linha secreta do KV. A chave é de um módulo que saiu na v2.14.0 — e é de
+    # propósito: nenhum código grava segredo em `app_config` hoje, mas um
+    # pacote restaurado de uma instalação anterior traz esta chave, e o bundle
+    # tem de continuar decifrando e recifrando linha secreta legada.
     db.add(AppConfig(
         key="webhooks.devices.token",
         value=SecretBox(get_settings().secret_key).encrypt("segredo-do-webhook"),
@@ -237,7 +241,7 @@ def test_diff_separa_novo_identico_e_conflito(db: Session) -> None:
     grupos = resultado["groups"]
 
     kv = grupos["config.app_config"]
-    assert kv["identicos"] == 2          # ping_timeout_ms e o token do webhook
+    assert kv["identicos"] == 2          # ping_timeout_ms e a chave secreta legada
     assert kv["novos_total"] == 0
     assert [a["id"] for a in kv["ausentes"]] == ["so_no_banco"]
 

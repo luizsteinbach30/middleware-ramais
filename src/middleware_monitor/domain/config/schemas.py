@@ -36,20 +36,6 @@ class UscallServerIn(BaseModel):
     enabled: bool = True
 
 
-class WebhookConfig(BaseModel):
-    enabled: bool = False
-    url: str = ""
-    token: Literal["set"] | None = None
-    last_status: str | None = None
-
-
-class WebhookConfigUpdate(BaseModel):
-    enabled: bool | None = None
-    url: str | None = None
-    # Only present when the operator wants to change it. ``""`` means clear.
-    token: str | None = None
-
-
 class AppConfigOut(BaseModel):
     client_code: str = ""
     # Campos legados do modo servidor único (leitura KV). Continuam expostos
@@ -62,13 +48,15 @@ class AppConfigOut(BaseModel):
     # Multi-servidor (v2.7.0): fonte da verdade é a tabela uscall_servers.
     uscall_servers: list[UscallServerOut] = Field(default_factory=list)
 
-    webhook_interval_minutes: int = 60
+    # A cadência da coleta do USCall e do ping da frota. Chamava-se
+    # `webhook_interval_minutes` até a v2.14.0 — o nome vinha do módulo de
+    # webhooks, que saiu, mas o botão sempre governou a coleta.
+    coleta_interval_minutes: int = 60
 
     ping_timeout_ms: int = 1000
     ping_concurrency: int = 20
     device_ping_retention_days: int = 30
 
-    webhook_log_retention_days: int = 30
     collection_retention_days: int = 90
     system_log_retention_days: int = 14
 
@@ -92,18 +80,9 @@ class AppConfigOut(BaseModel):
     phone_timezone: str = ""
     phone_ntp_server: str = "a.ntp.br"
 
-    webhook_timeout_seconds: int = 10
-
     auto_reapply_on_recovery: bool = False
     auto_reapply_debounce_minutes: int = 60
 
-    webhooks: dict[str, WebhookConfig] = Field(
-        default_factory=lambda: {
-            "extensions": WebhookConfig(),
-            "devices": WebhookConfig(),
-            "results": WebhookConfig(),
-        }
-    )
 
 
 class AppConfigUpdate(BaseModel):
@@ -111,13 +90,12 @@ class AppConfigUpdate(BaseModel):
     # uscall_host/token/verify_ssl sairam daqui na v2.7.0 — servidores USCall
     # agora são geridos pelo CRUD /api/config/uscall-servers.
 
-    webhook_interval_minutes: int | None = Field(default=None, ge=1, le=1440)
+    coleta_interval_minutes: int | None = Field(default=None, ge=1, le=1440)
 
     ping_timeout_ms: int | None = Field(default=None, ge=100, le=10_000)
     ping_concurrency: int | None = Field(default=None, ge=1, le=200)
     device_ping_retention_days: int | None = Field(default=None, ge=1, le=365)
 
-    webhook_log_retention_days: int | None = Field(default=None, ge=1, le=365)
     collection_retention_days: int | None = Field(default=None, ge=1, le=365)
     system_log_retention_days: int | None = Field(default=None, ge=1, le=365)
     mqtt_message_retention_days: int | None = Field(default=None, ge=1, le=365)
@@ -128,12 +106,10 @@ class AppConfigUpdate(BaseModel):
     phone_timezone_mode: str | None = Field(default=None, pattern="^(herdar|proprio)$")
     phone_timezone: str | None = Field(default=None, max_length=64)
     phone_ntp_server: str | None = Field(default=None, max_length=128)
-    webhook_timeout_seconds: int | None = Field(default=None, ge=1, le=120)
 
     auto_reapply_on_recovery: bool | None = None
     auto_reapply_debounce_minutes: int | None = Field(default=None, ge=1, le=10080)
 
-    webhooks: dict[str, WebhookConfigUpdate] | None = None
 
 
 class UscallTestRequest(BaseModel):
@@ -159,8 +135,6 @@ __all__: list[str] = [
     "UscallServerOut",
     "UscallTestRequest",
     "UscallTestResponse",
-    "WebhookConfig",
-    "WebhookConfigUpdate",
 ]
 
 

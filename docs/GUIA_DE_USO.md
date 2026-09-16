@@ -13,15 +13,18 @@ O Middleware USCall Monitor é um painel local que faz três coisas:
 
 1. **Monitora ramais SIP** — a cada ciclo coleta o status dos ramais no USCall
    (PBX), pinga os dispositivos na rede e mostra tudo num painel.
-2. **Dispara webhooks** — envia o resultado das coletas (ramais, devices,
-   resultados) para sistemas externos.
-3. **Provisiona telefones em massa** (Configurador de Ramais) — aplica a
+2. **Provisiona telefones em massa** (Configurador de Ramais) — aplica a
    configuração SIP/teclas nos próprios aparelhos via a interface web deles,
    agrupando-os em **ambientes**.
 
 Cada ciclo (intervalo configurável) executa, em ordem: **coleta USCall →
-ping dos devices → webhooks**. Há ainda jobs de retenção (limpeza) e de
-verificação de atualização.
+ping dos devices**. Há ainda jobs de retenção (limpeza) e de verificação de
+atualização.
+
+> **v2.14.0 — os webhooks saíram.** O middleware não empurra mais nada para
+> sistemas externos. O que os webhooks mandavam vai para o **NOC WorkConnect**,
+> pela telemetria do agente (tela `Sistema → NOC`), junto com o que eles nunca
+> levaram: amostras de ping, eventos de ramal e aplicações de configuração.
 
 **Dois status independentes por ramal/device:**
 
@@ -52,8 +55,7 @@ tentativas de login falhas em 10 min.
 
 ### 3.1 Dashboard (`/`)
 Cartões com total de devices, online/offline (rede), disponível/indisponível
-(lógico), latência média/máxima, última coleta, webhooks por status nas últimas
-24 h, versão e status do updater.
+(lógico), latência média/máxima, última coleta, versão e status do updater.
 
 ### 3.2 Devices (`/devices`)
 Lista paginada de todos os ramais coletados, com o vínculo a ambiente (quando
@@ -90,14 +92,10 @@ ambiente. Devices **já vinculados** ou com **IP já presente** no ambiente são
 Histórico dos snapshots coletados do USCall, paginado e filtrável por data/tipo.
 Clique para ver o payload completo.
 
-### 3.4 Webhook logs (`/webhook-logs`)
-Cada envio de webhook (com retry) vira um evento: tipo, URL, status HTTP,
-duração, payload e resposta. Permite **reenviar**.
-
-### 3.5 Logs (`/logs`)
+### 3.4 Logs (`/logs`)
 Eventos `WARN`/`ERROR` persistidos, filtráveis por nível e módulo.
 
-### 3.6 Atualizações (`/system/updates`)
+### 3.5 Atualizações (`/system/updates`)
 Histórico de auto-updates, troca de canal (`stable`/`beta`), pausar updates
 automáticos e "Verificar agora". O app consulta o GitHub Releases e, quando há
 versão nova no canal, baixa, valida hash, roda as migrations e reinicia.
@@ -109,7 +107,7 @@ versão nova no canal, baixa, valida hash, roda as migrations e reinicia.
 Cada bloco da tela e o que cada campo faz:
 
 ### 4.1 Identificação do cliente
-- **`client_code`** — slug que identifica o cliente no payload dos webhooks.
+- **`client_code`** — slug que identifica esta instalação.
 
 ### 4.2 Identidade visual *(novo na v2.5.0)*
 - **Logo** (png/jpg/svg/webp/gif, máx 2 MB) — aparece na **sidebar**, na **tela
@@ -126,9 +124,10 @@ Cada bloco da tela e o que cada campo faz:
   emergência com certificado quebrado).
 - **Testar conexão** — valida host+token e mostra HTTP/latência.
 
-### 4.4 Intervalo de envio dos webhooks
-- **`webhook_interval_minutes`** — período do ciclo coleta→ping→webhooks
-  (1 a 1440 min).
+### 4.4 Intervalo da coleta
+- **`coleta_interval_minutes`** — período do ciclo coleta→ping (1 a 1440 min).
+  Chamava-se `webhook_interval_minutes` até a v2.14.0; a migration renomeia
+  sozinha, mantendo o valor.
 
 ### 4.5 Monitoramento de rede
 - **`ping_timeout_ms`** — timeout de cada ping.
@@ -154,14 +153,8 @@ Regras (ver detalhes em [§6](#6-auto-reaplicação-watcher-de-recovery)):
 Há também o botão **"Vincular por IP agora"** — casa ExtensionLines órfãs com
 devices de mesmo IP (idempotente).
 
-### 4.7 Webhooks
-Três tipos: **extensions** (ramais), **devices** (rede) e **results**. Para cada
-um: ligar/desligar, **URL** de destino, **token** (`Authorization: Bearer`),
-e botão **Testar** (envia payload `test=true`). Em falha de rede há retry com
-backoff (3 tentativas).
-
-### 4.8 Retenção e limpeza
-- **`webhook_log_retention_days`**, **`collection_retention_days`**,
+### 4.7 Retenção e limpeza
+- **`collection_retention_days`**,
   **`system_log_retention_days`** — janelas de retenção de cada tabela. Um job
   diário remove o que passou do prazo.
 
@@ -280,7 +273,8 @@ O `auto_reapply_debounce_minutes` limita a frequência das tentativas.
 
 ## 8. Segurança e dados
 
-- Tokens (USCall, webhooks) são **criptografados em repouso** com chave derivada
+- Tokens e senhas (USCall, broker MQTT, credencial do NOC, senha SIP e senhas
+  web dos ambientes) são **criptografados em repouso** com chave derivada
   de `APP_SECRET_KEY`. Logs nunca contêm os tokens.
 - Senhas de usuários com bcrypt; CSRF nas mutações; cookies HttpOnly/SameSite.
 - **O Configurador nunca emite configuração de rede** dos aparelhos (IP, máscara,

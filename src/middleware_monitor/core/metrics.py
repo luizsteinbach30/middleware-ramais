@@ -66,17 +66,6 @@ if HAS_PROMETHEUS:
         ["reason"],
     )
 
-    WEBHOOK_ATTEMPTS = Counter(
-        "mm_webhook_attempts_total",
-        "Webhook attempts",
-        ["event_type", "success"],
-    )
-    WEBHOOK_DURATION = Histogram(
-        "mm_webhook_duration_seconds",
-        "Webhook duration",
-        ["event_type"],
-    )
-
     UPDATE_CHECKS = Counter(
         "mm_update_check_total", "Update checks", ["result"]
     )
@@ -85,7 +74,7 @@ if HAS_PROMETHEUS:
     )
 else:  # pragma: no cover
     APP_INFO = DEVICES_TOTAL = PING_TOTAL = PING_LATENCY = _Noop()  # type: ignore[assignment]
-    COLLECT_DURATION = COLLECT_FAILURES = WEBHOOK_ATTEMPTS = WEBHOOK_DURATION = _Noop()  # type: ignore[assignment]
+    COLLECT_DURATION = COLLECT_FAILURES = _Noop()  # type: ignore[assignment]
     UPDATE_CHECKS = UPDATE_APPLIES = _Noop()  # type: ignore[assignment]
 
 

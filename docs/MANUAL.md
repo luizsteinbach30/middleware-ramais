@@ -153,7 +153,7 @@ middleware-monitor-ctl install-log     # log da última instalação
 Sidebar → **Configuração** (`/config`):
 
 ### a. Identificação do cliente
-- `client_code`: slug que vai no payload de cada webhook (ex.: `acme-matriz`).
+- `client_code`: slug que identifica esta instalação (ex.: `acme-matriz`).
 
 ### b. Integração USCall
 - `uscall_host`: domínio sem `https://` (ex.: `uscall.empresa.com.br`).
@@ -161,14 +161,12 @@ Sidebar → **Configuração** (`/config`):
 - `verify_ssl`: deixe ligado.
 - Clique em **Testar conexão** — deve aparecer verde com a latência.
 
-### c. Webhooks (extensions / devices / results)
-Para cada tipo que você quer enviar:
-- Toggle **Habilitado**.
-- `url` do consumidor.
-- `token` Bearer.
-- **Testar** para confirmar.
-
 Clique em **Salvar configuração**. Pronto.
+
+> Até a v2.13.0 havia aqui um bloco de **Webhooks** (extensions / devices /
+> results), com URL e token de destino. Ele saiu na v2.14.0: o middleware não
+> empurra mais nada para fora. Quem recebe o estado dos ramais agora é o **NOC
+> WorkConnect**, e o enrolamento é feito em `Sistema → NOC`.
 
 ---
 

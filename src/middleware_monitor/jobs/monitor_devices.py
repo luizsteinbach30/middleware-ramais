@@ -12,13 +12,10 @@ from sqlalchemy.orm import Session as DBSession
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import Device, ExtensionLine
-from middleware_monitor.core.time import as_local_str
 from middleware_monitor.domain.config.repository import load_config
 from middleware_monitor.domain.devices.repository import record_ping
 from middleware_monitor.domain.extension_configurator import apply as ec_apply
 from middleware_monitor.domain.extension_configurator import repository as ec_repo
-from middleware_monitor.domain.uscall import repository as uscall_repo
-from middleware_monitor.domain.webhooks.sender import WebhookSender
 from middleware_monitor.integrations.network import (
     make_arp_probe,
     make_ping_probe,
@@ -34,8 +31,6 @@ async def run_monitor_devices() -> None:
         devices = list(
             db.scalars(select(Device).where(Device.ip.is_not(None))).all()
         )
-        # nome do servidor USCall de origem por device (campo aditivo no webhook)
-        server_names = {s.id: s.nome for s in uscall_repo.list_servers(db)}
 
     if not devices:
         log.info("monitor_skipped", reason="no_devices")
@@ -46,7 +41,6 @@ async def run_monitor_devices() -> None:
     timeout_ms = cfg.ping_timeout_ms
     sem = asyncio.Semaphore(max(1, min(cfg.ping_concurrency, 200)))
 
-    snapshot: list[dict[str, object]] = []
     on = 0
     off = 0
 
@@ -80,23 +74,6 @@ async def run_monitor_devices() -> None:
             record_ping(db, d, online=online, latency_ms=latency)
             if new_mac and not d.mac:
                 d.mac = new_mac
-            snapshot.append(
-                {
-                    "name": d.name,
-                    "ip": d.ip,
-                    "logical_status": d.logical_status,
-                    "status": d.network_status,
-                    "latency": d.latency_ms,
-                    "last_ping": as_local_str(d.last_ping_at),
-                    "mac": d.mac,
-                    # aditivo (multi-USCall): origem da coleta; receptor que
-                    # ignora chaves extras não é afetado
-                    "uscall_server": (
-                        server_names.get(d.uscall_server_id)
-                        if d.uscall_server_id is not None else None
-                    ),
-                }
-            )
             if online:
                 on += 1
                 if prev_status == "offline":
@@ -107,11 +84,6 @@ async def run_monitor_devices() -> None:
 
     duration_ms = int((time.perf_counter() - started) * 1000)
     log.info("monitor_ok", online=on, offline=off, total=len(devices), duration_ms=duration_ms)
-
-    # ``data`` is a flat array — the shape the receiving application accepts.
-    # The online/offline counts stay in the log line above, not in the payload.
-    sender = WebhookSender(session_factory)
-    await sender.dispatch("devices", snapshot)
 
     if cfg.auto_reapply_on_recovery:
         with session_factory() as db:

@@ -5,7 +5,7 @@ outra instalacao operar igual a esta. Sao quatro secoes independentes, cada uma
 podendo ser exportada e restaurada sozinha:
 
 ``config``
-    ``app_config`` (retencoes, ping, webhooks, auto-update, hora dos
+    ``app_config`` (retencoes, ping, auto-update, hora dos
     telefones), servidores USCall e brokers MQTT.
 ``environments``
     Ambientes do Configurador com ``config_padrao``, function keys e as linhas.

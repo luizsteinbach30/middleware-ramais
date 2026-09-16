@@ -1,6 +1,6 @@
 """Application settings loaded from environment variables / .env file.
 
-Domain-level configuration (intervals, webhooks, USCall) is stored in the
+Domain-level configuration (intervals, USCall) is stored in the
 database (table ``app_config``). Only infrastructure-level knobs (paths, ports,
 secret material) live here.
 """

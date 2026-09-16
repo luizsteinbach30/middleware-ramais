@@ -19,7 +19,6 @@ from middleware_monitor.domain.collections.repository import save_snapshot
 from middleware_monitor.domain.devices.repository import upsert_from_uscall
 from middleware_monitor.domain.uscall import repository as uscall_repo
 from middleware_monitor.domain.uscall import saude as uscall_saude
-from middleware_monitor.domain.webhooks.sender import WebhookSender
 from middleware_monitor.integrations.uscall_client import UscallClient
 
 log = get_logger("collector")
@@ -32,7 +31,7 @@ def merge_payloads(
 
     Se um ramal aparecer em dois servidores (não deveria — premissa do
     cliente), loga warning e o primeiro vence. O campo ``uscall_server`` é
-    aditivo: o receptor do webhook ignora chaves extras, então o contrato
+    aditivo: quem consome o payload ignora chaves extras, então o contrato
     flat existente é preservado.
     """
     merged: list[dict[str, Any]] = []
@@ -97,7 +96,7 @@ async def run_collect_extensions() -> None:
         results.append(r)
         per_server[r[1]] = len(r[2])
     if not results:
-        # TODOS fora: sem snapshot e sem webhook (comportamento da falha total).
+        # TODOS fora: nem snapshot (comportamento da falha total).
         log.warning("collect_failed", reason="all_servers_failed")
         return
 
@@ -117,6 +116,3 @@ async def run_collect_extensions() -> None:
         upserted=touched,
         duration_ms=duration_ms,
     )
-
-    sender = WebhookSender(session_factory)
-    await sender.dispatch("extensions", payload)

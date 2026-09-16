@@ -177,7 +177,6 @@ def _page(name: str, route: str) -> None:
 _page("devices.html", "/devices")
 _page("device_detail.html", "/devices/{device_id}")
 _page("collections.html", "/collections")
-_page("webhook_logs.html", "/webhook-logs")
 _page("logs.html", "/logs")
 _page("mqtt_live.html", "/mqtt-painel")
 _page("mqtt_calls.html", "/mqtt-chamadas")

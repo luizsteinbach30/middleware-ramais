@@ -15,7 +15,6 @@ from middleware_monitor.core.models import (
     Device,
     DevicePing,
     User,
-    WebhookEvent,
 )
 from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.devices.repository import status_counts
@@ -32,9 +31,6 @@ class DashboardSummary(BaseModel):
     avg_latency_ms: int
     max_latency_ms: int
     last_collection_at: str | None
-    webhooks_24h: int
-    webhooks_24h_ok: int
-    webhooks_24h_fail: int
 
 
 class TimePoint(BaseModel):
@@ -51,24 +47,9 @@ def summary(
     counts = status_counts(db)
     last = db.scalar(select(Collection).order_by(Collection.collected_at.desc()).limit(1))
 
-    since = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)
-    total_w = int(
-        db.scalar(select(func.count(WebhookEvent.id)).where(WebhookEvent.timestamp >= since)) or 0
-    )
-    ok_w = int(
-        db.scalar(
-            select(func.count(WebhookEvent.id)).where(
-                WebhookEvent.timestamp >= since, WebhookEvent.success.is_(True)
-            )
-        )
-        or 0
-    )
     return DashboardSummary(
         **counts,
         last_collection_at=iso_utc(last.collected_at) if last else None,
-        webhooks_24h=total_w,
-        webhooks_24h_ok=ok_w,
-        webhooks_24h_fail=total_w - ok_w,
     )
 
 

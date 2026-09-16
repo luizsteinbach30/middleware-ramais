@@ -7,10 +7,10 @@ const tokenChanges = {}; // key -> new plaintext (or '' to clear)
 
 const FIELDS = [
   'client_code',
-  'webhook_interval_minutes',
+  'coleta_interval_minutes',
   'ping_timeout_ms', 'ping_concurrency', 'device_ping_retention_days',
   'auto_reapply_on_recovery', 'auto_reapply_debounce_minutes',
-  'webhook_log_retention_days', 'collection_retention_days', 'system_log_retention_days',
+  'collection_retention_days', 'system_log_retention_days',
   'mqtt_message_retention_days', 'mqtt_message_max_mb', 'extension_event_retention_days',
   'phone_timezone_mode', 'phone_timezone', 'phone_ntp_server',
 ];
@@ -28,7 +28,6 @@ function fillForm(cfg) {
     else el.value = cfg[k] ?? '';
   }
   renderUscallServers(cfg.uscall_servers || []);
-  renderWebhooks(cfg.webhooks);
 }
 
 function renderMasked(key, isSet) {
@@ -60,55 +59,17 @@ function bindTokens() {
   document.querySelectorAll('[data-token-edit]').forEach((b) => b.addEventListener('click', () => {
     const k = b.dataset.tokenEdit;
     tokenChanges[k] = '';
-    if (k.startsWith('webhooks.')) renderWebhooks(original.webhooks);
-    else renderMasked(k, original[k] === 'set');
+    renderMasked(k, original[k] === 'set');
     setDirty(true);
   }));
   document.querySelectorAll('[data-token-cancel]').forEach((b) => b.addEventListener('click', () => {
     const k = b.dataset.tokenCancel;
     delete tokenChanges[k];
-    if (k.startsWith('webhooks.')) renderWebhooks(original.webhooks);
-    else renderMasked(k, original[k] === 'set');
+    renderMasked(k, original[k] === 'set');
     setDirty(Object.keys(tokenChanges).length > 0 || dirty.size > 0);
   }));
   document.querySelectorAll('[data-token-input]').forEach((i) => i.addEventListener('input', (e) => {
     tokenChanges[i.dataset.tokenInput] = e.target.value;
-  }));
-}
-
-function renderWebhooks(webhooks) {
-  const list = document.getElementById('webhooks-list');
-  list.innerHTML = Object.entries(webhooks || {}).map(([k, w]) => `
-    <div class="bg-gray-900/40 rounded-lg ring-1 ring-gray-700 p-4">
-      <div class="flex items-center justify-between mb-3">
-        <div class="flex items-center gap-3">
-          <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${k === 'extensions' ? 'bg-blue-500/15 text-blue-400 ring-blue-500/30' : k === 'devices' ? 'bg-green-500/15 text-green-400 ring-green-500/30' : 'bg-indigo-500/15 text-indigo-300 ring-indigo-500/30'}">${k}</span>
-          <label class="relative inline-block w-11 h-6 cursor-pointer">
-            <input type="checkbox" ${w.enabled ? 'checked' : ''} data-wh-enabled="${k}" class="sr-only peer"/>
-            <span class="absolute inset-0 rounded-full bg-gray-700 peer-checked:bg-blue-500 transition"></span>
-            <span class="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5"></span>
-          </label>
-          <span class="text-sm text-gray-200">${w.enabled ? 'Habilitado' : 'Desligado'}</span>
-        </div>
-        <div class="flex items-center gap-3">
-          <span class="text-xs text-gray-500">${w.last_status || '—'}</span>
-          <button data-wh-test="${k}" class="inline-flex items-center gap-2 rounded-lg font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 ring-1 ring-inset ring-gray-700 px-2.5 py-1.5 text-xs">Testar</button>
-        </div>
-      </div>
-      <div class="grid md:grid-cols-2 gap-3">
-        <label class="flex flex-col gap-1.5"><span class="text-xs font-semibold text-gray-300">url</span>
-          <input value="${w.url || ''}" data-wh-url="${k}" placeholder="https://…" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100"/></label>
-        <div data-masked="webhooks.${k}.token"></div>
-      </div>
-    </div>
-  `).join('');
-  Object.entries(webhooks || {}).forEach(([k, w]) => renderMasked(`webhooks.${k}.token`, w.token === 'set'));
-  list.querySelectorAll('[data-wh-enabled]').forEach((c) => c.addEventListener('change', () => { dirty.add('wh.' + c.dataset.whEnabled); setDirty(true); }));
-  list.querySelectorAll('[data-wh-url]').forEach((i) => i.addEventListener('input', () => { dirty.add('wh.' + i.dataset.whUrl + '.url'); setDirty(true); }));
-  list.querySelectorAll('[data-wh-test]').forEach((b) => b.addEventListener('click', async () => {
-    try { const r = await api('/api/webhooks/test/' + b.dataset.whTest, { method: 'POST' });
-      toast[r.ok ? 'success' : 'error'](r.ok ? 'Teste enviado' : 'Falha'); }
-    catch { toast.error('Falha'); }
   }));
 }
 
@@ -207,18 +168,6 @@ document.getElementById('cfg-save').addEventListener('click', async () => {
     const v = readField(k);
     if (v !== undefined) payload[k] = v;
   }
-  const webhooks = {};
-  ['extensions', 'devices', 'results'].forEach((k) => {
-    const en = document.querySelector(`[data-wh-enabled="${k}"]`);
-    const url = document.querySelector(`[data-wh-url="${k}"]`);
-    const tok = tokenChanges[`webhooks.${k}.token`];
-    const upd = {};
-    if (en && dirty.has('wh.' + k)) upd.enabled = en.checked;
-    if (url && dirty.has('wh.' + k + '.url')) upd.url = url.value.trim();
-    if (tok !== undefined) upd.token = tok;
-    if (Object.keys(upd).length) webhooks[k] = upd;
-  });
-  if (Object.keys(webhooks).length) payload.webhooks = webhooks;
 
   if (Object.keys(payload).length === 0) {
     toast.info('Nada para salvar.');

@@ -1,6 +1,7 @@
 """A telemetria para o NOC — Fase 1 (``docs/AGENTE-NOC.md``, itens 5, 6 e 7).
 
-Tudo o que os webhooks ``extensions`` e ``devices`` mandavam, e mais: amostras
+Tudo o que os webhooks ``extensions`` e ``devices`` mandavam ate a v2.13.0
+(o modulo saiu na v2.14.0), e mais: amostras
 de ping, transições de telefonia do MQTT local, relatórios de aplicação e o
 perfil que cada ambiente diz que a linha deve ter.
 

@@ -19,7 +19,6 @@ from middleware_monitor.core.models import (
     ExtensionDailyStat,
     LoginAttempt,
     SystemLog,
-    WebhookEvent,
 )
 from middleware_monitor.domain.config.repository import load_config
 from middleware_monitor.domain.mqtt import realtime as mqtt_realtime
@@ -105,7 +104,6 @@ async def run_retention() -> None:
     with session_factory() as db:
         cfg = load_config(db)
         cutoff_pings = _now() - timedelta(days=cfg.device_ping_retention_days)
-        cutoff_webhooks = _now() - timedelta(days=cfg.webhook_log_retention_days)
         cutoff_collections = _now() - timedelta(days=cfg.collection_retention_days)
         cutoff_syslogs = _now() - timedelta(days=cfg.system_log_retention_days)
         cutoff_login = _now() - timedelta(days=14)
@@ -122,7 +120,6 @@ async def run_retention() -> None:
         ).date().isoformat()
 
         a = _delete_count(db, delete(DevicePing).where(DevicePing.timestamp < cutoff_pings))
-        b = _delete_count(db, delete(WebhookEvent).where(WebhookEvent.timestamp < cutoff_webhooks))
         c = _delete_count(db, delete(Collection).where(Collection.collected_at < cutoff_collections))
         d = _delete_count(db, delete(SystemLog).where(SystemLog.timestamp < cutoff_syslogs))
         e = _delete_count(db, delete(LoginAttempt).where(LoginAttempt.timestamp < cutoff_login))
@@ -143,7 +140,6 @@ async def run_retention() -> None:
     log.info(
         "retention_ok",
         device_pings=a,
-        webhook_events=b,
         collections=c,
         system_logs=d,
         login_attempts=e,
