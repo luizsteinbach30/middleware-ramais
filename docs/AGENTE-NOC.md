@@ -22,8 +22,21 @@ telemetria, ele **busca trabalho** numa fila do NOC, executa e devolve o resulta
 
 - **Nada entra.** A interface web continua ouvindo só na LAN. Nenhum *port forward*,
   nenhuma porta nova, nenhuma VPN permanente. Toda conexão continua saindo daqui.
-- **As credenciais dos aparelhos não saem.** Continuam cifradas (Fernet) no SQLite
-  local. A tarefa que chega do NOC nomeia o alvo; quem sabe a senha é este processo.
+- **As credenciais dos aparelhos não saem.** A tarefa que chega do NOC nomeia o alvo;
+  quem sabe a senha é este processo. O que impede a saída é a **lista de permissão campo
+  a campo** da telemetria (`domain/noc/telemetria.py`): o bloco `perfis` enumera o que
+  vai, e `senha_sip`, `user_auth` e o `config_padrao` inteiro não estão lá.
+- **E agora também não ficam em claro em repouso** (v2.14.0). Até a v2.13.0 este
+  documento afirmava que elas ficavam "cifradas (Fernet) no SQLite local" — **e não
+  ficavam**: `extension_lines.senha_sip` e as quatro senhas do `config_padrao`
+  (`web_password`, `nova_web_password`, `menu_password`, `keylock_password`) estavam em
+  texto claro, e a senha SIP ainda era enviada ao navegador a cada abertura da tela do
+  ambiente. Passaram para a mesma `SecretBox` do token do USCall, com o prefixo
+  `enc:v1:` marcando o ciphertext; a cifra vive na fronteira do banco
+  (`domain/extension_configurator/repository.py`) e nenhum vendor precisou mudar.
+  Instalação sem `APP_SECRET_KEY` utilizável continua gravando em claro, de propósito —
+  a atualização que protege não pode ser a que derruba —, e passa a **dizer isso** em
+  `GET /api/system/version` (`segredos_em_claro`).
 - **O middleware continua funcionando sozinho.** NOC fora do ar não pode parar
   coleta, ping, nem o Configurador de Ramais. O agente é uma capacidade a mais, não
   uma dependência.

@@ -138,10 +138,54 @@ def create_app() -> FastAPI:
             ),
         )
 
+    def _compactar_banco_se_pendente() -> None:
+        """`VACUUM` depois de uma migration que reescreveu segredo.
+
+        Cifrar a coluna não apaga o que já estava gravado: o SQLite marca a
+        página antiga como livre, e a senha em claro continua legível com um
+        `grep` no arquivo até ele ser reescrito. A migration 0013 não consegue
+        fazer isso sozinha — `VACUUM` não roda dentro da transação em que o
+        alembic a executa —, então ela deixa a marca e o próximo boot compacta.
+
+        Falhar aqui não derruba a aplicação: a marca fica e o boot seguinte
+        tenta de novo. Um banco que não compacta é um resíduo; um serviço que
+        não sobe é o cliente sem monitoramento.
+        """
+        from sqlalchemy import text
+
+        from middleware_monitor.core.db import get_engine
+
+        chave = "db.compactar_pendente"
+        engine = get_engine()
+        try:
+            with engine.connect() as conn:
+                pendente = conn.execute(
+                    text("SELECT value FROM app_config WHERE key = :k"), {"k": chave}
+                ).scalar_one_or_none()
+            if pendente != "1":
+                return
+
+            log.info("db_compactando", motivo="segredos recifrados pela migration")
+            # `VACUUM` não roda dentro de transação, e a conexão normal do
+            # SQLAlchemy abre uma sozinha na primeira instrução. AUTOCOMMIT é o
+            # jeito de pedir uma conexão que não abre.
+            with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+                conn.exec_driver_sql("VACUUM")
+            # A marca só sai depois de o VACUUM ter terminado: se ele falhar no
+            # meio, o boot seguinte tenta de novo em vez de dar por feito.
+            with engine.begin() as conn:
+                conn.execute(text("DELETE FROM app_config WHERE key = :k"), {"k": chave})
+            log.info("db_compactado")
+        except Exception as exc:
+            log.warning(
+                "db_compactar_falhou", error=type(exc).__name__, message=str(exc),
+            )
+
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         log.info("app_starting", version=__version__, host=settings.host, port=settings.port)
         init_engine()
+        _compactar_banco_se_pendente()
         register_all(get_scheduler())
         scheduler_start()
         # Coletor MQTT: conexao persistente, entao vive no lifespan e nao no

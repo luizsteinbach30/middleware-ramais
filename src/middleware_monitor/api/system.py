@@ -30,6 +30,7 @@ from middleware_monitor.domain.config.update_settings import (
     load_update_settings,
     save_update_settings,
 )
+from middleware_monitor.domain.extension_configurator import repository as ec_repo
 from middleware_monitor.jobs import apply_update_schedule
 from middleware_monitor.settings import get_settings
 from middleware_monitor.updater.installer import install_release
@@ -60,6 +61,11 @@ class VersionOut(BaseModel):
     available_version: str | None
     available_published_at: str | None
     available_notes: str | None
+    # True quando `APP_SECRET_KEY` continua no default: sem chave utilizável, as
+    # senhas SIP e as senhas web do ambiente seguem gravadas em texto claro. A
+    # instalação funciona igual — mas precisa dizer que funciona assim, senão
+    # ninguém descobre até alguém abrir o SQLite.
+    segredos_em_claro: bool
 
 
 class UpdateHistoryItem(BaseModel):
@@ -125,6 +131,7 @@ def version_info(
         available_version=str(getattr(available, "version", "")) or None,
         available_published_at=getattr(available, "published_at", None),
         available_notes=getattr(available, "notes", None),
+        segredos_em_claro=ec_repo.segredos_em_claro(),
     )
 
 

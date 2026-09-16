@@ -8,7 +8,19 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["PHONE_MODELS", "default_config_padrao"]
+__all__ = ["CHAVES_SECRETAS", "PHONE_MODELS", "default_config_padrao"]
+
+
+# As chaves do `config_padrao` que são segredo: cifradas em repouso (v2.14.0) e
+# mascaradas em preview, relatório e exportação. A lista mora aqui porque é a
+# mesma para quem grava (repository), quem mascara (api) e quem exporta — três
+# cópias dela seriam três lugares onde a próxima senha entra sem proteção.
+CHAVES_SECRETAS: tuple[str, ...] = (
+    "web_password",
+    "nova_web_password",
+    "menu_password",
+    "keylock_password",
+)
 
 
 # Lista de modelos suportados (vendors port em PR2).

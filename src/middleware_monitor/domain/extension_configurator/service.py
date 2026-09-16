@@ -27,7 +27,7 @@ from middleware_monitor.integrations.extension_configurator.vendors import (
 )
 
 from . import time_settings
-from .repository import merged_config_padrao
+from .repository import merged_config_padrao, senha_sip_de
 from .softkeys import is_intelbras_s_series, is_intelbras_tip
 
 
@@ -98,11 +98,16 @@ def build_row(line: ExtensionLine, cfg: dict[str, Any]) -> dict[str, Any]:
 
     `nome_visivel` (vazio = numero_ramal) vira label/display do telefone.
     `servidor_sip` vazio na linha herda `sip_server` do ambiente.
+
+    A senha SIP entra aqui **decifrada**, e é por isso que `compute_line_hash`
+    não mudou de valor quando a cifra em repouso entrou: o hash continua sendo
+    do XML com a senha real. Hash sobre o ciphertext mudaria a cada gravação
+    (Fernet não é determinístico) e o parque inteiro apareceria como `outdated`.
     """
     nome = line.nome_visivel or line.numero_ramal
     return {
         "conta_sip": line.numero_ramal,
-        "senha_sip": line.senha_sip,
+        "senha_sip": senha_sip_de(line),
         "servidor_sip": line.servidor_sip or cfg.get("sip_server", ""),
         "label": nome,
         "display_name": nome,

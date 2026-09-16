@@ -3,6 +3,13 @@
 CRUD direto em SQLAlchemy 2.0 Session sincrona. `config_padrao` é JSON em
 Text — o repository serializa na escrita e devolve dict mesclado com defaults
 na leitura, pra que callers sempre vejam o conjunto completo de chaves.
+
+**Os segredos são cifrados aqui, e só aqui** (v2.14.0). A senha SIP de cada
+linha e as quatro senhas do `config_padrao` ficavam em texto claro no SQLite —
+o `AGENTE-NOC.md` afirmava o contrário. A cifra entra na fronteira do banco:
+quem lê daqui continua recebendo texto claro, e nenhum vendor, export ou job
+precisou mudar. Cifrar mais perto do aparelho significaria decifrar em cinco
+lugares, e o quinto seria esquecido.
 """
 
 from __future__ import annotations
@@ -16,6 +23,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
+from middleware_monitor.core.crypto import SecretBox, open_box
 from middleware_monitor.core.models import (
     Device,
     ExtensionApplyRun,
@@ -24,12 +32,14 @@ from middleware_monitor.core.models import (
     ExtensionLine,
     LineReapplyEvent,
 )
+from middleware_monitor.settings import get_settings
 
-from .defaults import default_config_padrao
+from .defaults import CHAVES_SECRETAS, default_config_padrao
 
 __all__ = [
     "add_devices_as_lines",
     "auto_link_lines_by_ip",
+    "campos_da_linha",
     "clone_environment",
     "create_environment",
     "create_reapply_event",
@@ -52,6 +62,8 @@ __all__ = [
     "merged_config_padrao",
     "new_line",
     "save_lines",
+    "segredos_em_claro",
+    "senha_sip_de",
     "unlink_line_from_device",
     "update_environment",
     "update_line_macs",
@@ -78,9 +90,41 @@ def generate_slug(nome: str) -> str:
     return s or f"ambiente-{uuid.uuid4().hex[:6]}"
 
 
+def _box() -> SecretBox | None:
+    return open_box(get_settings().secret_key)
+
+
+def segredos_em_claro() -> bool:
+    """True quando esta instalação não tem `APP_SECRET_KEY` utilizável.
+
+    Instalação com a chave default não consegue cifrar, e a atualização que
+    cifra em repouso não pode ser a atualização que a derruba: ela continua
+    gravando em claro, como sempre fez, e **diz isso** — em `/system` e no log.
+    Segredo em claro que ninguém sabe que está em claro é o defeito; segredo em
+    claro anunciado é uma pendência de configuração.
+    """
+    return _box() is None
+
+
+def _cifrar_config(cfg: dict[str, Any]) -> str:
+    """`config_padrao` pronto para o banco: as chaves secretas cifradas."""
+    box = _box()
+    saida = dict(cfg)
+    if box is not None:
+        for chave in CHAVES_SECRETAS:
+            valor = saida.get(chave)
+            if isinstance(valor, str) and valor:
+                saida[chave] = box.encrypt_field(valor)
+    return json.dumps(saida, ensure_ascii=False)
+
+
 def merged_config_padrao(env: ExtensionEnvironment) -> dict[str, Any]:
     """Lê `config_padrao` (JSON) e mescla com defaults — defaults nunca apagam
-    chaves salvas, mas garantem que chaves novas apareçam pra UI."""
+    chaves salvas, mas garantem que chaves novas apareçam pra UI.
+
+    Devolve as senhas **em claro**: é a fronteira onde a cifra termina, e é o
+    que mantém vendors, apply e export sem saber que ela existe.
+    """
     base = default_config_padrao()
     try:
         saved = json.loads(env.config_padrao or "{}")
@@ -88,7 +132,35 @@ def merged_config_padrao(env: ExtensionEnvironment) -> dict[str, Any]:
         saved = {}
     if isinstance(saved, dict):
         base.update(saved)
+    box = _box()
+    if box is not None:
+        for chave in CHAVES_SECRETAS:
+            valor = base.get(chave)
+            if isinstance(valor, str) and valor:
+                base[chave] = box.decrypt_field(valor)
     return base
+
+
+def senha_sip_de(line: ExtensionLine) -> str:
+    """A senha SIP da linha em claro. **Único** caminho de leitura dela."""
+    box = _box()
+    if box is None:
+        return line.senha_sip or ""
+    return box.decrypt_field(line.senha_sip or "")
+
+
+def campos_da_linha(line: ExtensionLine, campos: tuple[str, ...]) -> dict[str, Any]:
+    """Campos da linha para exportação, com a senha SIP **em claro**.
+
+    O pacote exportado é portável: ele vai para outra instalação, com outra
+    `APP_SECRET_KEY`, e é cifrado com a passphrase de quem exporta. Levar o
+    ciphertext daqui produziria um arquivo que importa sem erro e deixa todo
+    ramal com uma senha impossível de decifrar do outro lado.
+    """
+    return {
+        campo: (senha_sip_de(line) if campo == "senha_sip" else getattr(line, campo))
+        for campo in campos
+    }
 
 
 def create_environment(
@@ -105,7 +177,7 @@ def create_environment(
         id=env_id,
         nome=nome,
         modelo_telefone=modelo_telefone,
-        config_padrao=json.dumps(default_config_padrao(), ensure_ascii=False),
+        config_padrao=_cifrar_config(default_config_padrao()),
         created_at=now,
         updated_at=now,
     )
@@ -127,7 +199,7 @@ def clone_environment(
     """
     new_nome = (nome or "").strip() or f"Cópia de {src.nome}"
     new_env = create_environment(db, nome=new_nome, modelo_telefone=src.modelo_telefone)
-    new_env.config_padrao = json.dumps(merged_config_padrao(src), ensure_ascii=False)
+    new_env.config_padrao = _cifrar_config(merged_config_padrao(src))
     new_env.updated_at = _now()
     db.flush()
     return new_env
@@ -153,7 +225,7 @@ def update_environment(
     if config_padrao is not None:
         merged = merged_config_padrao(env)
         merged.update(config_padrao)
-        env.config_padrao = json.dumps(merged, ensure_ascii=False)
+        env.config_padrao = _cifrar_config(merged)
     env.updated_at = _now()
     db.flush()
     return env
@@ -251,6 +323,7 @@ def save_lines(
     algum Device.
     """
     now = _now()
+    box = _box()
     incoming_ids = {str(r.get("id") or "") for r in rows if r.get("id")}
     existing = {ln.id: ln for ln in list_lines(db, env.id)}
     # remove as que sumiram
@@ -262,11 +335,14 @@ def save_lines(
     for i, r in enumerate(rows):
         rid = str(r.get("id") or "") or uuid.uuid4().hex
         new_ip = str(r.get("ip", "") or "")
+        # A senha chega em claro de quem chamou (planilha, importador, API) e
+        # só vira ciphertext aqui — quem chama nunca precisa saber da cifra.
+        senha_clara = str(r.get("senha_sip", "") or "")
         fields = {
             "ip": new_ip,
             "numero_ramal": str(r.get("numero_ramal", "") or ""),
             "user_auth": str(r.get("user_auth", "") or r.get("numero_ramal", "") or ""),
-            "senha_sip": str(r.get("senha_sip", "") or ""),
+            "senha_sip": box.encrypt_field(senha_clara) if box is not None else senha_clara,
             "servidor_sip": str(r.get("servidor_sip", "") or ""),
             "numero_abreviado": str(r.get("numero_abreviado", "") or ""),
             "nome_visivel": str(r.get("nome_visivel", "") or ""),

@@ -242,7 +242,11 @@ class ExtensionLine(Base):
     ip: Mapped[str] = mapped_column(String(45), nullable=False, default="")
     numero_ramal: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     user_auth: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    senha_sip: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    # Ciphertext `SecretBox` com o prefixo `enc:v1:` (v2.14.0) — Text porque a
+    # senha cifrada é ~3x a original e não cabe mais num campo de tamanho fixo.
+    # Leia por `repository.senha_sip_de`, nunca direto: pode ser texto claro
+    # legado, numa instalação sem `APP_SECRET_KEY` utilizável.
+    senha_sip: Mapped[str] = mapped_column(Text, nullable=False, default="")
     servidor_sip: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     numero_abreviado: Mapped[str] = mapped_column(String(32), nullable=False, default="")
     nome_visivel: Mapped[str] = mapped_column(String(64), nullable=False, default="")
