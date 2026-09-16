@@ -122,7 +122,10 @@ def test_roundtrip_cifrado_com_troca_de_chave_da_instalacao(
     (broker,) = mqtt_repo.list_brokers(db)
     assert mqtt_repo.load_broker_password(broker) == "senha-broker"
     linhas = ec_repo.list_lines(db, ec_repo.list_environments(db)[0].id)
-    assert [ln.senha_sip for ln in linhas] == ["sip-secreta", "outra"]
+    # a senha SIP também é recifrada com a chave NOVA — o pacote a levou em
+    # claro de propósito, senão nada dela seria legível deste lado
+    assert [ec_repo.senha_sip_de(ln) for ln in linhas] == ["sip-secreta", "outra"]
+    assert all(ln.senha_sip.startswith("enc:v1:") for ln in linhas)
 
 
 def test_replace_troca_ambientes_e_preserva_o_identificador(db: Session) -> None:

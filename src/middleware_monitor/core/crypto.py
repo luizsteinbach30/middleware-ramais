@@ -24,6 +24,18 @@ def _derive_key(secret_key: str, purpose: bytes) -> bytes:
     return base64.urlsafe_b64encode(raw)
 
 
+#: Marks a stored value as ciphertext. Columns that gained encryption after
+#: data already existed (line SIP passwords, environment web passwords) hold a
+#: mix of both for as long as it takes a write to touch each row, and guessing
+#: by "does it look like a Fernet token?" is the kind of guess that eventually
+#: hands a corrupted ciphertext to a phone as if it were a password.
+ENCRYPTED_PREFIX = "enc:v1:"
+
+
+def is_encrypted(stored: str) -> bool:
+    return stored.startswith(ENCRYPTED_PREFIX)
+
+
 class SecretBox:
     """Encrypt / decrypt small strings (tokens, passwords) at rest."""
 
@@ -40,3 +52,37 @@ class SecretBox:
             return self._fernet.decrypt(ciphertext.encode("ascii")).decode("utf-8")
         except InvalidToken as exc:
             raise ValueError("invalid_secret") from exc
+
+    def encrypt_field(self, plaintext: str) -> str:
+        """Ciphertext with the marker. Empty stays empty — an absent password
+        is not a secret, and marking it would only make the column unreadable."""
+        if not plaintext:
+            return ""
+        return ENCRYPTED_PREFIX + self.encrypt(plaintext)
+
+    def decrypt_field(self, stored: str) -> str:
+        """Plaintext from a column that may still hold legacy cleartext.
+
+        Unmarked means legacy and is returned as-is. Marked means it MUST
+        decrypt: failing there is a real error (wrong ``APP_SECRET_KEY``, or a
+        corrupted row) and raises, instead of quietly returning garbage.
+        """
+        if not stored:
+            return ""
+        if not is_encrypted(stored):
+            return stored
+        return self.decrypt(stored[len(ENCRYPTED_PREFIX) :])
+
+
+def open_box(secret_key: str) -> SecretBox | None:
+    """The box, or ``None`` when the key cannot encrypt anything.
+
+    An install still running the default ``change-me`` has no usable key. That
+    must not stop it from reading and writing what it already has — the upgrade
+    that encrypts at rest cannot be the upgrade that bricks those installs. The
+    caller keeps working in cleartext and says so; see ``segredos_em_claro``.
+    """
+    try:
+        return SecretBox(secret_key)
+    except ValueError:
+        return None

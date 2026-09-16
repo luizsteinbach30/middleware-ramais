@@ -297,7 +297,7 @@ def _build_environments(
             "modelo_telefone": env.modelo_telefone,
             "config_padrao": ec_repo.merged_config_padrao(env),
             "lines": [
-                {f: getattr(ln, f) for f in _LINE_FIELDS}
+                ec_repo.campos_da_linha(ln, _LINE_FIELDS)
                 # O id viaja junto para o reimport reconhecer a MESMA linha
                 # (`save_lines` faz upsert por id) em vez de recriar tudo.
                 | {"id": ln.id, "posicao": ln.posicao}

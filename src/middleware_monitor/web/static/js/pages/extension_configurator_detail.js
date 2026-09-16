@@ -50,7 +50,18 @@ const pingStatusByIp = new Map();  // ip -> true (up) | false (down) | undefined
 // mas falha o registro silenciosamente se a senha tem chars fora desse conjunto
 // ou se passa de ~25 caracteres.
 const SENHA_HTEK_SAFE_RE = /^[A-Za-z0-9!#%*+,\-./:=?@_~]*$/;
+
+// A senha SIP não vem mais do servidor (v2.14.0): a planilha recebe este
+// placeholder e o devolve intacto quando ninguém editou a célula, e o servidor
+// traduz isso como "mantém a senha atual". Tem de bater com `_MASK_PLAIN` em
+// `api/extension_configurator.py`.
+const SENHA_MASCARA = "********";
+
 function senhaProblematica(senha) {
+  // Mascarada = não editada nesta sessão. Ela já passou por esta conferência no
+  // dia em que foi digitada, e avisar sobre oito asteriscos seria avisar sobre
+  // nada — ou pior, calar o aviso da senha de verdade por achar que conferiu.
+  if (senha === SENHA_MASCARA) return null;
   if (!isHtek || !senha) return null;
   if (senha.length > 25) return `senha com ${senha.length} chars — HTEK aceita mas o registro SIP costuma falhar acima de ~25`;
   if (!SENHA_HTEK_SAFE_RE.test(senha)) return "senha tem chars que o firmware HTEK pode rejeitar (use apenas: A-Z a-z 0-9 ! # % * + , - . / : = ? @ _ ~)";
@@ -82,6 +93,7 @@ const COLUMNS = [
   { type: "text",     name: "nome_visivel",      title: "Nome visível",  width: 180 },
   { type: "text",     name: "numero_ramal",      title: "Ramal",         width: 100 },
   { type: "text",     name: "user_auth",         title: "User auth",     width: 110 },
+  // Chega mascarada e volta mascarada quando não for editada — ver SENHA_MASCARA.
   { type: "text",     name: "senha_sip",         title: "Senha SIP",     width: 130 },
   { type: "text",     name: "servidor_sip",      title: "Servidor SIP",  width: 180 },
   { type: "text",     name: "numero_abreviado",  title: "Nº abreviado",  width: 110 },

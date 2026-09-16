@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from middleware_monitor.domain.auth.service import bootstrap_admin
+from middleware_monitor.domain.extension_configurator import repository as ec_repo
 
 
 def _authed(client, db) -> str:
@@ -494,10 +495,16 @@ def test_export_import_roundtrip_preserva_senha(client, db) -> None:
     assert new_id != "matriz"  # colisão de nome gera slug novo
     assert imp.json()["linhas"] == 1
 
-    # a senha chegou correta no destino (device receberia o valor certo)
+    # a tela NAO recebe a senha: ela ve o placeholder e o devolve intacto
     detail = client.get(f"/api/extension-configurator/environments/{new_id}").json()
-    assert detail["linhas"][0]["senha_sip"] == "ZapZap#42"
+    assert detail["linhas"][0]["senha_sip"] == "********"
     assert detail["modelo_telefone"] == "HTEK UC902G"
+
+    # e a senha de verdade chegou correta no destino (e o que o aparelho recebe)
+    (linha,) = ec_repo.list_lines(db, new_id)
+    assert ec_repo.senha_sip_de(linha) == "ZapZap#42"
+    # ... e nao esta em claro na coluna
+    assert linha.senha_sip.startswith("enc:v1:")
 
 
 def test_apply_environment_sem_linhas_devolve_total_zero(client, db) -> None:
@@ -579,7 +586,9 @@ def test_importa_o_mwrbak_que_a_propria_tela_exporta(client, db) -> None:
         f"/api/extension-configurator/environments/{criados[0]['id']}",
     ).json()
     assert detalhe["modelo_telefone"] == "Intelbras TIP 125i"
-    assert detalhe["linhas"][0]["senha_sip"] == "Segred0#1"
+    assert detalhe["linhas"][0]["senha_sip"] == "********"
+    (primeira, _segunda) = ec_repo.list_lines(db, criados[0]["id"])
+    assert ec_repo.senha_sip_de(primeira) == "Segred0#1"
 
 
 def test_import_recusa_pacote_sem_ambientes(client, db) -> None:
@@ -675,3 +684,72 @@ def test_ambiente_importado_nao_nasce_pendente_se_ja_estava_aplicado(
     assert novo["ultimo_status"] == "ok"
     assert novo["ultimo_hash_aplicado"] == "hash-da-config"
     assert novo["status"] != "pending"
+
+
+def test_planilha_devolve_a_mascara_e_a_senha_sobrevive(client, db) -> None:
+    """A tela nunca recebe a senha SIP, e devolvê-la mascarada mantém a atual.
+
+    Este é o caminho que, errado, destrói um parque inteiro: o operador corrige
+    o nome de um telefone, a planilha devolve `********` nas outras linhas, e
+    todo ramal do ambiente passa a ter oito asteriscos como senha SIP. Ninguém
+    registra no PBX e nada no sistema diz o que aconteceu.
+    """
+    csrf = _authed(client, db)
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Loja 99", "modelo_telefone": "HTEK UC902G"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    client.put(
+        "/api/extension-configurator/environments/loja-99/lines",
+        json={"linhas": [
+            {"ip": "10.0.0.10", "numero_ramal": "1001", "senha_sip": "Primeira#1"},
+            {"ip": "10.0.0.11", "numero_ramal": "1002", "senha_sip": "Segunda#2"},
+        ]},
+        headers={"X-CSRF-Token": csrf},
+    )
+
+    detalhe = client.get("/api/extension-configurator/environments/loja-99").json()
+    linhas = detalhe["linhas"]
+    assert [ln["senha_sip"] for ln in linhas] == ["********", "********"]
+
+    # o operador mexe SÓ no nome visível da primeira e devolve a planilha inteira
+    linhas[0]["nome_visivel"] = "Recepção"
+    r = client.put(
+        "/api/extension-configurator/environments/loja-99/lines",
+        json={"linhas": [
+            {k: ln[k] for k in
+             ("id", "ip", "numero_ramal", "user_auth", "senha_sip",
+              "servidor_sip", "numero_abreviado", "nome_visivel")}
+            for ln in linhas
+        ]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert r.status_code == 200, r.json()
+
+    gravadas = ec_repo.list_lines(db, "loja-99")
+    assert [ec_repo.senha_sip_de(ln) for ln in gravadas] == ["Primeira#1", "Segunda#2"]
+    assert gravadas[0].nome_visivel == "Recepção"
+
+
+def test_linha_nova_com_mascara_nasce_sem_senha(client, db) -> None:
+    """Máscara em linha que não existe não tem o que manter.
+
+    Vale mais o ramal nascer sem senha — visível como erro no primeiro apply —
+    do que nascer com um valor que ninguém digitou.
+    """
+    csrf = _authed(client, db)
+    client.post(
+        "/api/extension-configurator/environments",
+        json={"nome": "Loja 98", "modelo_telefone": "HTEK UC902G"},
+        headers={"X-CSRF-Token": csrf},
+    )
+    client.put(
+        "/api/extension-configurator/environments/loja-98/lines",
+        json={"linhas": [
+            {"ip": "10.0.0.20", "numero_ramal": "2001", "senha_sip": "********"},
+        ]},
+        headers={"X-CSRF-Token": csrf},
+    )
+    (linha,) = ec_repo.list_lines(db, "loja-98")
+    assert ec_repo.senha_sip_de(linha) == ""
