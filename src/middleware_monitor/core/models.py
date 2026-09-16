@@ -150,26 +150,6 @@ class Collection(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
-class WebhookEvent(Base):
-    __tablename__ = "webhook_events"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
-    event_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    url: Mapped[str] = mapped_column(String(512), nullable=False)
-    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    payload: Mapped[str] = mapped_column(Text, nullable=False)
-    response_body: Mapped[str | None] = mapped_column(Text, nullable=True)
-    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    total_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    is_replay: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    replay_of: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-
 class SystemLog(Base):
     __tablename__ = "system_logs"
 
@@ -632,5 +612,4 @@ __all__: list[str] = [
     "SystemLog",
     "UpdateHistory",
     "User",
-    "WebhookEvent",
 ]

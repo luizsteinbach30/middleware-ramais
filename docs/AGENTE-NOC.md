@@ -11,9 +11,10 @@ repositório do NOC **aponta** para cá e não duplica nada.
 
 ## O que muda
 
-Hoje o middleware faz uma coisa em direção à internet: **empurra** webhooks
-(`extensions`, `devices`, `results`) para um endereço configurado. Não existe nenhum
-caminho pelo qual alguém de fora peça qualquer coisa a ele.
+Até a v2.13.0 o middleware fazia uma coisa em direção à internet: **empurrava** webhooks
+(`extensions`, `devices`, `results`) para um endereço configurado. O módulo saiu na
+**v2.14.0** (o dono: "não será mais utilizado") e hoje a única saída é a telemetria para
+o NOC. Não existe nenhum caminho pelo qual alguém de fora peça qualquer coisa a ele.
 
 Ele passa a ser um **agente ativo**, no modelo do Zabbix: além de empurrar
 telemetria, ele **busca trabalho** numa fila do NOC, executa e devolve o resultado.
@@ -181,18 +182,19 @@ senão ele subiria a cada minuto).
 
 ### 5 — Webhook sem assinatura e sem chave de idempotência
 
-`src/middleware_monitor/domain/webhooks/sender.py:155` · **Fase 1** · ✅ **resolvido por outro caminho (v2.13.0)**
+**Fase 1** · ✅ **resolvido por outro caminho (v2.13.0) e encerrado na v2.14.0**
 
 **Como ficou (2026-09-15):** o dono decidiu que **tudo o que os webhooks mandam vai para
-o NOC**, e que o módulo de webhooks sai do middleware depois. Então a pendência não foi
-resolvida *no* `sender.py`: a telemetria para o NOC é canal próprio
-(`domain/noc/telemetria.py` + `jobs/noc_agent.py::run_noc_telemetria`), com
-**`Idempotency-Key` por lote** e **mTLS** no lugar do HMAC (ADR 0006 do NOC). Os
-webhooks externos continuam como estão até serem desligados — na release que vier
-**depois** do NOC em produção, para os receptores atuais não ficarem sem dado.
+o NOC**. A pendência não foi resolvida *no* `sender.py`: a telemetria para o NOC é canal
+próprio (`domain/noc/telemetria.py` + `jobs/noc_agent.py::run_noc_telemetria`), com
+**`Idempotency-Key` por lote** e **mTLS** no lugar do HMAC (ADR 0006 do NOC).
 
-Hoje vai só `Authorization: Bearer`. Faltam **HMAC do corpo** e **`Idempotency-Key`
-por evento**.
+**Encerrada em 2026-09-16 (v2.14.0):** o módulo de webhooks foi removido — `sender.py`,
+`api/webhooks.py`, a tela de logs, a tabela `webhook_events` e as chaves de destino.
+O plano era desligá-lo na release **depois** do NOC em produção, para os receptores
+atuais não ficarem sem dado; o dono antecipou, dizendo que não há mais receptor.
+`webhook_interval_minutes` **não** foi apagada: ela sempre governou a cadência da coleta,
+e virou `coleta_interval_minutes` (migration 0014).
 
 **Isto já morde hoje, sem NOC nenhum:** com `RETRY_DELAYS_S = (0, 5, 30)`
 (`sender.py:33`), um 200 perdido no caminho de volta faz o middleware reenviar — e

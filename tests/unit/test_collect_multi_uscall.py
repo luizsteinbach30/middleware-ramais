@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import respx
 
@@ -58,22 +60,18 @@ async def test_collect_um_servidor_fora_nao_derruba_os_demais(db, monkeypatch) -
     )
     respx.get("https://pbx-b.test/api/extenstatus").mock(side_effect=httpx.ConnectError)
 
-    dispatched: list[tuple[str, list]] = []
-
-    class _FakeSender:
-        def __init__(self, *_a, **_k): ...
-        async def dispatch(self, event_type, payload):
-            dispatched.append((event_type, payload))
-
     from middleware_monitor.jobs import collect_extensions as job
 
-    monkeypatch.setattr(job, "WebhookSender", _FakeSender)
     await job.run_collect_extensions()
 
-    # payload parcial (só a Matriz) foi persistido e despachado com a origem
-    assert len(dispatched) == 1
-    event, payload = dispatched[0]
-    assert event == "extensions"
+    # O payload parcial (só a Matriz) foi persistido, com a origem marcada.
+    # Até a v2.14.0 quem media isto era o webhook despachado; o módulo saiu, e o
+    # snapshot é o observável melhor — é o que sobrevive ao ciclo.
+    from middleware_monitor.core.models import Collection
+
+    snaps = db.query(Collection).filter_by(type="extensions").all()
+    assert len(snaps) == 1
+    payload = json.loads(snaps[0].payload)
     assert [p["ramal"] for p in payload] == ["3660"]
     assert payload[0]["uscall_server"] == "Matriz"
 
@@ -85,22 +83,20 @@ async def test_collect_um_servidor_fora_nao_derruba_os_demais(db, monkeypatch) -
 
 
 @respx.mock
-async def test_collect_todos_fora_nao_dispara_webhook(db, monkeypatch) -> None:
+async def test_collect_todos_fora_nao_grava_snapshot(db) -> None:
+    """Falha total não vira snapshot vazio: um retrato de zero ramais seria lido
+    como "o PBX não tem ramal", e não como "não deu para perguntar"."""
     uscall_repo.create_server(db, nome="Matriz", host="pbx-a.test", token_plain="ta")
     db.commit()
     respx.get("https://pbx-a.test/api/extenstatus").mock(side_effect=httpx.ConnectError)
 
-    dispatched: list = []
-
-    class _FakeSender:
-        def __init__(self, *_a, **_k): ...
-        async def dispatch(self, *_a): dispatched.append(1)
-
     from middleware_monitor.jobs import collect_extensions as job
 
-    monkeypatch.setattr(job, "WebhookSender", _FakeSender)
     await job.run_collect_extensions()
-    assert dispatched == []
+
+    from middleware_monitor.core.models import Collection
+
+    assert db.query(Collection).count() == 0
 
 
 async def test_collect_sem_servidores_skips(db) -> None:

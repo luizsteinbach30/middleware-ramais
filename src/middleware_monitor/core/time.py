@@ -28,7 +28,7 @@ def iso_utc(value: datetime | None) -> str | None:
 def now_local_str() -> str:
     """Current local wall-clock time as ``'YYYY-MM-DD HH:MM:SS'``.
 
-    Used for webhook payloads, where the receiving application expects a
+    Used for payloads where the receiving application expects a
     plain local timestamp (no ``T`` separator, no timezone marker)."""
     return datetime.now().strftime(LOCAL_FMT)
 

@@ -2,6 +2,11 @@
 
 **Referência viva:** [mw-screens-reference.jsx](mw-screens-reference.jsx) — 1399 linhas com **todas as 10 telas** implementadas em React/Tailwind. Esta é a fonte da verdade visual; este documento extrai os tokens e padrões para implementação no Jinja2 do projeto.
 
+> **Nota (v2.14.0):** este documento e o `.jsx` são o retrato do desenho de
+> 2026-05 e não são atualizados a cada release. Duas telas descritas aqui não
+> existem mais: **Webhook logs** e o bloco **Webhooks** da Config — o módulo foi
+> removido. Os tokens, a paleta e os padrões continuam valendo.
+
 ## Paleta (Tailwind tokens)
 
 | Função | Token | Uso |

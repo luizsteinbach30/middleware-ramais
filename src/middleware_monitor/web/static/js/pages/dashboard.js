@@ -32,15 +32,6 @@ async function load() {
       </div>
     `).join('');
 
-    document.getElementById('wh-total').textContent = s.webhooks_24h;
-    document.getElementById('wh-badges').innerHTML = `
-      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset bg-green-500/15 text-green-400 ring-green-500/30"><span class="w-1.5 h-1.5 rounded-full bg-green-400"></span>${s.webhooks_24h_ok} ok</span>
-      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset bg-red-500/15 text-red-400 ring-red-500/30"><span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>${s.webhooks_24h_fail} falha</span>`;
-    if (s.webhooks_24h > 0) {
-      document.getElementById('wh-bar-ok').style.width = (s.webhooks_24h_ok / s.webhooks_24h * 100) + '%';
-      document.getElementById('wh-bar-fail').style.width = (s.webhooks_24h_fail / s.webhooks_24h * 100) + '%';
-    }
-
     document.getElementById('sys-next').innerHTML = ver.available_version
       ? `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset bg-blue-500/15 text-blue-400 ring-blue-500/30">${ver.available_version} disponível</span>`
       : '—';

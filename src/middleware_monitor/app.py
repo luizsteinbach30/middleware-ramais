@@ -48,9 +48,6 @@ from middleware_monitor.api import (
 from middleware_monitor.api import (
     system as api_system,
 )
-from middleware_monitor.api import (
-    webhooks as api_webhooks,
-)
 from middleware_monitor.core import resources
 from middleware_monitor.core.db import init_engine
 from middleware_monitor.core.logging import configure_logging, get_logger
@@ -231,7 +228,6 @@ def create_app() -> FastAPI:
         api_config.router,
         api_devices.router,
         api_collections.router,
-        api_webhooks.router,
         api_logs.router,
         api_dashboard.router,
         api_system.router,

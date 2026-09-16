@@ -1,4 +1,5 @@
-"""Symmetric encryption for at-rest secrets (USCall token, webhook tokens).
+"""Symmetric encryption for at-rest secrets (USCall token, broker password,
+SIP and device passwords).
 
 The encryption key is derived from ``APP_SECRET_KEY`` via HKDF so that rotating
 the secret only affects what was encrypted with the previous derivation. Each

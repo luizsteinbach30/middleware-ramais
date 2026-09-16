@@ -64,20 +64,17 @@ def test_save_without_csrf_returns_403(client, db) -> None:
     assert r.json()["detail"] == "csrf_invalid"
 
 
-def test_webhook_secret_round_trip(client, db) -> None:
-    csrf = _authed(client, db)
-    client.put(
-        "/api/config",
-        json={"webhooks": {"devices": {"token": "supersecret"}}},
-        headers={"X-CSRF-Token": csrf},
-    )
-    cfg = client.get("/api/config").json()
-    assert cfg["webhooks"]["devices"]["token"] == "set"
+def test_config_nao_devolve_nenhum_campo_de_segredo(client, db) -> None:
+    """Substitui o round-trip de segredo dos webhooks, removido na v2.14.0.
 
-    client.put(
-        "/api/config",
-        json={"webhooks": {"devices": {"token": ""}}},
-        headers={"X-CSRF-Token": csrf},
-    )
+    Aquele teste era a única cobertura de API do caminho "grava cifrado, devolve
+    mascarado" do KV de configuração. Esse caminho deixou de existir junto com o
+    módulo; o que resta garantir é que ele não volte por acidente — nenhum campo
+    de `/api/config` pode carregar segredo, nem mascarado.
+    """
+    _authed(client, db)
     cfg = client.get("/api/config").json()
-    assert cfg["webhooks"]["devices"]["token"] is None
+    assert "webhooks" not in cfg
+    # `uscall_token` é legado e só existe como máscara; desde a v2.7.0 quem
+    # guarda token de PBX é o CRUD de servidores USCall.
+    assert cfg.get("uscall_token") in (None, "set")

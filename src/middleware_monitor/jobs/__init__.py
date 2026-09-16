@@ -51,9 +51,9 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
         bkp = load_backup_settings(db)
         noc = carregar_estado_noc(db)
 
-    # A single user-facing knob drives how often we collect from USCall and
-    # ping/dispatch webhooks. Stored as minutes, applied here in seconds.
-    interval_seconds = max(60, cfg.webhook_interval_minutes * 60)
+    # Um botão só governa de quanto em quanto tempo o app coleta do USCall e
+    # pinga a frota. Guardado em minutos, aplicado aqui em segundos.
+    interval_seconds = max(60, cfg.coleta_interval_minutes * 60)
 
     add_interval_job(
         run_collect_extensions,
@@ -106,7 +106,7 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
 
     log.info(
         "jobs_registered",
-        interval_minutes=cfg.webhook_interval_minutes,
+        interval_minutes=cfg.coleta_interval_minutes,
         update_auto_check=upd.auto_check,
         update_check_at=f"{upd.check_hour:02d}:{upd.check_minute:02d}",
         update_check_days=upd.day_of_week,

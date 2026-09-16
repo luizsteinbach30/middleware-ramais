@@ -1,3 +1,17 @@
+> **OBSOLETO — o módulo de webhooks foi removido na v2.14.0.**
+>
+> Este documento descreve o contrato que o middleware oferecia ao receptor
+> externo: os eventos `extensions`, `devices` e `results`, o corpo de cada um e
+> a política de retentativa. Nada disso existe no código desde 2026-09-16.
+>
+> O que os webhooks mandavam vai hoje para o **NOC WorkConnect**, pela telemetria
+> do agente — e leva mais do que o webhook levava (amostras de ping, eventos de
+> ramal, aplicações de configuração, perfis). O contrato de lá é
+> `noc-workconnect/docs/CONTRATO-DO-AGENTE.md` §8.
+>
+> Fica versionado porque instalações antigas ainda têm receptores de pé, e
+> alguém vai precisar ler o que elas mandavam para desligá-los do outro lado.
+
 # Webhooks — formatos e arquitetura de recepção
 
 Notas técnicas sobre como reduzir o impacto dos webhooks no servidor que
