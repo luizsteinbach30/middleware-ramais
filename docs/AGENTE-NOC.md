@@ -283,6 +283,119 @@ se um campo com nome de rede (`ip`, `gateway`, `dns`, `vlan_*`, `P1234`…) pass
 
 ---
 
+## As pendências das telas v2 do NOC (2026-09-16)
+
+O NOC redesenhou as telas com **o cliente como casa** (`noc-workconnect/docs/ADRs/0010`):
+
+- os agentes moram dentro do cliente;
+- a loja de cada agente **vem dos ambientes dele**, e não é mais escolhida;
+- existe um **espelho do configurador de ramais** dentro de cada cliente;
+- o Painel mostra se o coletor MQTT de cada agente está ouvindo.
+
+Nada disso funciona com o que o middleware manda hoje. As três pendências abaixo são o que
+falta **deste** lado. A especificação do outro lado está em `noc-workconnect/docs/TELAS.md`
+v2, §0.6 e §12 a §17.
+
+### 11 — O ambiente não viaja como entidade, e o nome não serve de identidade
+
+`src/middleware_monitor/domain/noc/telemetria.py` · **Etapa I3 do NOC**
+
+Hoje o ambiente só chega ao NOC como o **nome** repetido em cada linha de `perfis[]` e em
+`aplicacoes[]`. O `id` (o slug de `ExtensionEnvironment.id`) nunca sai. Duas consequências:
+
+- renomear um ambiente aqui separaria, lá, o histórico e o vínculo com a loja;
+- não há como o NOC listar os ambientes, contar ramais e vinculados, nem mostrar a
+  config padrão.
+
+**O que o lote de telemetria passa a levar:**
+
+- `ambientes[]`, **retrato completo** (ambiente que sumiu do retrato foi apagado aqui):
+  - `id`, `nome`, `modelo`;
+  - `ramais`, `vinculados` (linhas com `device_id`);
+  - `situacao` (`ok` · `pendentes` · `erros` · `vazio`, a mesma do cartão da tela
+    Ambientes);
+  - `ultimaAplicacao` (`id`, `inicio`, `ok`, `total`);
+  - `configPadrao`, montado **por lista branca**, nunca por lista negra:
+    - chaves que vão com valor: `register_expiration` · `sip_account` ·
+      `timezone_mode` · `timezone` · `ntp_mode` · `ntp_server` ·
+      `validar_conectividade` · `verificar_registro_sip` · `keylock_enable` ·
+      `keylock_timeout` · `hotline_enable` · `hotline_number` · `hotline_time` ·
+      `function_keys`;
+    - chaves que vão **só como `{ "definida": true|false }`**: as quatro de
+      `defaults.py::CHAVES_SECRETAS` (`web_password` · `nova_web_password` ·
+      `menu_password` · `keylock_password`) **e** `web_user` · `nova_web_user`, que são
+      metade da mesma credencial;
+    - chave que não está em nenhuma das duas listas **não sai** — e o teste quebra
+      se `defaults.py` ganhar chave sem decidir de que lado ela fica;
+  - `secoes` — as seções que o catálogo do fabricante oferece (`avancadas` só
+    Intelbras, `hotline` só TIP, `teclas` só onde há teclas programáveis), para o NOC
+    não oferecer o que o aparelho não tem;
+  - `linhas[]` — `posicao`, `ramal`, `nomeVisivel`, `numeroAbreviado`, `ip`,
+    `deviceId`, `status`, `ultimoModelo`, `ultimoMac`, `ultimaAplicacao`, `ultimoErro`.
+    **Sem `senha_sip`, `user_auth` e `servidor_sip`.**
+- `perfis[]` e `aplicacoes[]` passam a levar `ambienteId` além do nome.
+
+**Por que a lista branca:** a senha SIP e as senhas web **já são cifradas em repouso**
+(v2.14.0, `41fcc6e`), mas o `config_padrao` volta decifrado para a tela local. Um retrato montado por
+"tudo menos as senhas" mandaria ao NOC a próxima chave de segredo que alguém acrescentar.
+Do lado do NOC, uma invariante nova em `/sistema` conta as chaves fora da lista que
+chegarem — e a contagem tem de ser zero.
+
+### 12 — O estado do coletor MQTT não sai daqui
+
+`src/middleware_monitor/integrations/mqtt_client.py` · `core/models.py::MqttConnectionEvent`
+· **Etapa I3 do NOC**
+
+O lote leva as **transições de telefonia** que o coletor observa, mas não diz **se o
+coletor estava ouvindo**. Sem isso, "nenhuma mensagem nesta hora" no NOC não distingue
+"ninguém publicou" de "o coletor estava fora do ar" — a mesma lição do ledger MQTT deste
+repositório, que grava o histórico de conexão junto justamente por isso.
+
+**O que passa a sair**, no heartbeat (estado atual) e no lote (histórico):
+
+- `coletor: [{ broker, endereco, estado, desde, detalhe, mensagens24h, ultimaMensagemEm }]`
+  — `estado` em `conectado` · `desconectado` · `sem_broker`;
+- `conexoesMqtt[]` — os `MqttConnectionEvent` novos desde o cursor, com `em`, `estado` e
+  `detalhe`;
+- `mensagensPorHora[]` das últimas 24 h, só das horas em que o coletor estava conectado
+  (hora sem conexão **não vai como zero**).
+
+### 13 — Edição central: escrever na planilha e na config padrão a pedido do NOC
+
+`src/middleware_monitor/domain/noc/executor.py` · **Etapa I5 do NOC** — desenhada, não
+agendada
+
+O NOC vai permitir editar, por pedido aprovado por outra pessoa, o que **não é segredo
+nem rede**. Dois verbos novos no executor, ambos de raio `ESCRITA REVERSÍVEL`:
+
+- **`editar_linha_do_ambiente`** — `{ ambienteId, ramal, campo, de, para }`.
+  - Campos permitidos: `nome_visivel` e `numero_abreviado`.
+  - Um pedido por ramal.
+- **`editar_config_do_ambiente`** — `{ ambienteId, campos: [{ chave, de, para }] }`.
+  - Chaves permitidas: as que o item 11 manda **com valor**.
+
+**As garantias, cada uma com teste:**
+
+1. **Lista branca no executor**, independente da do NOC. `ip`, `senha_sip`, `user_auth`,
+   `servidor_sip` e qualquer chave de credencial são recusados — duas barreiras que não
+   dependem uma da outra, como no item 10.
+2. **Conferência do `de`.** Se o valor atual aqui for diferente do `de` que o NOC viu no
+   retrato, a tarefa volta **`RECUSADA` com o valor atual**, e nada é gravado. O NOC nunca
+   sobrescreve uma mudança feita na loja.
+3. **Validação do fabricante** antes de gravar (o `;` do TIP 125i, por exemplo) — a mesma
+   que a planilha local usa.
+4. **Backup antes**, como toda escrita remota.
+5. **Grava na planilha, não no aparelho.** A linha fica `desatualizado` (e, na config
+   padrão, todas as linhas do ambiente), e a reaplicação continua sendo o verbo
+   `reaplicar_config_do_ambiente`, ramal a ramal.
+6. **Releitura depois de gravar**, e o resultado devolve o que ficou gravado. Um "ok" sem
+   releitura não prova nada.
+
+**Não entra:** criar, duplicar ou apagar ambiente pelo NOC. Ambiente novo precisa da
+credencial dos aparelhos, que não sai daqui.
+
+---
+
 ## Resumo por fase
 
 | Fase | O que este repositório entrega |
@@ -292,6 +405,8 @@ se um campo com nome de rede (`ip`, `gateway`, `dns`, `vlan_*`, `P1234`…) pass
 | **2** ✅ | laço de long-poll (2) · executor com idempotência (3) — **v2.13.0** |
 | **3** ✅ | backup diário que roda (9) · `set_ip` fora do remoto, com teste (10) — **v2.13.0** |
 | **6** | `publish` no cliente MQTT (8) · ~~mTLS~~ (feito na Fase 1) |
+| **I3 do NOC** | retrato de `ambientes[]` com `id` e lista branca (11) · estado do coletor MQTT (12) |
+| **I5 do NOC** | edição central com conferência do `de` e releitura (13) |
 
 ---
 
