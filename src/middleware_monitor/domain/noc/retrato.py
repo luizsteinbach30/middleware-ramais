@@ -65,6 +65,12 @@ __all__ = [
     "secoes_do_modelo",
 ]
 
+
+def ordem_da_planilha(env: ExtensionEnvironment) -> list[ExtensionLine]:
+    """A ordem da planilha, com desempate estável — o retrato e o executor numeram as linhas por ela."""
+    return sorted(env.lines, key=lambda ln: (ln.posicao, ln.numero_ramal, ln.id))
+
+
 # --- A config padrão: as três listas ---------------------------------------------------
 
 # Vão com valor. São também as únicas que a edição central (item 13) poderá mudar.
@@ -171,7 +177,7 @@ def ambientes(db: DBSession) -> list[dict[str, Any]]:
     ).all()
     retrato: list[dict[str, Any]] = []
     for env in envs:
-        linhas = sorted(env.lines, key=lambda ln: (ln.posicao, ln.numero_ramal, ln.id))
+        linhas = ordem_da_planilha(env)
         # Status fino por linha (inclui ``outdated`` e ``invalid``), o mesmo da planilha daqui.
         status_por_id = {s["id"]: s["status"] for s in compute_statuses(env, linhas)}
         contagem: dict[str, int] = {}
@@ -201,7 +207,8 @@ def ambientes(db: DBSession) -> list[dict[str, Any]]:
                 "secoes": secoes_do_modelo(env.modelo_telefone),
                 "linhas": [
                     {
-                        "posicao": ln.posicao,
+                        # O número da linha, 1..N na ordem da planilha: o mesmo do executor (ADR 0012).
+                        "posicao": i,
                         "ramal": ln.numero_ramal,
                         # ADR 0012 do NOC: a planilha inteira viaja — só aqui, só pelo canal mTLS.
                         # O NOC lê por lista branca e cifra a senha ao receber; em nenhum outro
@@ -221,7 +228,7 @@ def ambientes(db: DBSession) -> list[dict[str, Any]]:
                         "ultimaAplicacao": _hora(ln.ultima_aplicacao),
                         "ultimoErro": ln.ultimo_erro,
                     }
-                    for ln in linhas
+                    for i, ln in enumerate(linhas, start=1)
                 ],
             }
         )
