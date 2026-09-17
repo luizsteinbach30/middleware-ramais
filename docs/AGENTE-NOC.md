@@ -413,17 +413,19 @@ repositório, que grava o histórico de conexão junto justamente por isso.
 
 ### 13 — Edição central: escrever na planilha e na config padrão a pedido do NOC
 
-`src/middleware_monitor/domain/noc/executor.py` · **Etapa I5 do NOC** — desenhada, não
-agendada
+`src/middleware_monitor/domain/noc/executor.py` · **Etapa I5 do NOC** · ✅ **feito (17/09, main local)**
 
 O NOC vai permitir editar, por pedido aprovado por outra pessoa, o que **não é segredo
 nem rede**. Dois verbos novos no executor, ambos de raio `ESCRITA REVERSÍVEL`:
 
-- **`editar_linha_do_ambiente`** — `{ ambienteId, ramal, campo, de, para }`.
-  - Campos permitidos: `nome_visivel` e `numero_abreviado`.
-  - Um pedido por ramal.
+- **`editar_linha_do_ambiente`** — `{ ambienteId, ramal, campos: [{ campo, de, para }] }`.
+  - Campos permitidos: `nomeVisivel` e `numeroAbreviado` (os nomes do retrato do item 11).
+  - Um pedido por ramal, com os campos do ramal juntos.
 - **`editar_config_do_ambiente`** — `{ ambienteId, campos: [{ chave, de, para }] }`.
-  - Chaves permitidas: as que o item 11 manda **com valor**.
+  - Chaves permitidas: as que o item 11 manda **com valor** (`retrato.CONFIG_COM_VALOR`).
+
+O contrato inteiro, com o resultado e os códigos de recusa, está em
+`noc-workconnect/docs/CONTRATO-DO-AGENTE.md` §10.
 
 **As garantias, cada uma com teste:**
 
@@ -444,6 +446,25 @@ nem rede**. Dois verbos novos no executor, ambos de raio `ESCRITA REVERSÍVEL`:
 
 **Não entra:** criar, duplicar ou apagar ambiente pelo NOC. Ambiente novo precisa da
 credencial dos aparelhos, que não sai daqui.
+
+**Como ficou (17/09):**
+
+- **Recusa com código.** `naoSuportado: true` e `resultado.recusa` ∈ `CAMPO_NAO_PERMITIDO`,
+  `DE_DIVERGENTE` (com `atuais`), `VALOR_INVALIDO`, `AMBIENTE_NAO_ENCONTRADO`,
+  `RAMAL_NAO_ENCONTRADO`, `RAMAL_AMBIGUO`. Campo de rede ganha "(é de rede)" na frase.
+- **O `de` é conferido duas vezes:** antes do backup (recusa barata, sem snapshot à toa) e de
+  novo dentro da transação que grava, porque a planilha pode mudar durante o backup.
+- **Igualdade estrita** na config: `True` não é `1`, e o `para` precisa ter o tipo do valor
+  guardado.
+- **Validação do fabricante:** na linha, uma sonda com os valores novos passa pelo adapter do
+  modelo (é assim que o `;` do TIP 125i é recusado); na config, `validate_config_padrao` com a
+  config nova (hotline ligada sem número, no TIP).
+- **O `status` devolvido é o relido**: `outdated` para linha que já tinha sido aplicada;
+  `pending`/`registered` para a que nunca foi. Na config, `linhasDesatualizadas` conta as linhas
+  que passaram a `outdated`.
+- **Nenhum caminho até o aparelho:** o teste troca `run_apply` e `run_action_on_line` por funções
+  que quebram se forem chamadas (`tests/api/test_noc_edicao.py`).
+- Os dois verbos entram em `executor.ACOES` e, por isso, no manifesto.
 
 ---
 
