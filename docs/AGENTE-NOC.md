@@ -447,6 +447,20 @@ O contrato inteiro, com o resultado e os códigos de recusa, está em
 **Não entra:** criar, duplicar ou apagar ambiente pelo NOC. Ambiente novo precisa da
 credencial dos aparelhos, que não sai daqui.
 
+**Revisão de 17/09 (ADR 0012 do NOC — a planilha do NOC é a do middleware), que vale sobre o texto acima:**
+
+- `editar_linha_do_ambiente` **saiu**. Entrou **`editar_planilha_do_ambiente`** `{ ambienteId, de, para }`: a planilha
+  inteira que o NOC viu e a desejada, com as sete colunas (ramal, ip, userAuth, senhaSip, servidorSip,
+  numeroAbreviado, nomeVisivel), linha nova (`origem: null`), remoção (posição não citada) e ordem nova; a linha que
+  veio de outra mantém o `id` (vínculo com aparelho e histórico).
+- A conferência é da **planilha inteira** (`DE_DIVERGENTE` com `atual`, senha como `definida`); validação por linha
+  (IP, ramal obrigatório, sonda do fabricante); backup; `save_lines`; releitura. **Senha nunca em recusa nem em
+  resultado.**
+- O retrato leva `userAuth`, `senhaSip` e `servidorSip` **só** em `ambientes[].linhas[]` (o NOC lê por lista branca e
+  cifra ao receber). Credenciais da config padrão continuam só `definida`.
+- `reaplicar_config_do_ambiente` aceita `{ ambienteId, posicao }` e **não exige aparelho vinculado**
+  (`LINHA_NAO_ENCONTRADA` para posição que não existe).
+
 **Como ficou (17/09):**
 
 - **Recusa com código.** `naoSuportado: true` e `resultado.recusa` ∈ `CAMPO_NAO_PERMITIDO`,

@@ -59,6 +59,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   - Validação do fabricante e backup antes; releitura depois.
 
   Ver `docs/AGENTE-NOC.md`, item 13.
+- **A planilha do NOC é a do middleware (ADR 0012 do NOC).** A edição central passa a editar a
+  planilha inteira — IP, ramal, usuário, senha SIP, servidor, nº abreviado e nome —, com linha nova,
+  remoção e ordem nova (`editar_planilha_do_ambiente`, que substitui `editar_linha_do_ambiente`). A
+  planilha que o NOC viu é conferida inteira antes de gravar, e a senha nunca volta em recusa nem em
+  resultado. O retrato leva usuário e senha SIP só nas linhas da planilha. Reaplicar acha a linha pela
+  posição e não exige aparelho vinculado.
 - **Backup automático atrasado roda no boot.** Se o app estava fechado no horário e o
   snapshot mais novo tem mais de um dia, um backup sai 3 minutos depois de abrir
   (`docs/AGENTE-NOC.md`, item 9).

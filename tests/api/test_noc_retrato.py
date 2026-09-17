@@ -3,8 +3,9 @@
 O que se prova aqui:
 
 - toda chave da config padrão tem um lado decidido (valor, só "definida" ou não sai);
-- nenhum segredo sai — nem a senha SIP, nem as senhas web, nem o usuário de autenticação;
-- o retrato atravessa o filtro de segredos do NOC **sem perder nada**;
+- as senhas web da config padrão não saem; a planilha sai inteira (ADR 0012 do NOC), com
+  usuário e senha SIP **só** em ``ambientes[].linhas[]``;
+- fora das linhas da planilha, o retrato atravessa o filtro de segredos do NOC **sem perder nada**;
 - as seções seguem o catálogo do fabricante;
 - o coletor diz se estava ouvindo, e hora sem cobertura não vira zero.
 """
@@ -100,7 +101,7 @@ def test_toda_chave_da_config_padrao_tem_um_lado_decidido() -> None:
     assert set(CHAVES_SECRETAS) <= set(retrato.CONFIG_SO_DEFINIDA)
 
 
-def test_o_retrato_dos_ambientes_nao_leva_segredo_nenhum(db) -> None:
+def test_o_retrato_leva_a_planilha_inteira_e_nenhum_segredo_da_config(db) -> None:
     env = _ambiente_com_segredos(db)
     lote = _lote(db)
     texto = json.dumps(lote, ensure_ascii=False)
@@ -109,13 +110,14 @@ def test_o_retrato_dos_ambientes_nao_leva_segredo_nenhum(db) -> None:
         "NOVA-SENHA-QUE-NAO-SAI",
         "MENU-QUE-NAO-SAI",
         "TECLADO-QUE-NAO-SAI",
-        "SIP-QUE-NAO-SAI",
-        "AUTH-QUE-NAO-SAI",
-        "SERVIDOR-QUE-NAO-SAI",
         "PBX-QUE-NAO-SAI",
         "admin-da-loja",
     ):
         assert segredo not in texto, segredo
+    # A credencial da linha sai uma vez, no lugar dela, e em nenhum outro ponto do lote.
+    sem_as_linhas = {**lote, "ambientes": [{**a, "linhas": []} for a in lote["ambientes"]]}
+    for credencial in ("SIP-QUE-NAO-SAI", "AUTH-QUE-NAO-SAI", "SERVIDOR-QUE-NAO-SAI"):
+        assert credencial not in json.dumps(sem_as_linhas, ensure_ascii=False), credencial
 
     [amb] = lote["ambientes"]
     assert amb["id"] == env.id
@@ -132,9 +134,17 @@ def test_o_retrato_dos_ambientes_nao_leva_segredo_nenhum(db) -> None:
     assert campos["nova_web_user"]["definida"] is False
 
     linha = amb["linhas"][0]
+    assert (linha["userAuth"], linha["senhaSip"], linha["servidorSip"]) == (
+        "AUTH-QUE-NAO-SAI",
+        "SIP-QUE-NAO-SAI",
+        "SERVIDOR-QUE-NAO-SAI",
+    )
     assert set(linha) == {
         "posicao",
         "ramal",
+        "userAuth",
+        "senhaSip",
+        "servidorSip",
         "nomeVisivel",
         "numeroAbreviado",
         "ip",
@@ -162,7 +172,17 @@ def test_o_retrato_dos_ambientes_nao_leva_segredo_nenhum(db) -> None:
 def test_o_retrato_atravessa_o_filtro_de_segredos_do_noc_sem_perder_nada(db) -> None:
     _ambiente_com_segredos(db)
     lote = _lote(db)
-    retrato_do_noc = {k: lote[k] for k in ("ambientes", "coletor", "conexoesMqtt", "mensagensPorHora")}
+    # As credenciais das linhas o NOC lê por lista branca, sem o filtro (ADR 0012); o resto
+    # do retrato continua tendo de passar pelo filtro inteiro.
+    credenciais = ("userAuth", "senhaSip")
+    ambientes = [
+        {**a, "linhas": [{k: v for k, v in ln.items() if k not in credenciais} for ln in a["linhas"]]}
+        for a in lote["ambientes"]
+    ]
+    retrato_do_noc = {
+        "ambientes": ambientes,
+        **{k: lote[k] for k in ("coletor", "conexoesMqtt", "mensagensPorHora")},
+    }
     # Se o formato usasse o nome da senha como chave, o NOC jogaria fora a
     # informação "definida" junto com a chave, e a tela diria que não há senha.
     assert _filtro_do_noc(retrato_do_noc) == retrato_do_noc

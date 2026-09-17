@@ -152,8 +152,12 @@ def _corpo(rota: respx.Route, indice: int = -1) -> dict:
 def test_o_lote_leva_tudo_e_nenhuma_senha(db) -> None:
     _povoar(db)
     lote, novos, mais = telemetria.montar_lote(db, telemetria.cursores(db))
-    texto = json.dumps(lote)
+    # A senha SIP viaja só na planilha do retrato (ADR 0012 do NOC); em nenhum outro lugar do lote.
+    sem_planilha = {**lote, "ambientes": [{**a, "linhas": []} for a in lote["ambientes"]]}
+    texto = json.dumps(sem_planilha)
     assert "SENHA-QUE-NAO-SAI" not in texto
+    senhas = [ln["senhaSip"] for amb in lote["ambientes"] for ln in amb["linhas"]]
+    assert "SENHA-QUE-NAO-SAI" in senhas
     assert "TOKEN-QUE-NAO-SAI" not in texto
     assert {d["ramal"] for d in lote["dispositivos"]} == {"1001", "1002"}
     # A janela inicial é de uma hora: a amostra de 3 h atrás fica de fora.
