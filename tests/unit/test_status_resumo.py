@@ -3,9 +3,9 @@ real ('ok'/'erro'/None), não os rótulos derivados ('applied'/'error')."""
 
 from __future__ import annotations
 
-from middleware_monitor.api.extension_configurator import _status_resumo
 from middleware_monitor.core.models import Device, ExtensionLine
 from middleware_monitor.domain.extension_configurator.service import line_status
+from middleware_monitor.domain.extension_configurator.service import status_resumo as _status_resumo
 
 
 def _line(status: str | None) -> ExtensionLine:

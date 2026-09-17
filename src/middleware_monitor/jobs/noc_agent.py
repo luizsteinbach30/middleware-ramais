@@ -26,6 +26,7 @@ from datetime import UTC, datetime, timedelta
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.scheduler import add_interval_job, get_scheduler, remove_job, reschedule
+from middleware_monitor.domain.mqtt.service import get_ingestor
 from middleware_monitor.domain.noc import certificado, cliente, estado, executor, manifesto, telemetria
 
 log = get_logger("jobs.noc_agent")
@@ -199,7 +200,7 @@ async def run_noc_telemetria() -> int:
             except ValueError:
                 return entregues
             cur = telemetria.cursores(db)
-            lote, novos, mais = telemetria.montar_lote(db, cur)
+            lote, novos, mais = telemetria.montar_lote(db, cur, coletor_ao_vivo=get_ingestor().status())
 
         try:
             await cliente.enviar_telemetria(atual.endereco_do_canal, credencial, lote)

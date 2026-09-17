@@ -163,6 +163,7 @@ def test_o_lote_leva_tudo_e_nenhuma_senha(db) -> None:
         {
             "ramal": "1001",
             "ambiente": "LOJA 7",
+            "ambienteId": "amb1",
             "modelo": "htek_uc924",
             "ip": "10.0.0.11",
             "status": "ok",
@@ -173,6 +174,7 @@ def test_o_lote_leva_tudo_e_nenhuma_senha(db) -> None:
             "macDetectado": None,
         }
     ]
+    assert lote["aplicacoes"][0]["ambienteId"] == "amb1"
     assert lote["aplicacoes"][0]["linhas"][0] == {
         "ramal": "1001",
         "ip": "10.0.0.11",
@@ -199,7 +201,8 @@ def test_relatorio_ainda_rodando_segura_o_cursor(db) -> None:
     db.flush()
     db.add(ExtensionApplyRun(environment_id="a", started_at=agora, finished_at=agora, total=1, ok=1, falha=0))
     db.commit()
-    lote, novos, _ = telemetria.montar_lote(db, {"amostras": 0, "eventos": 0, "aplicacoes": 0, "coleta": 0})
+    cur = {"amostras": 0, "eventos": 0, "aplicacoes": 0, "coleta": 0, "conexoes": 0}
+    lote, novos, _ = telemetria.montar_lote(db, cur)
     assert lote["aplicacoes"] == []
     assert novos["aplicacoes"] == 0
 
@@ -234,6 +237,9 @@ async def test_cursor_so_anda_com_202_e_retoma_depois_da_falha(db) -> None:
     assert [a["latenciaMs"] for a in segundo["amostras"]] == [25]
     assert segundo["eventos"] == [] and segundo["aplicacoes"] == [] and segundo["ramaisUscall"] is None
     assert len(segundo["dispositivos"]) == 2
+    # O retrato dos ambientes e o coletor vão em todo lote (etapa I3 do NOC).
+    assert [a["id"] for a in segundo["ambientes"]] == ["amb1"]
+    assert segundo["coletor"][0]["estado"] == "sem_broker"
     assert (
         rota.calls[-1].request.headers["idempotency-key"] != rota.calls[-2].request.headers["idempotency-key"]
     )

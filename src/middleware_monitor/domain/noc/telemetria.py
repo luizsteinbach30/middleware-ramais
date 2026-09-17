@@ -5,6 +5,9 @@ Tudo o que os webhooks ``extensions`` e ``devices`` mandavam ate a v2.13.0
 de ping, transições de telefonia do MQTT local, relatórios de aplicação e o
 perfil que cada ambiente diz que a linha deve ter.
 
+Etapa I3 do NOC (itens 11 e 12): o retrato dos ambientes com ``id`` e a config
+padrão por lista branca, e o estado do coletor MQTT — ver ``retrato.py``.
+
 **Por cursor, não por "o que mudou desde o último envio".** Cada fonte tem um
 cursor (o último id entregue) que só avança quando o NOC responde 202. NOC fora
 do ar não perde nada — o cursor espera — e reenviar não duplica, porque o lote
@@ -36,10 +39,13 @@ from middleware_monitor.core.models import (
     ExtensionApplyRun,
     ExtensionLine,
     ExtensionStatusEvent,
+    MqttConnectionEvent,
     UscallServer,
 )
-from middleware_monitor.domain.noc import estado
+from middleware_monitor.domain.noc import estado, retrato
 
+# Continua 1: tudo o que a I3 acrescentou é campo novo num JSON que o NOC lê
+# chave a chave — um NOC que ainda não conhece ``ambientes`` só não o projeta.
 VERSAO_DO_CONTRATO = 1
 LIMITE_AMOSTRAS = 5000
 LIMITE_EVENTOS = 2000
@@ -48,6 +54,7 @@ LIMITE_APLICACOES = 50
 # guardado (30 dias de ping de uma loja grande são milhões de linhas).
 JANELA_INICIAL_AMOSTRAS = timedelta(hours=1)
 JANELA_INICIAL_APLICACOES = timedelta(days=7)
+JANELA_INICIAL_CONEXOES = timedelta(hours=24)
 
 _NOME_DE_SEGREDO = re.compile(r"senha|passw|secret|segredo|token|credencial|pwd|auth", re.IGNORECASE)
 
@@ -91,11 +98,21 @@ def cursores(db: DBSession) -> dict[str, int]:
         )
     if atual.get("coleta") is None:
         atual["coleta"] = 0
+    if atual.get("conexoes") is None:
+        atual["conexoes"] = _max_id_antes(
+            db, MqttConnectionEvent.id, MqttConnectionEvent.timestamp, agora - JANELA_INICIAL_CONEXOES
+        )
     return {k: int(v or 0) for k, v in atual.items()}
 
 
-def montar_lote(db: DBSession, cur: dict[str, int]) -> tuple[dict[str, Any], dict[str, int], bool]:
-    """Um lote e os cursores que ele leva. ``mais`` diz se alguma fonte bateu no limite."""
+def montar_lote(
+    db: DBSession, cur: dict[str, int], *, coletor_ao_vivo: dict[str, Any] | None = None
+) -> tuple[dict[str, Any], dict[str, int], bool]:
+    """Um lote e os cursores que ele leva. ``mais`` diz se alguma fonte bateu no limite.
+
+    ``coletor_ao_vivo`` é o ``status()`` do coletor MQTT em memória; sem ele, o
+    estado de cada broker sai do último evento gravado.
+    """
     servidores = {s.id: s.nome for s in db.scalars(select(UscallServer)).all()}
     novos = dict(cur)
     mais = False
@@ -170,6 +187,8 @@ def montar_lote(db: DBSession, cur: dict[str, int]) -> tuple[dict[str, Any], dic
             {
                 "id": r.id,
                 "ambiente": r.environment.nome if r.environment else "?",
+                # O nome é para a tela; o id é a identidade — renomear lá não separa o histórico.
+                "ambienteId": r.environment_id,
                 "inicio": _hora(r.started_at),
                 "fim": _hora(r.finished_at),
                 "total": r.total,
@@ -199,6 +218,7 @@ def montar_lote(db: DBSession, cur: dict[str, int]) -> tuple[dict[str, Any], dic
         {
             "ramal": ln.numero_ramal,
             "ambiente": ln.environment.nome,
+            "ambienteId": ln.environment_id,
             "modelo": ln.environment.modelo_telefone,
             "ip": ln.ip,
             "status": ln.ultimo_status,
@@ -226,6 +246,9 @@ def montar_lote(db: DBSession, cur: dict[str, int]) -> tuple[dict[str, Any], dic
             ramais_uscall = None
         novos["coleta"] = coleta.id
 
+    conexoes, novos["conexoes"], mais_conexoes = retrato.conexoes_mqtt(db, cur["conexoes"])
+    mais = mais or mais_conexoes
+
     lote = {
         "versaoDoContrato": VERSAO_DO_CONTRATO,
         "lote": uuid.uuid4().hex,
@@ -236,5 +259,10 @@ def montar_lote(db: DBSession, cur: dict[str, int]) -> tuple[dict[str, Any], dic
         "aplicacoes": aplicacoes,
         "perfis": perfis,
         "ramaisUscall": ramais_uscall,
+        # Etapa I3 do NOC — retratos completos a cada lote, menos ``conexoesMqtt``, que anda por cursor.
+        "ambientes": retrato.ambientes(db),
+        "coletor": retrato.coletor(db, coletor_ao_vivo),
+        "conexoesMqtt": conexoes,
+        "mensagensPorHora": retrato.mensagens_por_hora(db),
     }
     return lote, novos, mais

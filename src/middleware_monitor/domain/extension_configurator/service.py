@@ -151,6 +151,47 @@ def line_status(line: ExtensionLine, hash_atual: str) -> str:
     return "outdated"
 
 
+def status_resumo(lines: list[ExtensionLine]) -> dict[str, Any]:
+    """Agrega o status das linhas do ambiente em 1 categoria + contadores.
+
+    Classifica pelo ``ultimo_status`` gravado pela aplicação (``update_line_status``):
+      * ``"ok"``   → applied
+      * ``"erro"`` → error
+      * ``None``   → registered (se o telefone já está registrado no PBX via
+        device vinculado ``available``) ou pending (não está no sistema).
+
+    Resumo rápido para os cards da lista (não recomputa hash — importante com
+    muitos ambientes). O status fino por linha, incluindo ``outdated`` quando a
+    config muda após aplicar, é calculado na tela de detalhe via
+    ``compute_statuses``.
+
+    Mora no domínio porque tem dois leitores: o cartão da tela Ambientes daqui e
+    o retrato que vai ao NOC (``domain/noc/retrato.py``) — a situação que o NOC
+    mostra tem de ser a mesma que a loja vê.
+    """
+    if not lines:
+        return {"applied": 0, "registered": 0, "pending": 0, "error": 0, "agregado": "vazio"}
+    applied = sum(1 for ln in lines if ln.ultimo_status == "ok")
+    error = sum(1 for ln in lines if ln.ultimo_status == "erro")
+    # nunca aplicados que já estão registrados no PBX não contam como pendentes
+    registered = sum(
+        1 for ln in lines
+        if ln.ultimo_status not in ("ok", "erro")
+        and ln.device is not None and ln.device.logical_status == "available"
+    )
+    pending = len(lines) - applied - error - registered
+    if error > 0:
+        agregado = "erros"
+    elif pending > 0:
+        agregado = "pendentes"
+    else:
+        agregado = "ok"
+    return {
+        "applied": applied, "registered": registered, "pending": pending,
+        "error": error, "agregado": agregado,
+    }
+
+
 def compute_statuses(
     env: ExtensionEnvironment, lines: list[ExtensionLine],
 ) -> list[dict[str, str]]:
