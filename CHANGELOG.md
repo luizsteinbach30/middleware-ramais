@@ -48,6 +48,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
     por hora **só das horas em que o coletor ouviu**.
 
   Ver `docs/AGENTE-NOC.md`, itens 11 e 12.
+- **Edição central a pedido do NOC (etapa I5 do NOC).** Dois verbos novos no executor,
+  ambos escrita reversível e sempre aprovados por outra pessoa no NOC:
+  `editar_linha_do_ambiente` (nome visível e número abreviado de um ramal) e
+  `editar_config_do_ambiente` (as chaves da config padrão que o retrato manda com valor).
+  - Gravam **na planilha**, nunca no aparelho; a reaplicação continua ramal a ramal.
+  - A lista do que pode mudar é daqui: IP, senhas, usuário de autenticação e servidor SIP são
+    recusados mesmo que o NOC mande.
+  - O valor que o NOC viu é conferido: se mudou na loja, nada é gravado e o valor de hoje volta.
+  - Validação do fabricante e backup antes; releitura depois.
+
+  Ver `docs/AGENTE-NOC.md`, item 13.
 - **Backup automático atrasado roda no boot.** Se o app estava fechado no horário e o
   snapshot mais novo tem mais de um dia, um backup sai 3 minutos depois de abrir
   (`docs/AGENTE-NOC.md`, item 9).

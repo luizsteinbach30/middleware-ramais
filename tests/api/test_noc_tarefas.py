@@ -117,6 +117,9 @@ def test_lista_de_permissao_e_fechada_e_nao_tem_rede() -> None:
         "logs",
         "normalize",
         "reaplicar_config_do_ambiente",
+        # Item 13: gravam na planilha, nunca no aparelho (tests/api/test_noc_edicao.py).
+        "editar_linha_do_ambiente",
+        "editar_config_do_ambiente",
     }
     assert "set_ip" not in executor.ACOES
     assert "send_config" not in executor.ACOES

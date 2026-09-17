@@ -25,6 +25,9 @@ As regras que não se re-derivam lendo o código:
 - **Leitura não muda estado.** O ``ping`` a pedido do NOC não grava em
   ``devices``: marcar online um aparelho que estava offline engoliria a volta que
   o vigia de recuperação (``jobs/monitor_devices.py``) usa para reaplicar config.
+- **A edição central grava na planilha, nunca no aparelho** (item 13). A lista do
+  que pode mudar é daqui, e o ``de`` que o NOC viu é conferido contra o valor
+  atual: diferente, nada é gravado — o NOC nunca sobrescreve mudança feita na loja.
 """
 
 from __future__ import annotations
@@ -509,6 +512,255 @@ async def _reaplicar(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PL
     return Resultado(ok=ok, resultado={**base, "run": rs.db_run_id, "linhas": linhas}, erro=erro)
 
 
+# --- Edição central (item 13, etapa I5 do NOC) -------------------------------------------
+
+# Os nomes do retrato (``retrato.py``) → a coluna da planilha. Tamanho = o da coluna (migration 0002).
+CAMPOS_DA_LINHA: dict[str, tuple[str, int]] = {
+    "nomeVisivel": ("nome_visivel", 64),
+    "numeroAbreviado": ("numero_abreviado", 32),
+}
+
+
+def _recusa_da_edicao(recusa: str, mensagem: str, **extra: Any) -> Resultado:
+    """Recusa com o código do contrato (CONTRATO-DO-AGENTE §10): a tela decide pelo código."""
+    return Resultado(ok=False, nao_suportado=True, erro=mensagem, resultado={"recusa": recusa, **extra})
+
+
+def _nao_permitido(nome: str) -> Resultado:
+    rede = " (é de rede)" if _CAMPO_DE_REDE.search(nome) else ""
+    return _recusa_da_edicao(
+        "CAMPO_NAO_PERMITIDO", f"{nome!r} não é editável pelo NOC{rede}; nada foi gravado."
+    )
+
+
+def _campos_do_pedido(
+    p: dict[str, Any], nome: str, permitidos: Any
+) -> tuple[list[dict[str, Any]], Resultado | None]:
+    """``campos`` na forma do contrato, sem repetição e só com o que a lista daqui permite."""
+    campos = p.get("campos")
+    if not isinstance(campos, list) or not campos:
+        return [], _recusa_da_edicao("VALOR_INVALIDO", "campos: mande ao menos um item.")
+    vistos: set[str] = set()
+    for c in campos:
+        if not isinstance(c, dict) or set(c) != {nome, "de", "para"} or not isinstance(c[nome], str):
+            return [], _recusa_da_edicao("VALOR_INVALIDO", f"cada item de campos é {{ {nome}, de, para }}.")
+        if c[nome] not in permitidos:
+            return [], _nao_permitido(c[nome])
+        if c[nome] in vistos:
+            return [], _recusa_da_edicao("VALOR_INVALIDO", f"{c[nome]!r} aparece duas vezes no pedido.")
+        vistos.add(c[nome])
+    return campos, None
+
+
+def _mesmo(a: Any, b: Any) -> bool:
+    """Igual de verdade: ``True`` não é ``1``, e a ordem das chaves não importa."""
+    return json.dumps(a, sort_keys=True, ensure_ascii=False) == json.dumps(
+        b, sort_keys=True, ensure_ascii=False
+    )
+
+
+def _ambiente_do_pedido(db: Any, p: dict[str, Any]) -> tuple[ExtensionEnvironment | None, Resultado | None]:
+    amb = p.get("ambienteId")
+    env = db.get(ExtensionEnvironment, amb) if isinstance(amb, str) and 0 < len(amb) <= 64 else None
+    if env is None:
+        return None, _recusa_da_edicao(
+            "AMBIENTE_NAO_ENCONTRADO", f"O ambiente {str(amb)[:64]!r} não existe neste middleware."
+        )
+    return env, None
+
+
+def _linha_do_ambiente(
+    env: ExtensionEnvironment, ramal: str
+) -> tuple[ExtensionLine | None, Resultado | None]:
+    linhas = [ln for ln in env.lines if ln.numero_ramal == ramal]
+    if not linhas:
+        return None, _recusa_da_edicao(
+            "RAMAL_NAO_ENCONTRADO", f"O ramal {ramal} não está na planilha do ambiente {env.nome}."
+        )
+    if len(linhas) > 1:
+        return None, _recusa_da_edicao(
+            "RAMAL_AMBIGUO",
+            f"O ramal {ramal} aparece em {len(linhas)} linhas do ambiente {env.nome}; "
+            "corrija a planilha local.",
+        )
+    return linhas[0], None
+
+
+def _divergentes_da_linha(linha: ExtensionLine, campos: list[dict[str, Any]]) -> Resultado | None:
+    atuais = [
+        {"campo": c["campo"], "atual": getattr(linha, CAMPOS_DA_LINHA[c["campo"]][0]) or ""} for c in campos
+    ]
+    if all(_mesmo(a["atual"], c["de"]) for a, c in zip(atuais, campos, strict=True)):
+        return None
+    return _recusa_da_edicao(
+        "DE_DIVERGENTE",
+        "O valor mudou no middleware desde o retrato que o NOC viu; nada foi gravado.",
+        atuais=atuais,
+    )
+
+
+async def _editar_linha(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PLR0911 - uma saída por recusa
+    from middleware_monitor.domain.extension_configurator.repository import merged_config_padrao
+    from middleware_monitor.domain.extension_configurator.service import (
+        adapter_for,
+        build_template,
+        compute_line_hash,
+        line_status,
+    )
+    from middleware_monitor.integrations.extension_configurator.vendors.base import VendorConfigError
+
+    campos, recusa = _campos_do_pedido(p, "campo", CAMPOS_DA_LINHA)
+    if recusa is not None:
+        return recusa
+    for c in campos:
+        teto = CAMPOS_DA_LINHA[c["campo"]][1]
+        if not isinstance(c["para"], str) or len(c["para"]) > teto or not isinstance(c["de"], str):
+            return _recusa_da_edicao("VALOR_INVALIDO", f"{c['campo']}: texto de até {teto} caracteres.")
+    ramal = p["ramal"]
+    with session_factory() as db:
+        env, recusa = _ambiente_do_pedido(db, p)
+        if env is None:
+            return recusa  # type: ignore[return-value]
+        linha, recusa = _linha_do_ambiente(env, ramal)
+        if linha is None:
+            return recusa  # type: ignore[return-value]
+        if (divergente := _divergentes_da_linha(linha, campos)) is not None:
+            return divergente
+        # A mesma validação da planilha local: o fabricante recebe estes valores?
+        novos = {CAMPOS_DA_LINHA[c["campo"]][0]: c["para"] for c in campos}
+        nome = novos.get("nome_visivel", linha.nome_visivel) or linha.numero_ramal
+        sonda = {
+            "conta_sip": linha.numero_ramal,
+            "senha_sip": "sonda",
+            "servidor_sip": "192.0.2.1",
+            "label": nome,
+            "display_name": nome,
+            "auth_id": linha.numero_ramal,
+            "numero_abreviado": novos.get("numero_abreviado", linha.numero_abreviado),
+            "account_active": 1,
+        }
+        try:
+            adapter_for(env.modelo_telefone).generate_config(build_template(merged_config_padrao(env)), sonda)
+        except VendorConfigError as exc:
+            return _recusa_da_edicao("VALOR_INVALIDO", f"O {env.modelo_telefone} não aceita o valor: {exc}")
+        env_id, linha_id = env.id, linha.id
+    if (sem := _sem_prazo(ctx)) is not None:
+        return sem
+    backup, erro = await _backup()
+    if backup is None:
+        return Resultado(ok=False, resultado={"ambienteId": env_id, "ramal": ramal, "campos": []}, erro=erro)
+    with session_factory() as db:
+        linha = db.get(ExtensionLine, linha_id)
+        if linha is None:
+            return _recusa_da_edicao(
+                "RAMAL_NAO_ENCONTRADO", f"A linha do ramal {ramal} sumiu durante o backup; nada foi gravado."
+            )
+        # De novo, já com o backup feito: a planilha pode ter mudado nesse meio-tempo.
+        if (divergente := _divergentes_da_linha(linha, campos)) is not None:
+            return divergente
+        for coluna, valor in novos.items():
+            setattr(linha, coluna, valor)
+        linha.updated_at = linha.environment.updated_at = _agora()
+        db.commit()
+    with session_factory() as db:
+        linha = db.get(ExtensionLine, linha_id)
+        assert linha is not None
+        gravados = [
+            {"campo": c["campo"], "gravado": getattr(linha, CAMPOS_DA_LINHA[c["campo"]][0])} for c in campos
+        ]
+        status = line_status(linha, compute_line_hash(linha.environment, linha))
+    certo = all(g["gravado"] == c["para"] for g, c in zip(gravados, campos, strict=True))
+    return Resultado(
+        ok=certo,
+        resultado={
+            "ambienteId": env_id,
+            "ramal": ramal,
+            "backup": backup,
+            "campos": gravados,
+            "status": status,
+        },
+        erro=None if certo else "A releitura não bate com o pedido; confira a planilha local.",
+    )
+
+
+async def _editar_config(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PLR0911 - uma saída por recusa
+    from middleware_monitor.domain.extension_configurator import repository as repo
+    from middleware_monitor.domain.extension_configurator.service import (
+        compute_statuses,
+        validate_config_padrao,
+    )
+    from middleware_monitor.domain.noc.retrato import CONFIG_COM_VALOR
+    from middleware_monitor.integrations.extension_configurator.vendors.base import VendorConfigError
+
+    campos, recusa = _campos_do_pedido(p, "chave", CONFIG_COM_VALOR)
+    if recusa is not None:
+        return recusa
+
+    def divergentes(cfg: dict[str, Any]) -> Resultado | None:
+        atuais = [{"chave": c["chave"], "atual": cfg.get(c["chave"])} for c in campos]
+        if all(_mesmo(a["atual"], c["de"]) for a, c in zip(atuais, campos, strict=True)):
+            return None
+        return _recusa_da_edicao(
+            "DE_DIVERGENTE",
+            "A config padrão mudou no middleware desde o retrato que o NOC viu; nada foi gravado.",
+            atuais=atuais,
+        )
+
+    with session_factory() as db:
+        env, recusa = _ambiente_do_pedido(db, p)
+        if env is None:
+            return recusa  # type: ignore[return-value]
+        cfg = repo.merged_config_padrao(env)
+        if (divergente := divergentes(cfg)) is not None:
+            return divergente
+        for c in campos:
+            atual = cfg.get(c["chave"])
+            # O tipo é o do valor guardado: número continua número, interruptor continua interruptor.
+            if atual is not None and type(atual) is not type(c["para"]):
+                return _recusa_da_edicao(
+                    "VALOR_INVALIDO",
+                    f"{c['chave']}: esperado {type(atual).__name__}, veio {type(c['para']).__name__}.",
+                )
+        novo = {**cfg, **{c["chave"]: c["para"] for c in campos}}
+        try:
+            validate_config_padrao(env.modelo_telefone, novo)
+        except VendorConfigError as exc:
+            return _recusa_da_edicao("VALOR_INVALIDO", f"O {env.modelo_telefone} não aceita a config: {exc}")
+        env_id = env.id
+    if (sem := _sem_prazo(ctx)) is not None:
+        return sem
+    backup, erro = await _backup()
+    if backup is None:
+        return Resultado(ok=False, resultado={"ambienteId": env_id, "campos": []}, erro=erro)
+    with session_factory() as db:
+        env = db.get(ExtensionEnvironment, env_id)
+        if env is None:
+            return _recusa_da_edicao(
+                "AMBIENTE_NAO_ENCONTRADO", "O ambiente sumiu durante o backup; nada foi gravado."
+            )
+        if (divergente := divergentes(repo.merged_config_padrao(env))) is not None:
+            return divergente
+        repo.update_environment(db, env, config_padrao={c["chave"]: c["para"] for c in campos})
+        db.commit()
+    with session_factory() as db:
+        env = db.get(ExtensionEnvironment, env_id)
+        assert env is not None
+        relida = repo.merged_config_padrao(env)
+        gravados = [{"chave": c["chave"], "gravado": relida.get(c["chave"])} for c in campos]
+        desatualizadas = sum(1 for st in compute_statuses(env, list(env.lines)) if st["status"] == "outdated")
+    certo = all(_mesmo(g["gravado"], c["para"]) for g, c in zip(gravados, campos, strict=True))
+    return Resultado(
+        ok=certo,
+        resultado={
+            "ambienteId": env_id,
+            "backup": backup,
+            "campos": gravados,
+            "linhasDesatualizadas": desatualizadas,
+        },
+        erro=None if certo else "A releitura não bate com o pedido; confira a config padrão local.",
+    )
+
+
 # --- A lista de permissão ---------------------------------------------------------------
 
 ACOES: dict[str, Acao] = {
@@ -520,6 +772,12 @@ ACOES: dict[str, Acao] = {
     "logs": Acao(LEITURA, _logs, opcionais=frozenset({"linhas", "nivel"})),
     "normalize": Acao(ESCRITA, _normalize, obrigatorios=frozenset({"ramal"})),
     "reaplicar_config_do_ambiente": Acao(ESCRITA, _reaplicar, obrigatorios=frozenset({"ramal"})),
+    "editar_linha_do_ambiente": Acao(
+        ESCRITA, _editar_linha, obrigatorios=frozenset({"ambienteId", "ramal", "campos"})
+    ),
+    "editar_config_do_ambiente": Acao(
+        ESCRITA, _editar_config, obrigatorios=frozenset({"ambienteId", "campos"})
+    ),
 }
 
 
