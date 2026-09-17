@@ -47,7 +47,7 @@ from middleware_monitor.core.models import (
 )
 from middleware_monitor.domain.extension_configurator import time_settings
 from middleware_monitor.domain.extension_configurator.defaults import CHAVES_SECRETAS
-from middleware_monitor.domain.extension_configurator.repository import merged_config_padrao
+from middleware_monitor.domain.extension_configurator.repository import merged_config_padrao, senha_sip_de
 from middleware_monitor.domain.extension_configurator.service import compute_statuses, status_resumo
 from middleware_monitor.domain.extension_configurator.softkeys import softkey_catalog_for
 from middleware_monitor.domain.mqtt.coverage import UP_STATES, compute_coverage
@@ -203,6 +203,12 @@ def ambientes(db: DBSession) -> list[dict[str, Any]]:
                     {
                         "posicao": ln.posicao,
                         "ramal": ln.numero_ramal,
+                        # ADR 0012 do NOC: a planilha inteira viaja — só aqui, só pelo canal mTLS.
+                        # O NOC lê por lista branca e cifra a senha ao receber; em nenhum outro
+                        # lugar do lote (perfis, aplicações, config padrão) a credencial sai.
+                        "userAuth": ln.user_auth,
+                        "senhaSip": senha_sip_de(ln),
+                        "servidorSip": ln.servidor_sip,
                         "nomeVisivel": ln.nome_visivel,
                         "numeroAbreviado": ln.numero_abreviado,
                         "ip": ln.ip,

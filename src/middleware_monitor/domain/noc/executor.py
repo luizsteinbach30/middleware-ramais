@@ -25,9 +25,10 @@ As regras que não se re-derivam lendo o código:
 - **Leitura não muda estado.** O ``ping`` a pedido do NOC não grava em
   ``devices``: marcar online um aparelho que estava offline engoliria a volta que
   o vigia de recuperação (``jobs/monitor_devices.py``) usa para reaplicar config.
-- **A edição central grava na planilha, nunca no aparelho** (item 13). A lista do
-  que pode mudar é daqui, e o ``de`` que o NOC viu é conferido contra o valor
-  atual: diferente, nada é gravado — o NOC nunca sobrescreve mudança feita na loja.
+- **A edição central grava na planilha, nunca no aparelho** (item 13, ADR 0012 do NOC).
+  A planilha inteira se edita — inclusive IP, usuário e senha SIP —, e a que o NOC viu
+  (``de``) é conferida contra a atual: diferente, nada é gravado — o NOC nunca
+  sobrescreve mudança feita na loja. A senha não volta em recusa nem em resultado.
 """
 
 from __future__ import annotations
@@ -453,9 +454,29 @@ async def _reaplicar(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PL
     from middleware_monitor.domain.extension_configurator import run_state
     from middleware_monitor.domain.extension_configurator.apply import run_apply
 
-    ramal = p["ramal"]
     with session_factory() as db:
-        linha, erro = _linha_unica(db, ramal)
+        if "posicao" in p or "ambienteId" in p:
+            # ADR 0012: a linha pela posição no ambiente. Aparelho vinculado não é pré-requisito —
+            # o envio vai para o IP da linha, e telefone que não responde é o desfecho do run.
+            if "ramal" in p or not isinstance(p.get("posicao"), int) or isinstance(p.get("posicao"), bool):
+                return _recusa("reaplicar: mande { ambienteId, posicao } ou { ramal }, não os dois.")
+            env, recusa = _ambiente_do_pedido(db, p)
+            if env is None:
+                return recusa  # type: ignore[return-value]
+            ordenadas = sorted(env.lines, key=lambda ln: ln.posicao)
+            if not 1 <= p["posicao"] <= len(ordenadas):
+                return _recusa_da_edicao(
+                    "LINHA_NAO_ENCONTRADA", f"O ambiente {env.nome} não tem a linha {p['posicao']}."
+                )
+            linha, erro = ordenadas[p["posicao"] - 1], None
+            if not linha.ip:
+                linha, erro = None, f"A linha {p['posicao']} do ambiente {env.nome} não tem IP cadastrado."
+            ramal = ordenadas[p["posicao"] - 1].numero_ramal
+        else:
+            if not isinstance(p.get("ramal"), str):
+                return _recusa("reaplicar: mande { ambienteId, posicao } ou { ramal }.")
+            ramal = p["ramal"]
+            linha, erro = _linha_unica(db, ramal)
         if linha is None:
             return Resultado(ok=False, resultado={"ramal": ramal, "linhas": []}, erro=erro)
         linha_id, env_id = linha.id, linha.environment_id
@@ -514,11 +535,18 @@ async def _reaplicar(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PL
 
 # --- Edição central (item 13, etapa I5 do NOC) -------------------------------------------
 
-# Os nomes do retrato (``retrato.py``) → a coluna da planilha. Tamanho = o da coluna (migration 0002).
-CAMPOS_DA_LINHA: dict[str, tuple[str, int]] = {
-    "nomeVisivel": ("nome_visivel", 64),
+# Os nomes do retrato (``retrato.py``) → a coluna da planilha, e o tamanho da coluna (``core/models.py``).
+# ADR 0012 do NOC: a planilha inteira se edita pelo NOC, inclusive IP, usuário e senha SIP.
+CAMPOS_DA_PLANILHA: dict[str, tuple[str, int]] = {
+    "ramal": ("numero_ramal", 32),
+    "ip": ("ip", 45),
+    "userAuth": ("user_auth", 64),
+    "senhaSip": ("senha_sip", 256),
+    "servidorSip": ("servidor_sip", 128),
     "numeroAbreviado": ("numero_abreviado", 32),
+    "nomeVisivel": ("nome_visivel", 64),
 }
+MAXIMO_DE_LINHAS = 2000
 
 
 def _recusa_da_edicao(recusa: str, mensagem: str, **extra: Any) -> Resultado:
@@ -569,115 +597,186 @@ def _ambiente_do_pedido(db: Any, p: dict[str, Any]) -> tuple[ExtensionEnvironmen
     return env, None
 
 
-def _linha_do_ambiente(
-    env: ExtensionEnvironment, ramal: str
-) -> tuple[ExtensionLine | None, Resultado | None]:
-    linhas = [ln for ln in env.lines if ln.numero_ramal == ramal]
-    if not linhas:
-        return None, _recusa_da_edicao(
-            "RAMAL_NAO_ENCONTRADO", f"O ramal {ramal} não está na planilha do ambiente {env.nome}."
-        )
-    if len(linhas) > 1:
-        return None, _recusa_da_edicao(
-            "RAMAL_AMBIGUO",
-            f"O ramal {ramal} aparece em {len(linhas)} linhas do ambiente {env.nome}; "
-            "corrija a planilha local.",
-        )
-    return linhas[0], None
+def _planilha_atual(env: ExtensionEnvironment) -> list[dict[str, Any]]:
+    """A planilha como o retrato a mostra: por posição, com a senha já decifrada."""
+    from middleware_monitor.domain.extension_configurator import repository as repo
+
+    linhas = sorted(env.lines, key=lambda ln: ln.posicao)
+    saida = []
+    for i, ln in enumerate(linhas, start=1):
+        item: dict[str, Any] = {"posicao": i}
+        for campo, (coluna, _) in CAMPOS_DA_PLANILHA.items():
+            item[campo] = repo.senha_sip_de(ln) if coluna == "senha_sip" else (getattr(ln, coluna) or "")
+        saida.append(item)
+    return saida
 
 
-def _divergentes_da_linha(linha: ExtensionLine, campos: list[dict[str, Any]]) -> Resultado | None:
-    atuais = [
-        {"campo": c["campo"], "atual": getattr(linha, CAMPOS_DA_LINHA[c["campo"]][0]) or ""} for c in campos
+def _sem_senha(linhas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Para a recusa e o resultado: a senha vira ``definida`` — eles vão para a tarefa, a tela e o log."""
+    return [
+        {**ln, "senhaSip": {"definida": bool(ln.get("senhaSip"))}} if "senhaSip" in ln else ln
+        for ln in linhas
     ]
-    if all(_mesmo(a["atual"], c["de"]) for a, c in zip(atuais, campos, strict=True)):
-        return None
-    return _recusa_da_edicao(
-        "DE_DIVERGENTE",
-        "O valor mudou no middleware desde o retrato que o NOC viu; nada foi gravado.",
-        atuais=atuais,
-    )
 
 
-async def _editar_linha(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PLR0911 - uma saída por recusa
-    from middleware_monitor.domain.extension_configurator.repository import merged_config_padrao
+def _forma_da_planilha(p: dict[str, Any]) -> Resultado | None:  # noqa: PLR0911 - uma saída por regra
+    """``de`` e ``para`` na forma do contrato (§10.2), sem nenhum campo além dos sete."""
+    de, para = p.get("de"), p.get("para")
+    if not isinstance(de, list) or not isinstance(para, list):
+        return _recusa_da_edicao("VALOR_INVALIDO", "de e para são listas com a planilha inteira.")
+    if len(de) > MAXIMO_DE_LINHAS or len(para) > MAXIMO_DE_LINHAS:
+        return _recusa_da_edicao("VALOR_INVALIDO", f"no máximo {MAXIMO_DE_LINHAS} linhas.")
+    for nome, lista, chave in (("de", de, "posicao"), ("para", para, "origem")):
+        for i, item in enumerate(lista, start=1):
+            if not isinstance(item, dict):
+                return _recusa_da_edicao("VALOR_INVALIDO", f"{nome}[{i}] não é um objeto.")
+            extras = sorted(set(item) - set(CAMPOS_DA_PLANILHA) - {chave})
+            if extras:
+                return _nao_permitido(extras[0])
+            if set(item) != set(CAMPOS_DA_PLANILHA) | {chave}:
+                faltam = sorted(set(CAMPOS_DA_PLANILHA) | {chave} - set(item))
+                return _recusa_da_edicao("VALOR_INVALIDO", f"{nome}[{i}] sem {', '.join(faltam)}.")
+            for campo, (_, teto) in CAMPOS_DA_PLANILHA.items():
+                if not isinstance(item[campo], str) or len(item[campo]) > teto:
+                    return _recusa_da_edicao(
+                        "VALOR_INVALIDO", f"{nome}[{i}].{campo}: texto de até {teto} caracteres.", posicao=i
+                    )
+    if [item["posicao"] for item in de] != list(range(1, len(de) + 1)):
+        return _recusa_da_edicao("VALOR_INVALIDO", "de: as posições são 1, 2, 3… na ordem.")
+    origens = [item["origem"] for item in para if item["origem"] is not None]
+    if any(not isinstance(o, int) or isinstance(o, bool) or not 1 <= o <= len(de) for o in origens):
+        return _recusa_da_edicao("VALOR_INVALIDO", "para: origem é a posição de uma linha de de, ou null.")
+    if len(origens) != len(set(origens)):
+        return _recusa_da_edicao("ORIGEM_REPETIDA", "Duas linhas de para vêm da mesma linha de de.")
+    return None
+
+
+async def _editar_planilha(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PLR0911 - uma saída por recusa
+    from middleware_monitor.domain.extension_configurator import repository as repo
     from middleware_monitor.domain.extension_configurator.service import (
         adapter_for,
         build_template,
-        compute_line_hash,
-        line_status,
+        compute_statuses,
     )
     from middleware_monitor.integrations.extension_configurator.vendors.base import VendorConfigError
+    from middleware_monitor.integrations.network.base import is_valid_ip
 
-    campos, recusa = _campos_do_pedido(p, "campo", CAMPOS_DA_LINHA)
-    if recusa is not None:
+    if (recusa := _forma_da_planilha(p)) is not None:
         return recusa
-    for c in campos:
-        teto = CAMPOS_DA_LINHA[c["campo"]][1]
-        if not isinstance(c["para"], str) or len(c["para"]) > teto or not isinstance(c["de"], str):
-            return _recusa_da_edicao("VALOR_INVALIDO", f"{c['campo']}: texto de até {teto} caracteres.")
-    ramal = p["ramal"]
+    de: list[dict[str, Any]] = p["de"]
+    para: list[dict[str, Any]] = p["para"]
+
+    def divergente(env: ExtensionEnvironment) -> Resultado | None:
+        atual = _planilha_atual(env)
+        if _mesmo(atual, de):
+            return None
+        return _recusa_da_edicao(
+            "DE_DIVERGENTE",
+            "A planilha mudou no middleware desde o retrato que o NOC viu; nada foi gravado.",
+            atual=_sem_senha(atual),
+        )
+
     with session_factory() as db:
         env, recusa = _ambiente_do_pedido(db, p)
         if env is None:
             return recusa  # type: ignore[return-value]
-        linha, recusa = _linha_do_ambiente(env, ramal)
-        if linha is None:
-            return recusa  # type: ignore[return-value]
-        if (divergente := _divergentes_da_linha(linha, campos)) is not None:
-            return divergente
-        # A mesma validação da planilha local: o fabricante recebe estes valores?
-        novos = {CAMPOS_DA_LINHA[c["campo"]][0]: c["para"] for c in campos}
-        nome = novos.get("nome_visivel", linha.nome_visivel) or linha.numero_ramal
-        sonda = {
-            "conta_sip": linha.numero_ramal,
-            "senha_sip": "sonda",
-            "servidor_sip": "192.0.2.1",
-            "label": nome,
-            "display_name": nome,
-            "auth_id": linha.numero_ramal,
-            "numero_abreviado": novos.get("numero_abreviado", linha.numero_abreviado),
-            "account_active": 1,
-        }
-        try:
-            adapter_for(env.modelo_telefone).generate_config(build_template(merged_config_padrao(env)), sonda)
-        except VendorConfigError as exc:
-            return _recusa_da_edicao("VALOR_INVALIDO", f"O {env.modelo_telefone} não aceita o valor: {exc}")
-        env_id, linha_id = env.id, linha.id
+        if (div := divergente(env)) is not None:
+            return div
+        # A mesma validação da planilha local: IP que é IP, e o fabricante recebe cada linha.
+        adapter, template = adapter_for(env.modelo_telefone), build_template(repo.merged_config_padrao(env))
+        for i, ln in enumerate(para, start=1):
+            if ln["ip"] and not is_valid_ip(ln["ip"]):
+                return _recusa_da_edicao("VALOR_INVALIDO", f"Linha {i}: {ln['ip']!r} não é um IP.", posicao=i)
+            if not ln["ramal"]:
+                return _recusa_da_edicao("VALOR_INVALIDO", f"Linha {i}: o ramal é obrigatório.", posicao=i)
+            nome = ln["nomeVisivel"] or ln["ramal"]
+            sonda = {
+                "conta_sip": ln["ramal"],
+                "senha_sip": ln["senhaSip"] or "sonda",
+                "servidor_sip": ln["servidorSip"] or template.get("sip_server") or "192.0.2.1",
+                "label": nome,
+                "display_name": nome,
+                "auth_id": ln["userAuth"] or ln["ramal"],
+                "numero_abreviado": ln["numeroAbreviado"],
+                "account_active": 1,
+            }
+            try:
+                adapter.generate_config(template, sonda)
+            except VendorConfigError as exc:
+                return _recusa_da_edicao(
+                    "VALOR_INVALIDO", f"Linha {i}: o {env.modelo_telefone} não aceita — {exc}", posicao=i
+                )
+        env_id = env.id
+
     if (sem := _sem_prazo(ctx)) is not None:
         return sem
     backup, erro = await _backup()
     if backup is None:
-        return Resultado(ok=False, resultado={"ambienteId": env_id, "ramal": ramal, "campos": []}, erro=erro)
+        return Resultado(ok=False, resultado={"ambienteId": env_id, "linhas": []}, erro=erro)
+
     with session_factory() as db:
-        linha = db.get(ExtensionLine, linha_id)
-        if linha is None:
+        env = db.get(ExtensionEnvironment, env_id)
+        if env is None:
             return _recusa_da_edicao(
-                "RAMAL_NAO_ENCONTRADO", f"A linha do ramal {ramal} sumiu durante o backup; nada foi gravado."
+                "AMBIENTE_NAO_ENCONTRADO", "O ambiente sumiu durante o backup; nada foi gravado."
             )
         # De novo, já com o backup feito: a planilha pode ter mudado nesse meio-tempo.
-        if (divergente := _divergentes_da_linha(linha, campos)) is not None:
-            return divergente
-        for coluna, valor in novos.items():
-            setattr(linha, coluna, valor)
-        linha.updated_at = linha.environment.updated_at = _agora()
+        if (div := divergente(env)) is not None:
+            return div
+        por_posicao = {i: ln for i, ln in enumerate(sorted(env.lines, key=lambda x: x.posicao), start=1)}
+        linhas = []
+        for ln in para:
+            origem = por_posicao.get(ln["origem"]) if ln["origem"] is not None else None
+            linhas.append(
+                {
+                    # A linha que veio de outra mantém o id: o vínculo com o aparelho e o histórico ficam.
+                    "id": origem.id if origem is not None else None,
+                    "ip": ln["ip"],
+                    "numero_ramal": ln["ramal"],
+                    "user_auth": ln["userAuth"],
+                    "senha_sip": ln["senhaSip"],
+                    "servidor_sip": ln["servidorSip"],
+                    "numero_abreviado": ln["numeroAbreviado"],
+                    "nome_visivel": ln["nomeVisivel"],
+                }
+            )
+        repo.save_lines(db, env, linhas)
+        env.updated_at = _agora()
         db.commit()
+
     with session_factory() as db:
-        linha = db.get(ExtensionLine, linha_id)
-        assert linha is not None
-        gravados = [
-            {"campo": c["campo"], "gravado": getattr(linha, CAMPOS_DA_LINHA[c["campo"]][0])} for c in campos
-        ]
-        status = line_status(linha, compute_line_hash(linha.environment, linha))
-    certo = all(g["gravado"] == c["para"] for g, c in zip(gravados, campos, strict=True))
+        env = db.get(ExtensionEnvironment, env_id)
+        assert env is not None
+        relida = _planilha_atual(env)
+        status = {st["id"]: st["status"] for st in compute_statuses(env, list(env.lines))}
+        ids = [ln.id for ln in sorted(env.lines, key=lambda x: x.posicao)]
+    visiveis = ("ramal", "ip", "servidorSip", "numeroAbreviado", "nomeVisivel", "senhaSip")
+    certo = len(relida) == len(para) and all(
+        all(r[c] == q[c] for c in visiveis) for r, q in zip(relida, para, strict=True)
+    )
+    citadas = [ln["origem"] for ln in para if ln["origem"] is not None]
+    alteradas = sum(
+        1
+        for ln in para
+        if ln["origem"] is not None and any(ln[c] != de[ln["origem"] - 1][c] for c in CAMPOS_DA_PLANILHA)
+    )
     return Resultado(
         ok=certo,
         resultado={
             "ambienteId": env_id,
-            "ramal": ramal,
             "backup": backup,
-            "campos": gravados,
-            "status": status,
+            "linhas": [
+                {
+                    "posicao": r["posicao"],
+                    "ramal": r["ramal"],
+                    "ip": r["ip"],
+                    "status": status.get(i, "pending"),
+                }
+                for r, i in zip(relida, ids, strict=True)
+            ],
+            "criadas": sum(1 for ln in para if ln["origem"] is None),
+            "removidas": len(de) - len(citadas),
+            "alteradas": alteradas,
         },
         erro=None if certo else "A releitura não bate com o pedido; confira a planilha local.",
     )
@@ -771,9 +870,11 @@ ACOES: dict[str, Acao] = {
     "capacidades": Acao(LEITURA, _capacidades),
     "logs": Acao(LEITURA, _logs, opcionais=frozenset({"linhas", "nivel"})),
     "normalize": Acao(ESCRITA, _normalize, obrigatorios=frozenset({"ramal"})),
-    "reaplicar_config_do_ambiente": Acao(ESCRITA, _reaplicar, obrigatorios=frozenset({"ramal"})),
-    "editar_linha_do_ambiente": Acao(
-        ESCRITA, _editar_linha, obrigatorios=frozenset({"ambienteId", "ramal", "campos"})
+    "reaplicar_config_do_ambiente": Acao(
+        ESCRITA, _reaplicar, opcionais=frozenset({"ramal", "ambienteId", "posicao"})
+    ),
+    "editar_planilha_do_ambiente": Acao(
+        ESCRITA, _editar_planilha, obrigatorios=frozenset({"ambienteId", "de", "para"})
     ),
     "editar_config_do_ambiente": Acao(
         ESCRITA, _editar_config, obrigatorios=frozenset({"ambienteId", "campos"})
