@@ -36,6 +36,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   `set_ip` e qualquer campo de rede ficam fora do caminho remoto, com teste. A tela
   **Sistema → NOC** mostra a última tarefa e quem pediu; a trilha local grava
   `operador = noc:<e-mail>`. Ver `docs/AGENTE-NOC.md`, itens 2, 3 e 10.
+- **Retrato dos ambientes e do coletor MQTT para o NOC (etapa I3 do NOC).** O lote de
+  telemetria passa a levar:
+  - `ambientes[]` com o `id` do ambiente, a situação, a contagem por status, a última
+    aplicação, as seções que o modelo tem e as linhas da planilha — sem senha SIP, usuário
+    de autenticação ou servidor SIP;
+  - a config padrão por **lista branca**, em que as seis chaves de credencial viajam só como
+    `definida`, e chave nova em `defaults.py` sem lado decidido quebra o teste;
+  - `ambienteId` em `perfis[]` e `aplicacoes[]`;
+  - o estado de cada broker em `coletor[]`, o histórico de conexão por cursor e as mensagens
+    por hora **só das horas em que o coletor ouviu**.
+
+  Ver `docs/AGENTE-NOC.md`, itens 11 e 12.
 - **Backup automático atrasado roda no boot.** Se o app estava fechado no horário e o
   snapshot mais novo tem mais de um dia, um backup sai 3 minutos depois de abrir
   (`docs/AGENTE-NOC.md`, item 9).

@@ -52,6 +52,7 @@ KEY_CURSOR_AMOSTRAS = f"{_PREFIX}cursor_amostras"
 KEY_CURSOR_EVENTOS = f"{_PREFIX}cursor_eventos"
 KEY_CURSOR_APLICACOES = f"{_PREFIX}cursor_aplicacoes"
 KEY_CURSOR_COLETA = f"{_PREFIX}cursor_coleta"
+KEY_CURSOR_CONEXOES = f"{_PREFIX}cursor_conexoes_mqtt"
 KEY_TELEMETRIA_EM = f"{_PREFIX}telemetria_enviada_em"
 KEY_TELEMETRIA_DETALHE = f"{_PREFIX}telemetria_detalhe"
 CURSORES = {
@@ -59,6 +60,7 @@ CURSORES = {
     "eventos": KEY_CURSOR_EVENTOS,
     "aplicacoes": KEY_CURSOR_APLICACOES,
     "coleta": KEY_CURSOR_COLETA,
+    "conexoes": KEY_CURSOR_CONEXOES,
 }
 
 TODAS_AS_CHAVES: frozenset[str] = frozenset(
@@ -82,6 +84,7 @@ TODAS_AS_CHAVES: frozenset[str] = frozenset(
         KEY_CURSOR_EVENTOS,
         KEY_CURSOR_APLICACOES,
         KEY_CURSOR_COLETA,
+        KEY_CURSOR_CONEXOES,
         KEY_TELEMETRIA_EM,
         KEY_TELEMETRIA_DETALHE,
     }

@@ -68,6 +68,7 @@ from middleware_monitor.domain.extension_configurator.service import (
     compute_line_hash,
     compute_statuses,
     line_status,
+    status_resumo,
     validate_config_padrao,
 )
 from middleware_monitor.domain.extension_configurator.softkeys import softkey_catalog_for
@@ -86,43 +87,6 @@ log = get_logger("api.extension_configurator")
 # senha SIP da planilha, que sai mascarada e volta mascarada quando ninguém a
 # editou. **Voltar mascarado significa "mantém a atual"** — ver `_repor_senhas`.
 _MASK_PLAIN = "********"
-
-
-def _status_resumo(lines: list[ExtensionLine]) -> dict[str, Any]:
-    """Agrega o status das linhas do ambiente em 1 categoria + contadores.
-
-    Classifica pelo ``ultimo_status`` gravado pela aplicação (``update_line_status``):
-      * ``"ok"``   → applied
-      * ``"erro"`` → error
-      * ``None``   → registered (se o telefone já está registrado no PBX via
-        device vinculado ``available``) ou pending (não está no sistema).
-
-    Resumo rápido para os cards da lista (não recomputa hash — importante com
-    muitos ambientes). O status fino por linha, incluindo ``outdated`` quando a
-    config muda após aplicar, é calculado na tela de detalhe via
-    ``compute_statuses``.
-    """
-    if not lines:
-        return {"applied": 0, "registered": 0, "pending": 0, "error": 0, "agregado": "vazio"}
-    applied = sum(1 for ln in lines if ln.ultimo_status == "ok")
-    error = sum(1 for ln in lines if ln.ultimo_status == "erro")
-    # nunca aplicados que já estão registrados no PBX não contam como pendentes
-    registered = sum(
-        1 for ln in lines
-        if ln.ultimo_status not in ("ok", "erro")
-        and ln.device is not None and ln.device.logical_status == "available"
-    )
-    pending = len(lines) - applied - error - registered
-    if error > 0:
-        agregado = "erros"
-    elif pending > 0:
-        agregado = "pendentes"
-    else:
-        agregado = "ok"
-    return {
-        "applied": applied, "registered": registered, "pending": pending,
-        "error": error, "agregado": agregado,
-    }
 
 
 def _searchable_text(env: ExtensionEnvironment) -> str:
@@ -149,7 +113,7 @@ def _env_summary(
         "devices_vinculados": devices_vinculados,
         "atualizado_em": iso_utc(env.updated_at),
         "ultima_execucao": _run_dict(last) if last else None,
-        "status_resumo": _status_resumo(lines),
+        "status_resumo": status_resumo(lines),
         "searchable": _searchable_text(env),
     }
 

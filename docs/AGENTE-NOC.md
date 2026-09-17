@@ -343,6 +343,30 @@ Hoje o ambiente só chega ao NOC como o **nome** repetido em cada linha de `perf
 Do lado do NOC, uma invariante nova em `/sistema` conta as chaves fora da lista que
 chegarem — e a contagem tem de ser zero.
 
+> **✅ Feito em 2026-09-17** (`domain/noc/retrato.py`, testes em `tests/api/test_noc_retrato.py`).
+>
+> **Uma mudança de forma, com motivo: `configPadrao` é uma lista, não um objeto.** Cada
+> item é `{ chave, valor }` ou `{ chave, definida }`. O NOC tira de todo lote as chaves com
+> nome de segredo, em qualquer profundidade (`dominio/telemetria/telemetria.ts`). Um
+> `{"web_password": {"definida": true}}` sumiria na entrada, e a tela diria que não há
+> senha. Com o nome da chave como valor, o filtro de lá continua valendo e a informação
+> chega. Há teste que passa o retrato pelo filtro do NOC e exige que nada se perca.
+>
+> **A terceira lista existe:** `CONFIG_NAO_SAI` guarda `sip_server`, `sip_transport`,
+> `web_language` e `lcd_language`. O endereço do PBX é rede para o aparelho. Os idiomas
+> ficam fora até o TELAS §14 pedir.
+>
+> **Campos a mais**, que as telas v2 do NOC usam:
+> - `contagemPorStatus`, com o status fino da planilha (`applied`, `registered`, `pending`,
+>   `outdated`, `error`, `invalid`);
+> - `hora { timezone, ntpServer, origemFuso, origemNtp }`, que é o "herdado" do TELAS §14;
+> - `atualizadoEm`;
+> - nas linhas, `dispositivo` (o ramal do aparelho vinculado), porque o NOC conhece o
+>   aparelho pelo ramal e não pelo `deviceId` local.
+>
+> **Medido na homologação** (4 ambientes): o lote monta em 132 ms e ocupa 2,6 KB com gzip.
+> Nenhum dos 18 valores sensíveis reais aparece no lote.
+
 ### 12 — O estado do coletor MQTT não sai daqui
 
 `src/middleware_monitor/integrations/mqtt_client.py` · `core/models.py::MqttConnectionEvent`
@@ -361,6 +385,31 @@ repositório, que grava o histórico de conexão junto justamente por isso.
   `detalhe`;
 - `mensagensPorHora[]` das últimas 24 h, só das horas em que o coletor estava conectado
   (hora sem conexão **não vai como zero**).
+
+> **✅ Feito em 2026-09-17** (`domain/noc/retrato.py`).
+>
+> **Uma mudança de lugar, com motivo: o estado atual (`coletor[]`) vai no lote, não no
+> heartbeat.** O heartbeat do NOC é um DTO fechado (`forbidNonWhitelisted`), e um campo
+> novo ali faria todo NOC que ainda não o conhece responder 400. O agente ficaria sem
+> conexão. O lote é JSON lido chave a chave, já sai a cada minuto e continua com
+> `versaoDoContrato: 1`.
+>
+> **As formas:**
+> - **`coletor[]`:** `{ brokerId, broker, endereco, estado, desde, detalhe, mensagens24h,
+>   ultimaMensagemEm }`.
+>   - `endereco` é só `host:porta`: usuário e senha do broker nunca entram.
+>   - Sem broker ligado, a lista traz **uma** entrada `estado: "sem_broker"`. Lista vazia
+>     seria indistinguível de "este agente não informa o coletor".
+>   - Com o coletor rodando, o estado vem da memória. Sem ele, vem do último evento gravado.
+> - **`conexoesMqtt[]`:** `{ id, brokerId, em, estado, detalhe }`, por cursor, começando
+>   24 h para trás.
+>   - `estado` é o do ledger: `startup`, `connected`, `subscribed`, `disconnected`, `error`
+>     ou `stopped`.
+>   - `startup` e `stopped` têm `brokerId: null`, porque valem para todos os brokers.
+> - **`mensagensPorHora[]`:** `{ brokerId, broker, hora, mensagens, coberturaPct }`, pela
+>   mesma prova de cobertura da tela local (`domain/mqtt/coverage.py`).
+>   - Hora com cobertura e sem mensagem vai com `0`: é silêncio medido.
+>   - Hora sem nenhum segundo de cobertura não vai.
 
 ### 13 — Edição central: escrever na planilha e na config padrão a pedido do NOC
 
@@ -407,7 +456,7 @@ credencial dos aparelhos, que não sai daqui.
 | **2** ✅ | laço de long-poll (2) · executor com idempotência (3) — **v2.13.0** |
 | **3** ✅ | backup diário que roda (9) · `set_ip` fora do remoto, com teste (10) — **v2.13.0** |
 | **6** | `publish` no cliente MQTT (8) · ~~mTLS~~ (feito na Fase 1) |
-| **I3 do NOC** | retrato de `ambientes[]` com `id` e lista branca (11) · estado do coletor MQTT (12) |
+| **I3 do NOC** ✅ | retrato de `ambientes[]` com `id` e lista branca (11) · estado do coletor MQTT (12) — 2026-09-17, no lote de telemetria |
 | **I5 do NOC** | edição central com conferência do `de` e releitura (13) |
 
 ---
