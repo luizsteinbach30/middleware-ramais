@@ -453,6 +453,7 @@ async def _normalize(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PL
 async def _reaplicar(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PLR0911 - uma saída por recusa
     from middleware_monitor.domain.extension_configurator import run_state
     from middleware_monitor.domain.extension_configurator.apply import run_apply
+    from middleware_monitor.domain.noc.retrato import ordem_da_planilha
 
     with session_factory() as db:
         if "posicao" in p or "ambienteId" in p:
@@ -463,7 +464,7 @@ async def _reaplicar(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PL
             env, recusa = _ambiente_do_pedido(db, p)
             if env is None:
                 return recusa  # type: ignore[return-value]
-            ordenadas = sorted(env.lines, key=lambda ln: ln.posicao)
+            ordenadas = ordem_da_planilha(env)
             if not 1 <= p["posicao"] <= len(ordenadas):
                 return _recusa_da_edicao(
                     "LINHA_NAO_ENCONTRADA", f"O ambiente {env.nome} não tem a linha {p['posicao']}."
@@ -600,8 +601,9 @@ def _ambiente_do_pedido(db: Any, p: dict[str, Any]) -> tuple[ExtensionEnvironmen
 def _planilha_atual(env: ExtensionEnvironment) -> list[dict[str, Any]]:
     """A planilha como o retrato a mostra: por posição, com a senha já decifrada."""
     from middleware_monitor.domain.extension_configurator import repository as repo
+    from middleware_monitor.domain.noc.retrato import ordem_da_planilha
 
-    linhas = sorted(env.lines, key=lambda ln: ln.posicao)
+    linhas = ordem_da_planilha(env)
     saida = []
     for i, ln in enumerate(linhas, start=1):
         item: dict[str, Any] = {"posicao": i}
@@ -658,6 +660,7 @@ async def _editar_planilha(p: dict[str, Any], ctx: Contexto) -> Resultado:  # no
         build_template,
         compute_statuses,
     )
+    from middleware_monitor.domain.noc.retrato import ordem_da_planilha
     from middleware_monitor.integrations.extension_configurator.vendors.base import VendorConfigError
     from middleware_monitor.integrations.network.base import is_valid_ip
 
@@ -723,7 +726,7 @@ async def _editar_planilha(p: dict[str, Any], ctx: Contexto) -> Resultado:  # no
         # De novo, já com o backup feito: a planilha pode ter mudado nesse meio-tempo.
         if (div := divergente(env)) is not None:
             return div
-        por_posicao = {i: ln for i, ln in enumerate(sorted(env.lines, key=lambda x: x.posicao), start=1)}
+        por_posicao = dict(enumerate(ordem_da_planilha(env), start=1))
         linhas = []
         for ln in para:
             origem = por_posicao.get(ln["origem"]) if ln["origem"] is not None else None
@@ -749,7 +752,7 @@ async def _editar_planilha(p: dict[str, Any], ctx: Contexto) -> Resultado:  # no
         assert env is not None
         relida = _planilha_atual(env)
         status = {st["id"]: st["status"] for st in compute_statuses(env, list(env.lines))}
-        ids = [ln.id for ln in sorted(env.lines, key=lambda x: x.posicao)]
+        ids = [ln.id for ln in ordem_da_planilha(env)]
     visiveis = ("ramal", "ip", "servidorSip", "numeroAbreviado", "nomeVisivel", "senhaSip")
     certo = len(relida) == len(para) and all(
         all(r[c] == q[c] for c in visiveis) for r, q in zip(relida, para, strict=True)

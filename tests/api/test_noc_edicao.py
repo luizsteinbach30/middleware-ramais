@@ -376,3 +376,17 @@ async def test_chave_da_config_fora_da_lista_e_recusada(db, aparelho, chave) -> 
     assert pronta.corpo["resultado"]["recusa"] == "CAMPO_NAO_PERMITIDO"
     db.expire_all()
     assert db.get(ExtensionEnvironment, env.id).config_padrao == antes
+
+
+async def test_o_numero_da_linha_do_retrato_e_o_que_o_executor_aceita(db, aparelho) -> None:
+    """A planilha do middleware grava ``posicao`` a partir de 0; o retrato e o executor falam 1..N."""
+    from middleware_monitor.domain.noc import retrato as rt
+
+    env = _ambiente(db, ("1001", "10.0.0.11"), ("1002", "10.0.0.12"))
+    assert [ln.posicao for ln in _linhas(db, env)] == [0, 1]
+    [amb] = rt.ambientes(db)
+    de = [{"posicao": ln["posicao"], **{c: ln[c] for c in CAMPOS}} for ln in amb["linhas"]]
+    assert [ln["posicao"] for ln in de] == [1, 2]
+    pronta = await _processar(_editar(env, de, [{**_para(de)[1], "nomeVisivel": "Segunda"}, _para(de)[0]]))
+    assert pronta.corpo["ok"] is True, pronta.corpo
+    assert [ln.numero_ramal for ln in _linhas(db, env)] == ["1002", "1001"]
