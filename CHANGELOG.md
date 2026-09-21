@@ -2,7 +2,7 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
-## [Unreleased] — 2.13.0
+## [2.13.0] — 2026-09-21
 
 ### Added
 
@@ -68,6 +68,28 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 - **Backup automático atrasado roda no boot.** Se o app estava fechado no horário e o
   snapshot mais novo tem mais de um dia, um backup sai 3 minutos depois de abrir
   (`docs/AGENTE-NOC.md`, item 9).
+
+### Removed
+
+- **Os webhooks saíram** (decisão do dono, 16/09: *"não será mais utilizado"*). Sai o módulo
+  inteiro: envio, tela de logs, rotas `/webhook-logs` e `/api/webhooks/*` (agora `404`), a tabela
+  `webhook_events`, as métricas, o item do menu e os destinos configurados. **Quem tinha um
+  receptor de pé para de receber ao atualizar** — o que os webhooks mandavam (`extensions` e
+  `devices`) vai para o NOC pela telemetria desta mesma versão, e leva mais: amostras de ping,
+  eventos de ramal, aplicações de configuração e perfis. `docs/WEBHOOK_ARQUITETURA.md` fica
+  versionado e marcado como OBSOLETO, para quem precisar desligar o outro lado saber o que
+  chegava.
+- A máquina de segredo do KV de configuração, que só o token do destino usava. Segredo com cifra
+  continua existindo, com dono próprio em cada caso (USCall, broker MQTT, credencial do NOC,
+  passphrase do backup, senhas do Configurador).
+
+### Changed
+
+- **`webhook_interval_minutes` virou `coleta_interval_minutes`.** Apesar do nome, ela sempre
+  governou a cadência da coleta do USCall e do ping da frota — apagá-la junto com os webhooks
+  pararia o coletor. A leitura aceita os dois nomes, porque banco restaurado de backup antigo traz
+  o nome velho. Migration 0014, que também marca `db.compactar_pendente`: `DROP TABLE` não apaga o
+  texto das páginas livres, e aquela tabela guardava corpo de requisição e token de destino.
 
 ## [2.12.5] — 2026-09-09
 
