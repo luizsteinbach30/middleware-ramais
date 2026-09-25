@@ -82,10 +82,9 @@ from middleware_monitor.integrations.network.base import is_valid_ip
 router = APIRouter(prefix="/api/extension-configurator", tags=["extension-configurator"])
 log = get_logger("api.extension_configurator")
 
-# Placeholder ASCII para mascarar senhas. Serve a dois usos: o preview do XML
-# (gera XML válido em todos os vendors, e o XML real nunca chega à tela) e a
-# senha SIP da planilha, que sai mascarada e volta mascarada quando ninguém a
-# editou. **Voltar mascarado significa "mantém a atual"** — ver `_repor_senhas`.
+# Placeholder ASCII para mascarar senhas no preview do XML (gera XML válido em
+# todos os vendors). A planilha NÃO usa: no middleware a senha SIP fica visível;
+# quem mascara é a tela do NOC.
 _MASK_PLAIN = "********"
 
 
@@ -128,11 +127,9 @@ def _line_dict(
         "ip": line.ip,
         "numero_ramal": line.numero_ramal,
         "user_auth": line.user_auth,
-        # A senha SIP NÃO volta ao navegador (v2.14.0). A planilha mostra o
-        # placeholder e o devolve intacto quando ninguém digitou nada; `save_lines`
-        # traduz isso como "mantém a que está". Antes daqui, cada abertura da tela
-        # de um ambiente carregava a senha de todos os ramais dele para o browser.
-        "senha_sip": _MASK_PLAIN if line.senha_sip else "",
+        # Decifrada e visível: no middleware o operador vê e edita a senha SIP
+        # na planilha. A cifra é só em repouso (banco); mascarar é papel do NOC.
+        "senha_sip": repo.senha_sip_de(line),
         "servidor_sip": line.servidor_sip,
         "numero_abreviado": line.numero_abreviado,
         "nome_visivel": line.nome_visivel,
@@ -306,32 +303,6 @@ async def ping_batch(
             db.commit()
 
     return result
-
-
-def _repor_senhas(
-    db: DBSession, env_id: str, rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Devolve as linhas com a senha SIP real onde a planilha mandou a máscara.
-
-    A tela nunca recebeu a senha, então ela devolve `********` em toda linha que
-    o operador não editou. Gravar isso seria trocar a senha de todo ramal do
-    ambiente por oito asteriscos na primeira vez que alguém mexesse no nome de
-    um telefone — e o parque inteiro pararia de registrar.
-
-    Linha nova (id que ainda não existe) com a máscara vira senha vazia: não há
-    o que manter, e vale mais o ramal nascer sem senha, visível como erro, do
-    que nascer com um valor que ninguém digitou.
-    """
-    atuais = {ln.id: repo.senha_sip_de(ln) for ln in repo.list_lines(db, env_id)}
-    saida: list[dict[str, Any]] = []
-    for r in rows:
-        if str(r.get("senha_sip", "") or "") != _MASK_PLAIN:
-            saida.append(r)
-            continue
-        linha = dict(r)
-        linha["senha_sip"] = atuais.get(str(r.get("id") or ""), "")
-        saida.append(linha)
-    return saida
 
 
 def _xml_to_campos(xml_bytes: bytes, *, url_decode: bool) -> list[dict[str, str]]:
@@ -732,7 +703,7 @@ def save_lines(
     env = repo.get_environment(db, env_id)
     if env is None:
         raise HTTPException(404, "ambiente nao encontrado")
-    repo.save_lines(db, env, _repor_senhas(db, env_id, payload.linhas))
+    repo.save_lines(db, env, payload.linhas)
     db.commit()
     return environment_detail(env_id, _user=_user, db=db)
 
