@@ -497,6 +497,38 @@ abre um WebSocket de saída em `agente/v1/tunel/{sessao}` (mTLS + Bearer). O con
 - **Sem credencial injetada**, 60 minutos no máximo, reconexão limitada, e cada sessão no log com a pessoa
   (`noc_tunel_aberto` / `noc_tunel_encerrado`).
 
+### 15 — Telemetria leve: o retrato só viaja quando muda
+
+`src/middleware_monitor/domain/noc/telemetria.py` · `retrato.py` · `jobs/noc_agent.py` · **ADR 0026 do NOC** · pendente
+
+Em menos de uma semana de produção o banco do NOC passou de 5 GB. O lado do NOC já foi corrigido (branch
+`fix/telemetria-leve`: o lote processado não guarda mais o corpo, ramal igual não é regravado, ping com resumo por
+hora, retenção por tipo). O que sobra é **daqui**: a cada 60 s, e em até 10 lotes por ciclo quando há fila, todo
+lote leva o retrato **inteiro** — todos os dispositivos, todas as linhas de todos os ambientes (com a senha SIP),
+os perfis, o coletor e as 24 horas de mensagens. No Assai são 7.673 ramais e 308 ambientes por minuto, mudando
+quase nada. É o que AWS IoT Shadow, Azure Device Twin e o proxy do Zabbix evitam: reporta-se o que mudou.
+
+- **Cada parte do retrato só quando o hash dela muda.** `dispositivos`, `perfis`, `ambientes`, `coletor` e
+  `mensagensPorHora` ganham, cada um, o sha256 do JSON canônico — o mesmo cálculo do manifesto
+  (`manifesto.py`, sem campos voláteis). O agente guarda o último hash **entregue com 202** e só inclui a parte
+  quando ele mudou. **Retrato completo de segurança a cada 15 min**, e sempre no primeiro lote depois de enrolar ou
+  de o NOC voltar.
+- **O NOC já entende a ausência:** parte ausente é "não mudou", não lista vazia (contrato, §6.6 do
+  `CONTRATO-DO-AGENTE.md` do NOC). Lista vazia continua querendo dizer "não há nenhum" — mandar `[]` por engano
+  marcaria todos os ramais como ausentes.
+- **Fila atrasada sem retrato repetido.** Nos lotes de esvaziamento (`mais=True`), só o último do ciclo leva o
+  retrato; os anteriores levam só o que anda por cursor.
+- **Senha SIP só na mudança**, junto com `ambientes`. Hoje ela vai a cada minuto, e a docstring de
+  `retrato.ambientes()` diz o contrário do código.
+- **`Idempotency-Key` estável entre retentativas.** Hoje cada montagem gera um uuid novo, e o lote que falhou volta
+  com outra chave. Guardar a chave e o lote pendente até o 202.
+- **`dispositivos` sem o que muda a cada minuto por nada.** Conferir se algum campo do retrato de dispositivo muda
+  sem mudança real (hora formatada, ordem) — isso anularia o hash.
+- **Compatibilidade:** `versaoDoContrato` continua `1`. NOC antigo recebe lote sem parte e também não a projeta.
+- **Pronto quando:** teste de que dois lotes seguidos sem mudança saem sem retrato; de que a mudança de um ramal
+  manda `dispositivos` de novo; de que o retrato de segurança sai aos 15 min; e o `.run` testado no Linux (paridade
+  em toda release).
+
 ---
 
 ## Resumo por fase
@@ -511,6 +543,7 @@ abre um WebSocket de saída em `agente/v1/tunel/{sessao}` (mTLS + Bearer). O con
 | **I3 do NOC** ✅ | retrato de `ambientes[]` com `id` e lista branca (11) · estado do coletor MQTT (12) — 2026-09-17, no lote de telemetria |
 | **I5 do NOC** | edição central com conferência do `de` e releitura (13) |
 | **Túnel** | acesso web a equipamento da LAN e a USCall cadastrado, com a conexão saindo daqui (14) — 2026-09-25 |
+| **Telemetria leve** | retrato só quando muda, sem retrato repetido na fila, chave estável na retentativa (15) |
 
 ---
 
