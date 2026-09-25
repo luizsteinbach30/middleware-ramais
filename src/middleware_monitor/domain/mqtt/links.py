@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
 
@@ -98,7 +98,10 @@ def _consultar(db: DBSession, ramais: frozenset[str]) -> dict[str, RamalLinks]:
         .order_by(Device.name, ExtensionLine.updated_at.desc())
     )
     out: dict[str, RamalLinks] = {}
-    for row in db.execute(stmt).all():
+    for linha in db.execute(stmt).all():
+        # Onze colunas: as sobrecargas tipadas do `select()` param em dez, e o mypy 2.3
+        # passou a ler `row[10]` como fora da tupla. A tupla solta diz a verdade.
+        row: tuple[Any, ...] = tuple(linha)
         nome = str(row[0])
         # Nada impede duas linhas apontarem para o mesmo device (o vínculo é por
         # IP e o operador pode repetir). Fica a mais recente, que é a ordenação
