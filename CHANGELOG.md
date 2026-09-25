@@ -2,6 +2,17 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [Unreleased]
+
+### Fixed
+
+- **A senha SIP volta a aparecer na planilha do ambiente.** A cifra em repouso tinha
+  passado a mandar `********` para a tela, e isso nunca foi pedido: no middleware a
+  senha fica visível e editável; quem mascara é a tela do NOC. A cifra no banco
+  continua. Saiu junto a regra "máscara devolvida = mantém a atual" — com a senha
+  real na tela, ela sobrava e ainda trocaria uma senha que fosse literalmente
+  `********`.
+
 ## [2.13.0] — 2026-09-21
 
 ### Added
