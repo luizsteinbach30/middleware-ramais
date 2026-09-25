@@ -39,6 +39,9 @@ dependencies = [
     # e sem ele `ZoneInfo("America/Sao_Paulo")` levanta ZoneInfoNotFoundError.
     "tzlocal>=5.2",
     "tzdata>=2024.1",
+    # Tunel de acesso web do NOC (domain/noc/tunel.py). Ja vinha de carona pelo
+    # uvicorn[standard]; explicita porque o codigo agora depende dela diretamente.
+    "websockets>=13",
 ]
 
 [project.optional-dependencies]

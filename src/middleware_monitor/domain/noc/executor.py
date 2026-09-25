@@ -865,6 +865,36 @@ async def _editar_config(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa
 
 # --- A lista de permissão ---------------------------------------------------------------
 
+# --- Acesso web pelo túnel (item 14) -------------------------------------------------------
+
+
+async def _abrir_acesso_web(p: dict[str, Any], ctx: Contexto) -> Resultado:
+    """Abre o túnel e responde logo: a sessão roda em segundo plano, fora do
+    long-poll. O destino é conferido em ``tunel`` — é lá que mora a regra."""
+    from middleware_monitor.domain.noc import tunel
+    from middleware_monitor.domain.uscall import repository as uscall_repo
+    from middleware_monitor.settings import get_settings
+
+    sessao = p.get("sessao")
+    if not (isinstance(sessao, str) and _ID.match(sessao)):
+        return Resultado(ok=False, erro="sessao inválida.")
+    try:
+        if p.get("tipoDeDestino") == "lan":
+            destino = tunel.destino_da_lan(
+                p.get("destino"), p.get("porta"), p.get("esquema"), porta_local=get_settings().port
+            )
+        elif p.get("tipoDeDestino") == "uscall":
+            with session_factory() as db:
+                servidores = [(s.nome, s.host) for s in uscall_repo.list_servers(db, enabled_only=True)]
+            destino = tunel.destino_uscall(p.get("uscall"), servidores)
+        else:
+            return Resultado(ok=False, erro="tipoDeDestino: use lan ou uscall.")
+        nova = tunel.abrir(sessao, destino, canal=ctx.canal, credencial=ctx.credencial, operador=ctx.operador)
+    except tunel.DestinoRecusado as exc:
+        return Resultado(ok=False, erro=str(exc))
+    return Resultado(ok=True, resultado={"aberto": True, "reaberto": not nova, "destino": destino.rotulo})
+
+
 ACOES: dict[str, Acao] = {
     "ping": Acao(LEITURA, _ping, obrigatorios=frozenset({"ramal"})),
     "status_do_ramal": Acao(LEITURA, _status_do_ramal, obrigatorios=frozenset({"ramal"})),
@@ -881,6 +911,15 @@ ACOES: dict[str, Acao] = {
     ),
     "editar_config_do_ambiente": Acao(
         ESCRITA, _editar_config, obrigatorios=frozenset({"ambienteId", "campos"})
+    ),
+    # Escrita: pela interface do equipamento a pessoa pode mudar qualquer coisa,
+    # inclusive a rede (exceção do dono, 25/09 — ADR 0007). Chamar de leitura
+    # seria mentir para quem decide aprovação e reentrega.
+    "abrir_acesso_web": Acao(
+        ESCRITA,
+        _abrir_acesso_web,
+        obrigatorios=frozenset({"sessao", "tipoDeDestino"}),
+        opcionais=frozenset({"destino", "porta", "esquema", "uscall"}),
     ),
 }
 
