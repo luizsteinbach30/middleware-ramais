@@ -120,6 +120,8 @@ def test_lista_de_permissao_e_fechada_e_nao_tem_rede() -> None:
         # Item 13 e ADR 0012: gravam na planilha, nunca no aparelho (tests/api/test_noc_edicao.py).
         "editar_planilha_do_ambiente",
         "editar_config_do_ambiente",
+        # Item 14 e ADR 0007: tunel de acesso web; destino conferido em domain/noc/tunel.py.
+        "abrir_acesso_web",
     }
     assert "set_ip" not in executor.ACOES
     assert "send_config" not in executor.ACOES

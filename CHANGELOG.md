@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Unreleased]
 
+### Added
+
+- **Túnel de acesso web pelo NOC** (item 14 do `docs/AGENTE-NOC.md`, ADR 0007). O NOC pede
+  `abrir_acesso_web` e o middleware abre um WebSocket **de saída** pelo canal mTLS. Por ele a pessoa
+  no NOC usa a interface web de um equipamento da rede local (só IPv4 privado) ou de um servidor USCall
+  cadastrado aqui (pelo nome). Nada entra na rede do cliente. A sessão dura no máximo 60 minutos,
+  e a senha do equipamento é digitada por quem abre.
+
 ### Fixed
 
 - **A senha SIP volta a aparecer na planilha do ambiente.** A cifra em repouso tinha

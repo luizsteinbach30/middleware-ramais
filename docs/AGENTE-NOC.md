@@ -480,6 +480,23 @@ credencial dos aparelhos, que não sai daqui.
   que quebram se forem chamadas (`tests/api/test_noc_edicao.py`).
 - Os dois verbos entram em `executor.ACOES` e, por isso, no manifesto.
 
+### 14 — Túnel de acesso web: abrir a interface de um equipamento a partir do NOC
+
+`src/middleware_monitor/domain/noc/tunel.py` · **ADR 0007** · ✅ **feito (25/09, branch `feat/acesso-web-remoto`)**
+
+Uma pessoa no NOC abre, no navegador dela, a interface web de um equipamento da rede do cliente ou do painel de um
+USCall cadastrado aqui. **A conexão sai daqui**: a tarefa `abrir_acesso_web` chega pelo long-poll, e o middleware
+abre um WebSocket de saída em `agente/v1/tunel/{sessao}` (mTLS + Bearer). O contrato dos frames está em
+`noc-workconnect/docs/CONTRATO-DO-AGENTE.md` §11.
+
+- **Pedido:** `{ sessao, tipoDeDestino: "lan", destino, porta, esquema }` ou `{ sessao, tipoDeDestino: "uscall",
+  uscall }`. Resultado: `{ aberto, reaberto, destino }`.
+- **Destino conferido aqui:** só IPv4 privado em `lan`, e só pelo nome do cadastro em `uscall`.
+- **Exceção declarada ao item 10:** pelo túnel a pessoa alcança a página de rede do aparelho. As tarefas continuam
+  sem campo de rede.
+- **Sem credencial injetada**, 60 minutos no máximo, reconexão limitada, e cada sessão no log com a pessoa
+  (`noc_tunel_aberto` / `noc_tunel_encerrado`).
+
 ---
 
 ## Resumo por fase
@@ -493,6 +510,7 @@ credencial dos aparelhos, que não sai daqui.
 | **6** | `publish` no cliente MQTT (8) · ~~mTLS~~ (feito na Fase 1) |
 | **I3 do NOC** ✅ | retrato de `ambientes[]` com `id` e lista branca (11) · estado do coletor MQTT (12) — 2026-09-17, no lote de telemetria |
 | **I5 do NOC** | edição central com conferência do `de` e releitura (13) |
+| **Túnel** | acesso web a equipamento da LAN e a USCall cadastrado, com a conexão saindo daqui (14) — 2026-09-25 |
 
 ---
 
