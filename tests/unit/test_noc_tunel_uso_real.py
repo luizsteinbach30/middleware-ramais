@@ -200,7 +200,9 @@ class _FechaAConexaoParada:
     seguinte da mesma conexão, lê e fecha sem responder — a corrida de quem fecha a conexão
     parada enquanto o próximo pedido já estava a caminho."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, um_por_conexao: bool = False) -> None:
+        # um_por_conexao: toda conexão atende um pedido só (Boa/GoAhead com limite de 1).
+        self.um_por_conexao = um_por_conexao
         self.sock = socket.socket()
         self.sock.bind(("127.0.0.1", 0))
         self.sock.listen(8)
@@ -231,7 +233,7 @@ class _FechaAConexaoParada:
                     k, _, v = h.decode().partition(":")
                     cabecalhos[k.strip().lower()] = v.strip()
                 corpo = arquivo.read(int(cabecalhos.get("content-length", "0")))
-                if n == 1 and atendidos == 1:
+                if atendidos == 1 and (n == 1 or self.um_por_conexao):
                     return  # fecha sem responder
                 self.pedidos.append((n, linha.decode().split()[0], cabecalhos, corpo))
                 resposta = b"ok " + linha.split()[0]
@@ -304,3 +306,63 @@ async def test_post_na_conexao_que_o_aparelho_fechou_vai_de_novo() -> None:
     assert post[0][3] == b"acao=listar"  # o mesmo corpo
     # Todo pedido leva a marca do túnel (o login do middleware separa as tentativas por ela).
     assert all(p[2].get("x-noc-tunel") == f"s{porta_ws}" for p in aparelho.pedidos)
+
+
+async def test_equipamento_que_atende_um_pedido_por_conexao_carrega_o_menu_inteiro() -> None:
+    """Medido no Chrome (26/09): repetir pelo pool deixava 2 de 22 pedidos em 502. As imagens
+    abrem várias conexões ao mesmo tempo, que ficam paradas no pool; o POST seguinte cai numa
+    delas, é derrubado, e a repetição caía em OUTRA conexão velha. Agora a repetição vai por
+    conexão nova e a sessão para de reaproveitar conexão com esse equipamento."""
+    aparelho = _FechaAConexaoParada(um_por_conexao=True)
+    simultaneos, total = 6, 16
+    respostas: dict[int, dict[str, Any]] = {}
+    pronto = asyncio.Event()
+
+    async def noc(ws: Any) -> None:
+        async def pedir(f: int) -> None:
+            metodo = "POST" if f > simultaneos else "GET"
+            cab = {"t": "req", "f": f, "metodo": metodo, "caminho": f"/menu/{f}", "cabecalhos": []}
+            await ws.send(json.dumps(cab))
+            if metodo == "POST":
+                corpo = base64.b64encode(b"x=1").decode()
+                await ws.send(json.dumps({"t": "req.corpo", "f": f, "dados": corpo}))
+            await ws.send(json.dumps({"t": "req.fim", "f": f}))
+
+        for f in range(1, simultaneos + 1):  # enchem o pool de conexões que o aparelho não reaproveita
+            await pedir(f)
+        prontos = 0
+        async for m in ws:
+            frame = json.loads(m)
+            r = respostas.setdefault(frame["f"], {})
+            if frame["t"] == "resp":
+                r["status"] = frame["status"]
+            elif frame["t"] == "erro":
+                r["erro"] = frame["mensagem"]
+            if frame["t"] not in {"resp.fim", "erro"}:
+                continue
+            prontos += 1
+            if prontos == total:
+                await ws.send(json.dumps({"t": "fechar"}))
+                pronto.set()
+            elif prontos >= simultaneos:
+                await asyncio.sleep(0.05)
+                await pedir(prontos + 1)  # os POSTs do menu, um depois do outro
+
+    try:
+        async with serve(noc, "127.0.0.1", 0) as servidor:
+            porta_ws = servidor.sockets[0].getsockname()[1]
+            destino = Destino("http", "127.0.0.1", aparelho.porta, "teste")
+            tunel.abrir(
+                f"s{porta_ws}", destino, canal=f"http://127.0.0.1:{porta_ws}", credencial="ag.x", operador="t"
+            )
+            await asyncio.wait_for(pronto.wait(), timeout=30)
+            for _ in range(50):
+                if not tunel.abertas():
+                    break
+                await asyncio.sleep(0.1)
+    finally:
+        aparelho.fechar()
+
+    falhas = {f: r for f, r in respostas.items() if r.get("status") != 200}
+    assert falhas == {}, falhas
+    assert len(aparelho.pedidos) == total  # cada pedido chegou uma vez só ao equipamento
