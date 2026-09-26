@@ -167,6 +167,26 @@ def tomar_trava(trava: Path) -> None:
     trava.write_text(str(os.getpid()), encoding="ascii")
 
 
+def ambiente_limpo(base: dict[str, str] | None = None) -> dict[str, str]:
+    """O ambiente para o ajudante (e, por herança, para o ``.exe`` novo que ele abre).
+
+    O carregador do PyInstaller (onefile) deixa no ambiente as variáveis ``_PYI_*`` (e
+    ``_MEIPASS2`` nas versões antigas) apontando para a pasta temporária ``_MEIxxxx`` DESTE
+    processo. Herdadas, o ``.exe`` novo se acha filho do antigo e procura a DLL do Python
+    numa pasta que o antigo apagou ao sair: "Failed to load Python DLL ...\\_MEI...\\python312.dll",
+    numa caixa de erro que fica na tela (medido com o ``.exe`` real, 26/09). Enquanto o app
+    antigo era morto à força a pasta ficava para trás e funcionava por acaso.
+    ``PYINSTALLER_RESET_ENVIRONMENT`` é o jeito documentado de dizer ao filho que ele é um
+    programa novo.
+    """
+    ambiente = dict(os.environ if base is None else base)
+    for chave in list(ambiente):
+        if chave.upper().startswith(("_PYI_", "_MEIPASS")):
+            del ambiente[chave]
+    ambiente["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return ambiente
+
+
 def disparar_ajudante(helper: Path) -> subprocess.Popen[bytes]:
     """Sobe o ajudante sem janela nenhuma.
 
@@ -188,12 +208,14 @@ def disparar_ajudante(helper: Path) -> subprocess.Popen[bytes]:
         str(helper),
     ]
     base = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
+    ambiente = ambiente_limpo()
     try:
         # Fora do job do processo pai: um serviço ou terminal que mata o job ao fechar
         # levaria o ajudante junto, no meio da troca. Job que não deixa sair recusa.
         return subprocess.Popen(
             comando,
             creationflags=base | CREATE_BREAKAWAY_FROM_JOB,
+            env=ambiente,
             close_fds=True,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -203,6 +225,7 @@ def disparar_ajudante(helper: Path) -> subprocess.Popen[bytes]:
         return subprocess.Popen(
             comando,
             creationflags=base,
+            env=ambiente,
             close_fds=True,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -263,6 +286,10 @@ function Trocar([string]$de, [string]$para) {{
   return $false
 }}
 function Subir {{
+  # O .exe novo é um programa novo, não filho do antigo (ver ambiente_limpo).
+  Get-ChildItem Env: | Where-Object {{ $_.Name -like '_PYI_*' -or $_.Name -like '_MEIPASS*' }} |
+    ForEach-Object {{ Remove-Item -LiteralPath ('Env:' + $_.Name) -ErrorAction SilentlyContinue }}
+  $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
   Start-Process -FilePath $atual -WorkingDirectory (Split-Path -Parent $atual) | Out-Null
 }}
 

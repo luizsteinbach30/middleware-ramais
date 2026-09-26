@@ -390,3 +390,25 @@ def test_ajudante_volta_quando_a_versao_nova_nao_responde(tmp_path: Path) -> Non
     # A espera espera de verdade: o .bat destacado girava sem pausa (timeout saía com 125).
     assert duracao >= 10
     assert janelas == set()
+
+
+def test_o_exe_novo_nao_herda_o_ambiente_do_pyinstaller_do_antigo() -> None:
+    """Sem isso o .exe novo procurava a DLL do Python na pasta _MEI que o antigo apagou
+    ("Failed to load Python DLL", medido com o .exe real em 26/09)."""
+    base = {
+        "PATH": "C:/x",
+        "_PYI_APPLICATION_HOME_DIR": "C:/Temp/_MEI1",
+        "_PYI_PARENT_PROCESS_LEVEL": "1",
+        "_MEIPASS2": "C:/Temp/_MEI1",
+    }
+    limpo = st.ambiente_limpo(base)
+    assert limpo == {"PATH": "C:/x", "PYINSTALLER_RESET_ENVIRONMENT": "1"}
+    script = script_do_ajudante(
+        novo=Path("n.exe"),
+        atual=Path("a.exe"),
+        alvo="2.14.2",
+        porta=8080,
+        resultado=Path("r"),
+        trava=Path("t"),
+    )
+    assert "PYINSTALLER_RESET_ENVIRONMENT" in script and "_PYI_*" in script

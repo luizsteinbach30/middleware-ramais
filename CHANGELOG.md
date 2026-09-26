@@ -20,6 +20,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
     de encerramento ficava numa cópia do módulo que a janela não olhava (o `.exe` roda o `desktop.py` como programa
     principal, e o atualizador o importava de novo). O app nunca saía, e o ajudante esperava para sempre. Agora o
     pedido mora num módulo só (`core/encerramento.py`); medido com o `.exe` real, o app fecha em segundos.
+  - E o `.exe` novo abria uma caixa "Failed to load Python DLL" em vez de subir: herdava do antigo as variáveis
+    do PyInstaller que apontam para a pasta temporária que o antigo apaga ao sair. O ajudante agora abre o `.exe`
+    novo com o ambiente limpo (`PYINSTALLER_RESET_ENVIRONMENT`).
   - Quem está na 2.14.0 ou 2.14.1 ainda atualiza com o ajudante antigo: **instalar a 2.14.2 à mão uma vez**.
 - Uma versão que "voltou" (subiu e não respondeu) não é tentada de novo sozinha na janela seguinte; o
   "Atualizar agora" do NOC tenta.

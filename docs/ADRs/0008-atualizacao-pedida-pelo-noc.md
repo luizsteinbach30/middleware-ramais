@@ -41,6 +41,12 @@ decidiu: **só sobe**, **janela definida no NOC (padrão 02h–05h)** e **botão
      marcavam a cópia que ninguém olhava: o app não fechava, e o `.bat` esperava o PID para sempre (daí o laço sem
      fim). Só o botão da bandeja funcionava, por rodar na cópia principal. O pedido passou para
      `core/encerramento.py`; o ajudante encerrar à força depois de 60 s fica só como rede de segurança.
+   - **O segundo defeito, que o primeiro escondia:** com o app antigo fechando direito, o `.exe` novo mostrava
+     "Failed to load Python DLL '...\_MEIxxxx\python312.dll'". O carregador onefile deixa `_PYI_*` no ambiente
+     apontando para a pasta temporária dele; o ajudante herdava e passava ao `.exe` novo, que se achava filho do
+     antigo e procurava a DLL numa pasta já apagada. Morto à força, o antigo deixava a pasta — funcionava por acaso.
+     O ajudante nasce com `ambiente_limpo()` (sem `_PYI_*`/`_MEIPASS*`, com `PYINSTALLER_RESET_ENVIRONMENT=1`) e o
+     script limpa de novo antes do `Start-Process`.
    - **"voltou" não se repete sozinho** na mesma versão (as tentativas se esgotam); só o "Atualizar agora" ou
      uma versão desejada nova tentam de novo. Falha antes da troca (download, conferência) mantém as 3.
 8. **O estado volta ao NOC só quando ele anunciou o campo.** O DTO do heartbeat do NOC recusa campo
