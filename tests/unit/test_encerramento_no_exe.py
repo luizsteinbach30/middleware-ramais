@@ -19,7 +19,9 @@ import pytest
 
 from middleware_monitor.core import encerramento
 
-pytest.importorskip("tkinter")
+# O .exe é do Windows; no Linux sem Tk o desktop.py nem importa (e o importorskip do pytest 8
+# só pula ModuleNotFoundError — o tkinter existe, falta a libtk).
+pytestmark = pytest.mark.skipif(not sys.platform.startswith("win"), reason="o .exe é do Windows")
 
 
 @pytest.fixture(autouse=True)
