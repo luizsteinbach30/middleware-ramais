@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -189,3 +190,117 @@ async def test_vinte_requisicoes_de_uma_vez_seis_conexoes_e_nenhuma_perdida(apar
     assert not [x for x in r.values() if "erro" in x], "nenhuma requisição pode virar erro"
     assert all(r[i]["corpo"] == f"/arquivo-{i}.js".encode() for i in range(1, 21))
     assert _Aparelho.maximo <= tunel.CONEXOES_COM_O_EQUIPAMENTO
+
+
+# --- 26/09: "os menus dos telefones ainda não carregam por inteiro" ---------------------------------
+
+
+class _FechaAConexaoParada:
+    """Servidor embarcado de verdade: atende o primeiro pedido com keep-alive e, no pedido
+    seguinte da mesma conexão, lê e fecha sem responder — a corrida de quem fecha a conexão
+    parada enquanto o próximo pedido já estava a caminho."""
+
+    def __init__(self) -> None:
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(8)
+        self.porta = self.sock.getsockname()[1]
+        self.conexoes = 0
+        self.pedidos: list[tuple[int, str, dict[str, str], bytes]] = []
+        threading.Thread(target=self._aceitar, daemon=True).start()
+
+    def _aceitar(self) -> None:
+        while True:
+            try:
+                c, _ = self.sock.accept()
+            except OSError:
+                return
+            self.conexoes += 1
+            threading.Thread(target=self._atender, args=(c, self.conexoes), daemon=True).start()
+
+    def _atender(self, c: socket.socket, n: int) -> None:
+        arquivo = c.makefile("rb")
+        atendidos = 0
+        with c:
+            while True:
+                linha = arquivo.readline()
+                if not linha:
+                    return
+                cabecalhos: dict[str, str] = {}
+                while (h := arquivo.readline()) not in (b"\r\n", b""):
+                    k, _, v = h.decode().partition(":")
+                    cabecalhos[k.strip().lower()] = v.strip()
+                corpo = arquivo.read(int(cabecalhos.get("content-length", "0")))
+                if n == 1 and atendidos == 1:
+                    return  # fecha sem responder
+                self.pedidos.append((n, linha.decode().split()[0], cabecalhos, corpo))
+                resposta = b"ok " + linha.split()[0]
+                c.sendall(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nConnection: keep-alive\r\n"
+                    b"Content-Length: " + str(len(resposta)).encode() + b"\r\n\r\n" + resposta
+                )
+                atendidos += 1
+
+    def fechar(self) -> None:
+        self.sock.close()
+
+
+async def test_post_na_conexao_que_o_aparelho_fechou_vai_de_novo() -> None:
+    aparelho = _FechaAConexaoParada()
+    respostas: dict[int, dict[str, Any]] = {}
+    pronto = asyncio.Event()
+
+    async def noc(ws: Any) -> None:
+        await ws.send(json.dumps({"t": "req", "f": 1, "metodo": "GET", "caminho": "/menu", "cabecalhos": []}))
+        await ws.send(json.dumps({"t": "req.fim", "f": 1}))
+        async for m in ws:
+            frame = json.loads(m)
+            r = respostas.setdefault(frame["f"], {"corpo": b""})
+            if frame["t"] == "resp":
+                r["status"] = frame["status"]
+            elif frame["t"] == "resp.corpo":
+                r["corpo"] += base64.b64decode(frame["dados"])
+            elif frame["t"] == "erro":
+                r["erro"] = frame["mensagem"]
+            elif frame["t"] == "resp.fim" and frame["f"] == 1:
+                # O GET deixou a conexão no pool; o POST do menu vai nela.
+                corpo = base64.b64encode(b"acao=listar").decode()
+                await ws.send(
+                    json.dumps(
+                        {
+                            "t": "req",
+                            "f": 2,
+                            "metodo": "POST",
+                            "caminho": "/cgi-bin/menu",
+                            "cabecalhos": [["Content-Type", "application/x-www-form-urlencoded"]],
+                        }
+                    )
+                )
+                await ws.send(json.dumps({"t": "req.corpo", "f": 2, "dados": corpo}))
+                await ws.send(json.dumps({"t": "req.fim", "f": 2}))
+            if frame["t"] in {"resp.fim", "erro"} and frame["f"] == 2:
+                await ws.send(json.dumps({"t": "fechar"}))
+                pronto.set()
+
+    try:
+        async with serve(noc, "127.0.0.1", 0) as servidor:
+            porta_ws = servidor.sockets[0].getsockname()[1]
+            destino = Destino("http", "127.0.0.1", aparelho.porta, "teste")
+            tunel.abrir(
+                f"s{porta_ws}", destino, canal=f"http://127.0.0.1:{porta_ws}", credencial="ag.x", operador="t"
+            )
+            await asyncio.wait_for(pronto.wait(), timeout=30)
+            for _ in range(50):
+                if not tunel.abertas():
+                    break
+                await asyncio.sleep(0.1)
+    finally:
+        aparelho.fechar()
+
+    assert "erro" not in respostas[2], respostas[2].get("erro")
+    assert respostas[2]["status"] == 200 and respostas[2]["corpo"] == b"ok POST"
+    post = [p for p in aparelho.pedidos if p[1] == "POST"]
+    assert len(post) == 1 and post[0][0] == 2  # uma vez só, numa conexão nova
+    assert post[0][3] == b"acao=listar"  # o mesmo corpo
+    # Todo pedido leva a marca do túnel (o login do middleware separa as tentativas por ela).
+    assert all(p[2].get("x-noc-tunel") == f"s{porta_ws}" for p in aparelho.pedidos)

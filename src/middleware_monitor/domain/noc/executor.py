@@ -873,16 +873,13 @@ async def _abrir_acesso_web(p: dict[str, Any], ctx: Contexto) -> Resultado:
     long-poll. O destino é conferido em ``tunel`` — é lá que mora a regra."""
     from middleware_monitor.domain.noc import tunel
     from middleware_monitor.domain.uscall import repository as uscall_repo
-    from middleware_monitor.settings import get_settings
 
     sessao = p.get("sessao")
     if not (isinstance(sessao, str) and _ID.match(sessao)):
         return Resultado(ok=False, erro="sessao inválida.")
     try:
         if p.get("tipoDeDestino") == "lan":
-            destino = tunel.destino_da_lan(
-                p.get("destino"), p.get("porta"), p.get("esquema"), porta_local=get_settings().port
-            )
+            destino = tunel.destino_da_lan(p.get("destino"), p.get("porta"), p.get("esquema"))
         elif p.get("tipoDeDestino") == "uscall":
             with session_factory() as db:
                 servidores = [(s.nome, s.host) for s in uscall_repo.list_servers(db, enabled_only=True)]

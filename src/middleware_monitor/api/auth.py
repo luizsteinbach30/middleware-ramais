@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
+import socket
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session as DBSession
@@ -22,9 +25,32 @@ from middleware_monitor.domain.auth.service import (
     authenticate,
     change_password,
 )
+from middleware_monitor.domain.noc.tunel import CABECALHO_DO_TUNEL
 from middleware_monitor.settings import get_settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _ips_desta_maquina() -> set[str]:
+    ips = {"127.0.0.1", "::1"}
+    with contextlib.suppress(OSError):
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            ips.add(str(info[4][0]))
+    return ips
+
+
+def _origem_do_login(request: Request) -> str:
+    """De onde veio a tentativa — é por ela que o bloqueio conta as senhas erradas.
+
+    Pelo túnel do NOC todo operador chega como esta própria máquina; sem separar, as
+    senhas erradas de um bloqueariam os outros e quem usa o painel aqui mesmo. A marca
+    do túnel só vale vinda desta máquina: de outro IP, qualquer um a escreveria para
+    escapar do bloqueio."""
+    ip = (request.client.host if request.client else "unknown") or "unknown"
+    sessao = request.headers.get(CABECALHO_DO_TUNEL, "").strip()[:64]
+    if sessao and (ip.startswith("127.") or ip in _ips_desta_maquina()):
+        return f"{ip} tunel:{sessao}"
+    return ip
 
 
 class LoginRequest(BaseModel):
@@ -57,7 +83,7 @@ def login(
     db: DBSession = Depends(get_session),
 ) -> LoginResponse:
     settings = get_settings()
-    ip = (request.client.host if request.client else "unknown") or "unknown"
+    ip = _origem_do_login(request)
     ua = request.headers.get("User-Agent", "")
     try:
         user = authenticate(db, username=body.username, password=body.password, ip=ip)

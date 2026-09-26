@@ -31,7 +31,6 @@ import contextlib
 import ipaddress
 import json
 import re
-import socket
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -46,8 +45,11 @@ log = get_logger("noc.tunel")
 
 DURACAO_MAXIMA_S = 60 * 60
 TIMEOUT_DO_EQUIPAMENTO_S = 30.0
-# Conectar é rápido ou não é; esperar resposta pode ser longo (long-poll, página de status ao vivo).
-TIMEOUTS = httpx.Timeout(connect=10.0, read=120.0, write=60.0, pool=120.0)
+# Conectar é rápido ou não é; esperar resposta pode ser longo (long-poll, página de status ao vivo),
+# mas abaixo dos 100 s da Cloudflare e dos 110 s do nginx do NOC: quem desiste primeiro é o agente,
+# e o navegador recebe a mensagem dele em vez de um 524 sem explicação. Esperar a vez numa das 6
+# conexões não passa de 30 s — mais que isso a página já desistiu.
+TIMEOUTS = httpx.Timeout(connect=10.0, read=95.0, write=60.0, pool=30.0)
 PEDACO = 64 * 1024
 # Requisições em andamento por sessão. Pela Cloudflare o navegador fala HTTP/2 e dispara dezenas
 # de uma vez; acima disto vira erro. As que passam esperam a vez na conexão com o equipamento.
@@ -63,7 +65,14 @@ RECONEXOES = (1, 2, 5, 10, 30)
 # Formulário e upload de firmware cabem; mais que isso não é interface web.
 CORPO_MAXIMO = 128 * 1024 * 1024
 
-_REDES_DA_LAN = tuple(ipaddress.ip_network(r) for r in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+_DIFUSAO = ipaddress.ip_address("255.255.255.255")
+# RFC 1123: rótulos de 1 a 63 caracteres, até 253 no total.
+_NOME_DE_HOST = re.compile(
+    r"^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$"
+)
+# Marca o pedido que veio pelo túnel. O login do próprio middleware usa para não contar as
+# senhas erradas de todos os operadores como se fossem de 127.0.0.1 (api/auth.py).
+CABECALHO_DO_TUNEL = "X-Noc-Tunel"
 _SESSAO = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _NOME_USCALL = re.compile(r"^.{1,64}$", re.S)
 # Cabeçalhos de salto: valem só entre dois pontos, nunca atravessam.
@@ -110,40 +119,29 @@ class Destino:
 # --- Destino ---------------------------------------------------------------------------------
 
 
-def _ips_locais() -> set[str]:
-    ips: set[str] = set()
-    with contextlib.suppress(OSError):
-        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            ips.add(str(info[4][0]))
-    return ips
+def destino_da_lan(destino: Any, porta: Any, esquema: Any) -> Destino:
+    """Qualquer endereço que esta máquina alcança (ADR 0007, emenda 2.14.2): o túnel é o
+    navegador sentado aqui — LAN, VPN, a própria interface do middleware (127.0.0.1) e nome
+    resolvido pelo DNS desta máquina. Quem pode abrir é decisão do NOC (permissão
+    ``equipamento.acesso_web``), e cada requisição fica registrada lá.
 
-
-def destino_da_lan(
-    destino: Any,
-    porta: Any,
-    esquema: Any,
-    *,
-    ips_locais: set[str] | None = None,
-    porta_local: int | None = None,
-) -> Destino:
+    Nome não é fixado num IP: com todo destino permitido, a fixação contra DNS rebinding não
+    protege nada, e conectar pelo nome preserva o SNI e o virtual host do servidor."""
     if esquema not in {"http", "https"}:
         raise DestinoRecusado("esquema: use http ou https.")
     if not (isinstance(porta, int) and not isinstance(porta, bool) and 1 <= porta <= 65535):
         raise DestinoRecusado("porta: use um inteiro entre 1 e 65535.")
+    texto = str(destino).strip().rstrip(".").lower()
     try:
-        ip = ipaddress.ip_address(str(destino).strip())
-    except ValueError as exc:
-        raise DestinoRecusado("destino: informe um IPv4 da rede local (ex.: 192.168.0.20).") from exc
-    if ip.version != 4 or not any(ip in rede for rede in _REDES_DA_LAN):
-        raise DestinoRecusado(
-            f"destino {ip}: o túnel só abre endereço da rede local (10.x, 172.16 a 172.31, 192.168.x)."
-        )
-    if (
-        porta_local is not None
-        and porta == porta_local
-        and str(ip) in (_ips_locais() if ips_locais is None else ips_locais)
-    ):
-        raise DestinoRecusado("destino: é a própria interface deste middleware.")
+        ip = ipaddress.ip_address(texto)
+    except ValueError:
+        if not _NOME_DE_HOST.match(texto):
+            raise DestinoRecusado(
+                "destino: informe um IPv4 (ex.: 192.168.0.20) ou um nome de host (ex.: pabx.loja.local)."
+            ) from None
+        return Destino(esquema, texto, porta, f"{esquema}://{texto}:{porta}")
+    if ip.version != 4 or ip.is_multicast or ip.is_unspecified or ip == _DIFUSAO:
+        raise DestinoRecusado(f"destino {ip}: não é o endereço de um equipamento.")
     return Destino(esquema, str(ip), porta, f"{esquema}://{ip}:{porta}")
 
 
@@ -165,7 +163,9 @@ def destino_uscall(nome: Any, servidores: list[tuple[str, str]]) -> Destino:
 # --- Cabeçalhos ------------------------------------------------------------------------------
 
 
-def cabecalhos_do_pedido(pares: list[list[str]], destino: Destino) -> list[tuple[str, str]]:
+def cabecalhos_do_pedido(
+    pares: list[list[str]], destino: Destino, sessao: str | None = None
+) -> list[tuple[str, str]]:
     """O que vai ao equipamento. ``Origin``/``Referer`` passam a apontar para ele:
     há firmware que recusa POST cujo Referer é de outro host."""
     saida: list[tuple[str, str]] = []
@@ -183,6 +183,9 @@ def cabecalhos_do_pedido(pares: list[list[str]], destino: Destino) -> list[tuple
                     valor = destino.base
         saida.append((str(k), valor))
     saida.append(("Host", destino.cabecalho_host))
+    if sessao:
+        saida = [(k, v) for k, v in saida if k.lower() != CABECALHO_DO_TUNEL.lower()]
+        saida.append((CABECALHO_DO_TUNEL, sessao))
     return saida
 
 
@@ -316,11 +319,11 @@ class Sessao:
             timeout=TIMEOUTS,
             trust_env=False,
             # Keep-alive curto: telefone fecha a conexão parada em poucos segundos, e reusar uma
-            # conexão morta é uma requisição perdida.
+            # conexão morta é uma requisição perdida (servidor embarcado costuma fechar em 2 a 5 s).
             limits=httpx.Limits(
                 max_connections=CONEXOES_COM_O_EQUIPAMENTO,
                 max_keepalive_connections=CONEXOES_COM_O_EQUIPAMENTO,
-                keepalive_expiry=5.0,
+                keepalive_expiry=2.0,
             ),
         )
         tentativa = 0
@@ -437,19 +440,23 @@ class Sessao:
     async def _mandar(
         self, metodo: str, caminho: str, pares: list[list[str]], corpo: bytes
     ) -> httpx.Response:
-        """Manda ao equipamento. GET/HEAD que caem numa conexão que o aparelho já fechou vão de
-        novo, uma vez, numa conexão nova — o navegador faz o mesmo."""
+        """Manda ao equipamento. Pedido que cai sem **nenhum byte** de resposta — a conexão que
+        o aparelho fechou enquanto estava parada — vai de novo, uma vez, numa conexão nova,
+        **qualquer método**: é a regra do Chromium (``ShouldResendRequest``), e o menu do
+        telefone que carrega por POST perdia pedaços. Com resposta começada, nunca repete.
+        O corpo está inteiro em memória (``_corpo``), então repetir manda o mesmo corpo."""
         assert self._http is not None
-        cabecalhos = cabecalhos_do_pedido(pares, self.destino)
+        cabecalhos = cabecalhos_do_pedido(pares, self.destino, self.id)
         for tentativa in (1, 2):
             pedido = self._http.build_request(
                 metodo, f"{self.destino.base}{caminho}", headers=cabecalhos, content=corpo or None
             )
             try:
                 return await self._http.send(pedido, stream=True)
-            except (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError):
-                if tentativa == 2 or metodo not in {"GET", "HEAD", "OPTIONS"}:
+            except (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError) as exc:
+                if tentativa == 2:
                     raise
+                log.info("noc_tunel_repetiu", sessao=self.id, metodo=metodo, motivo=type(exc).__name__)
         raise AssertionError("inalcançável")
 
     async def _executar(self, fluxo: int, frame: dict[str, Any], f: _Fluxo) -> None:

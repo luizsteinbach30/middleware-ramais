@@ -2,7 +2,7 @@
 
 Três perguntas, cada uma com o seu grupo de testes:
 
-- o destino é decidido aqui (LAN privada ou USCall do cadastro, nunca internet solta);
+- o destino é qualquer coisa que esta máquina alcança (IPv4, nome de host) ou um USCall do cadastro;
 - os cabeçalhos atravessam sem quebrar a sessão do equipamento;
 - uma requisição de verdade vai e volta pelo WebSocket, com corpo inteiro.
 """
@@ -25,31 +25,38 @@ from middleware_monitor.domain.noc.tunel import Destino, DestinoRecusado
 # --- Destino ---------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("ip", ["10.1.2.3", "172.16.0.1", "172.31.255.254", "192.168.0.20"])
-def test_lan_privada_passa(ip: str) -> None:
-    d = tunel.destino_da_lan(ip, 80, "http", ips_locais=set(), porta_local=8080)
+@pytest.mark.parametrize(
+    "ip", ["10.1.2.3", "172.16.0.1", "192.168.0.20", "127.0.0.1", "169.254.1.1", "100.64.0.9", "8.8.8.8"]
+)
+def test_qualquer_ipv4_que_a_maquina_alcanca_passa(ip: str) -> None:
+    # "Como se eu estivesse naquela máquina" (dono, 26/09): LAN, VPN, link-local, a própria
+    # máquina e internet. Quem pode abrir é o NOC que decide.
+    d = tunel.destino_da_lan(ip, 80, "http")
     assert d.base == f"http://{ip}"
 
 
+def test_a_propria_interface_do_middleware_passa() -> None:
+    assert tunel.destino_da_lan("127.0.0.1", 8080, "http").base == "http://127.0.0.1:8080"
+
+
+@pytest.mark.parametrize("nome", ["pabx.loja.local", "USCALL.exemplo.com.br.", "impressora", "a-b.c"])
+def test_nome_de_host_passa_sem_virar_ip(nome: str) -> None:
+    d = tunel.destino_da_lan(nome, 443, "https")
+    assert d.host == nome.lower().rstrip(".")  # conecta pelo nome: SNI e virtual host preservados
+
+
 @pytest.mark.parametrize(
-    "ip", ["8.8.8.8", "127.0.0.1", "169.254.1.1", "172.32.0.1", "0.0.0.0", "::1", "fe80::1", "uscall.com.br"]
+    "destino", ["0.0.0.0", "224.0.0.1", "255.255.255.255", "::1", "-x.local", "a b", "", "x" * 254, "a..b"]
 )
-def test_fora_da_lan_privada_e_recusado(ip: str) -> None:
+def test_o_que_nao_e_equipamento_e_recusado(destino: str) -> None:
     with pytest.raises(DestinoRecusado):
-        tunel.destino_da_lan(ip, 80, "http", ips_locais=set(), porta_local=8080)
-
-
-def test_a_propria_interface_do_middleware_e_recusada() -> None:
-    with pytest.raises(DestinoRecusado, match="própria interface"):
-        tunel.destino_da_lan("192.168.0.5", 8080, "http", ips_locais={"192.168.0.5"}, porta_local=8080)
-    # Outra porta na mesma máquina é outro serviço — passa.
-    assert tunel.destino_da_lan("192.168.0.5", 443, "https", ips_locais={"192.168.0.5"}, porta_local=8080)
+        tunel.destino_da_lan(destino, 80, "http")
 
 
 @pytest.mark.parametrize(("porta", "esquema"), [(0, "http"), (70000, "http"), (True, "http"), (80, "ftp")])
 def test_porta_e_esquema_fora_de_forma(porta: object, esquema: str) -> None:
     with pytest.raises(DestinoRecusado):
-        tunel.destino_da_lan("192.168.0.20", porta, esquema, ips_locais=set())
+        tunel.destino_da_lan("192.168.0.20", porta, esquema)
 
 
 def test_uscall_vem_do_cadastro_e_so_do_cadastro() -> None:
@@ -228,10 +235,10 @@ def test_verbo_e_escrita_e_recusa_campo_de_rede() -> None:
     assert executor.conferir("abrir_acesso_web", executor.LEITURA, ok) is not None
 
 
-async def test_tarefa_recusa_destino_publico() -> None:
+async def test_tarefa_recusa_destino_fora_de_forma() -> None:
     ctx = executor.Contexto("t1", "pessoa@x", "http://127.0.0.1:1", "ag_1.s")
     r = await executor._abrir_acesso_web(
-        {"sessao": "s2", "tipoDeDestino": "lan", "destino": "8.8.8.8", "porta": 80, "esquema": "http"}, ctx
+        {"sessao": "s2", "tipoDeDestino": "lan", "destino": "a b", "porta": 80, "esquema": "http"}, ctx
     )
-    assert not r.ok and "rede local" in (r.erro or "")
+    assert not r.ok and "nome de host" in (r.erro or "")
     assert tunel.abertas() == []
