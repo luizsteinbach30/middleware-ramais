@@ -46,8 +46,17 @@ log = get_logger("noc.tunel")
 
 DURACAO_MAXIMA_S = 60 * 60
 TIMEOUT_DO_EQUIPAMENTO_S = 30.0
+# Conectar é rápido ou não é; esperar resposta pode ser longo (long-poll, página de status ao vivo).
+TIMEOUTS = httpx.Timeout(connect=10.0, read=120.0, write=60.0, pool=120.0)
 PEDACO = 64 * 1024
-MAXIMO_DE_FLUXOS = 16
+# Requisições em andamento por sessão. Pela Cloudflare o navegador fala HTTP/2 e dispara dezenas
+# de uma vez; acima disto vira erro. As que passam esperam a vez na conexão com o equipamento.
+MAXIMO_DE_FLUXOS = 64
+# Conexões simultâneas com o equipamento: as de um navegador (6). Servidor web de telefone engasga
+# com mais — era isto que fazia a página "começar bem e travar" (25/09).
+CONEXOES_COM_O_EQUIPAMENTO = 6
+# Resposta de texto que passa por reescrita de links precisa caber inteira na memória.
+TEXTO_MAXIMO_PARA_REESCREVER = 8 * 1024 * 1024
 # O frame JSON leva o pedaço em base64 (+33 %) e os cabeçalhos.
 TAMANHO_MAXIMO_DO_FRAME = 1024 * 1024
 RECONEXOES = (1, 2, 5, 10, 30)
@@ -192,16 +201,60 @@ def cabecalhos_da_resposta(pares: list[tuple[str, str]], destino: Destino) -> li
         valor = v
         if nome in {"location", "content-location"}:
             partes = urlsplit(v)
-            if partes.netloc and partes.netloc.lower() in {
-                destino.cabecalho_host.lower(),
-                destino.host.lower(),
-                f"{destino.host}:{destino.porta}".lower(),
-            }:
+            # O próprio equipamento, em qualquer esquema ou porta: o http que redireciona para
+            # https é o mesmo aparelho, e a sessão passa a falar https com ele (``para_onde``).
+            if partes.netloc and (partes.hostname or "").lower() == destino.host.lower():
                 valor = urlunsplit(("", "", partes.path or "/", partes.query, partes.fragment))
         elif nome == "set-cookie":
             valor = _DOMINIO_DO_COOKIE.sub("", v)
         saida.append([k, valor])
     return saida
+
+
+def para_onde(location: str, destino: Destino) -> Destino | None:
+    """O destino novo quando o equipamento manda para ele mesmo em outro esquema ou porta.
+
+    Telefone que só aceita https responde ao http com ``Location: https://<ip>/``. Tornar o
+    ``Location`` relativo sem trocar o destino faria o navegador pedir de novo pelo http — e o
+    aparelho redirecionar de novo, para sempre. ``None`` quando nada muda.
+    """
+    partes = urlsplit(location)
+    if (partes.hostname or "").lower() != destino.host.lower() or partes.scheme not in {"http", "https"}:
+        return None
+    try:
+        porta = partes.port or (443 if partes.scheme == "https" else 80)
+    except ValueError:
+        return None
+    if (partes.scheme, porta) == (destino.esquema, destino.porta):
+        return None
+    return Destino(partes.scheme, destino.host, porta, destino.rotulo)
+
+
+_TIPOS_REESCRITOS = ("text/html", "text/css", "javascript", "application/json", "text/xml", "application/xml")
+
+
+def reescreve(tipo: str) -> bool:
+    """Resposta cujo corpo pode trazer link absoluto para o próprio equipamento. Fluxo contínuo
+    (``text/event-stream``) nunca: juntar o corpo inteiro seria nunca responder."""
+    t = tipo.lower()
+    return "event-stream" not in t and any(x in t for x in _TIPOS_REESCRITOS)
+
+
+def reescrever_links(corpo: bytes, destino: Destino) -> bytes:
+    """``http://<equipamento>[:porta]/x`` vira ``/x`` (e ``http://<equipamento>`` vira ``/``).
+
+    Sem isto, o link absoluto que o firmware (ou o USCall) escreve na página leva o navegador
+    direto ao IP da loja — fora do túnel, e para um endereço que de fora não existe (25/09).
+    Só a forma de URL é trocada: o IP solto num campo de configuração continua como está.
+    """
+    host = re.escape(destino.host.encode("ascii", "ignore"))
+    porta = rb"(?::\d{1,5})?"
+    esquema = rb"(?:https?:)?"
+    # Barras escapadas de JSON/JS (``http:\/\/ip\/x``) contam também.
+    barra = rb"(?:/|\\/)"
+    inicio = esquema + barra + barra + host + porta
+    corpo = re.sub(inicio + rb"(?=" + barra + rb"|[?#])", b"", corpo, flags=re.I)
+    return re.sub(inicio + rb"(?=[\"'\s<>)]|$)", b"/", corpo, flags=re.I)
 
 
 # --- A sessão --------------------------------------------------------------------------------
@@ -260,8 +313,15 @@ class Sessao:
         self._http = httpx.AsyncClient(
             verify=False,  # noqa: S501 - equipamento de LAN tem certificado próprio; os adapters fazem igual
             follow_redirects=False,
-            timeout=TIMEOUT_DO_EQUIPAMENTO_S,
+            timeout=TIMEOUTS,
             trust_env=False,
+            # Keep-alive curto: telefone fecha a conexão parada em poucos segundos, e reusar uma
+            # conexão morta é uma requisição perdida.
+            limits=httpx.Limits(
+                max_connections=CONEXOES_COM_O_EQUIPAMENTO,
+                max_keepalive_connections=CONEXOES_COM_O_EQUIPAMENTO,
+                keepalive_expiry=5.0,
+            ),
         )
         tentativa = 0
         try:
@@ -336,7 +396,7 @@ class Sessao:
                 return
             if len(self.fluxos) >= MAXIMO_DE_FLUXOS:
                 await self._enviar(
-                    {"t": "erro", "f": fluxo, "mensagem": "Muitas requisições ao mesmo tempo."}
+                    {"t": "erro", "f": fluxo, "mensagem": "Muitas requisições ao mesmo tempo nesta sessão."}
                 )
                 return
             novo = _Fluxo(asyncio.Queue())
@@ -374,6 +434,24 @@ class Sessao:
                 raise ValueError(f"corpo acima de {CORPO_MAXIMO // (1024 * 1024)} MB")
             partes.append(pedaco)
 
+    async def _mandar(
+        self, metodo: str, caminho: str, pares: list[list[str]], corpo: bytes
+    ) -> httpx.Response:
+        """Manda ao equipamento. GET/HEAD que caem numa conexão que o aparelho já fechou vão de
+        novo, uma vez, numa conexão nova — o navegador faz o mesmo."""
+        assert self._http is not None
+        cabecalhos = cabecalhos_do_pedido(pares, self.destino)
+        for tentativa in (1, 2):
+            pedido = self._http.build_request(
+                metodo, f"{self.destino.base}{caminho}", headers=cabecalhos, content=corpo or None
+            )
+            try:
+                return await self._http.send(pedido, stream=True)
+            except (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError):
+                if tentativa == 2 or metodo not in {"GET", "HEAD", "OPTIONS"}:
+                    raise
+        raise AssertionError("inalcançável")
+
     async def _executar(self, fluxo: int, frame: dict[str, Any], f: _Fluxo) -> None:
         metodo = str(frame.get("metodo") or "GET").upper()
         caminho = str(frame.get("caminho") or "/")
@@ -382,37 +460,15 @@ class Sessao:
         bruto = frame.get("cabecalhos")
         cabecalhos: list[Any] = bruto if isinstance(bruto, list) else []
         pares = [p for p in cabecalhos if isinstance(p, list) and len(p) == 2]
-        assert self._http is not None
+        # Só compressão que o httpx sabe abrir: a página reescrita precisa ser lida.
+        pares = [p for p in pares if str(p[0]).lower() != "accept-encoding"]
+        pares.append(["Accept-Encoding", "gzip, deflate"])
         self.requisicoes += 1
         try:
             corpo = await asyncio.wait_for(self._corpo(f), timeout=TIMEOUT_DO_EQUIPAMENTO_S * 4)
-            pedido = self._http.build_request(
-                metodo,
-                f"{self.destino.base}{caminho}",
-                headers=cabecalhos_do_pedido(pares, self.destino),
-                content=corpo or None,
-            )
-            resposta = await self._http.send(pedido, stream=True)
+            resposta = await self._mandar(metodo, caminho, pares, corpo)
             try:
-                await self._enviar(
-                    {
-                        "t": "resp",
-                        "f": fluxo,
-                        "status": resposta.status_code,
-                        "cabecalhos": cabecalhos_da_resposta(
-                            list(resposta.headers.multi_items()), self.destino
-                        ),
-                    }
-                )
-                buffer = b""
-                async for pedaco in resposta.aiter_raw():
-                    buffer += pedaco
-                    while len(buffer) >= PEDACO:
-                        await self._enviar({"t": "resp.corpo", "f": fluxo, "dados": _b64(buffer[:PEDACO])})
-                        buffer = buffer[PEDACO:]
-                if buffer:
-                    await self._enviar({"t": "resp.corpo", "f": fluxo, "dados": _b64(buffer)})
-                await self._enviar({"t": "resp.fim", "f": fluxo})
+                await self._responder(fluxo, resposta)
             finally:
                 await resposta.aclose()
         except asyncio.CancelledError:
@@ -429,6 +485,39 @@ class Sessao:
             await self._erro(fluxo, f"{type(exc).__name__}: {exc}"[:300])
         finally:
             self.fluxos.pop(fluxo, None)
+
+    async def _responder(self, fluxo: int, resposta: httpx.Response) -> None:
+        destino = self.destino
+        local = resposta.headers.get("location")
+        novo = para_onde(local, destino) if local and 300 <= resposta.status_code < 400 else None
+        if novo is not None:
+            log.info("noc_tunel_destino_mudou", sessao=self.id, de=destino.base, para=novo.base)
+            self.destino = novo
+        cabecalhos = cabecalhos_da_resposta(list(resposta.headers.multi_items()), destino)
+        if reescreve(resposta.headers.get("content-type", "")) and resposta.status_code != 206:
+            texto = b""
+            async for pedaco in resposta.aiter_bytes():
+                texto += pedaco
+                if len(texto) > TEXTO_MAXIMO_PARA_REESCREVER:
+                    raise ValueError("página grande demais para reescrever os links")
+            texto = reescrever_links(texto, destino)
+            # aiter_bytes já descomprimiu: o Content-Encoding do equipamento não vale mais.
+            cabecalhos = [c for c in cabecalhos if c[0].lower() != "content-encoding"]
+            await self._enviar(
+                {"t": "resp", "f": fluxo, "status": resposta.status_code, "cabecalhos": cabecalhos}
+            )
+            for i in range(0, len(texto), PEDACO):
+                await self._enviar({"t": "resp.corpo", "f": fluxo, "dados": _b64(texto[i : i + PEDACO])})
+        else:
+            await self._enviar(
+                {"t": "resp", "f": fluxo, "status": resposta.status_code, "cabecalhos": cabecalhos}
+            )
+            # Cada pedaço sai assim que chega. Juntar até 64 KB prendia a página de status ao
+            # vivo, que chega em pedacinhos e nunca completa o bloco (25/09).
+            async for pedaco in resposta.aiter_raw():
+                for i in range(0, len(pedaco), PEDACO):
+                    await self._enviar({"t": "resp.corpo", "f": fluxo, "dados": _b64(pedaco[i : i + PEDACO])})
+        await self._enviar({"t": "resp.fim", "f": fluxo})
 
     async def _erro(self, fluxo: int, mensagem: str) -> None:
         with contextlib.suppress(Exception):
