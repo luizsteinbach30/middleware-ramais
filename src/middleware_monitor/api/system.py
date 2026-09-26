@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-import threading
 from datetime import datetime
 from typing import cast
 
@@ -21,7 +19,6 @@ from middleware_monitor.api.deps import (
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import Collection, UpdateHistory, User
 from middleware_monitor.core.scheduler import get_scheduler
-from middleware_monitor.core.tasks import spawn
 from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.config.update_settings import (
     CHANNELS,
@@ -33,7 +30,6 @@ from middleware_monitor.domain.config.update_settings import (
 from middleware_monitor.domain.extension_configurator import repository as ec_repo
 from middleware_monitor.jobs import apply_update_schedule
 from middleware_monitor.settings import get_settings
-from middleware_monitor.updater.installer import install_release
 from middleware_monitor.updater.service import get_state, run_update_check, set_auto_check
 from middleware_monitor.version import __version__
 
@@ -81,7 +77,8 @@ class UpdateHistoryItem(BaseModel):
 
 @router.get("/healthz", response_model=HealthOut)
 def healthz() -> HealthOut:
-    return HealthOut(status="ok")
+    # A versão deixa o ajudante do Windows conferir que a release nova subiu (ADR 0008).
+    return HealthOut(status="ok", version=__version__)
 
 
 @router.get("/metrics")
@@ -139,6 +136,7 @@ class UpdateSettingsIn(BaseModel):
     """Update parcial: só o que vier no body é alterado."""
 
     auto_check: bool | None = None
+    auto_noc: bool | None = None
     channel: str | None = None
     check_hour: int | None = Field(default=None, ge=0, le=23)
     check_minute: int | None = Field(default=None, ge=0, le=59)
@@ -217,66 +215,14 @@ async def apply_update() -> dict[str, object]:
         release = await run_update_check()
         if release is None:
             return {"ok": False, "reason": "no_update_available"}
+    # O passo a passo mora em updater/instalar.py: é o mesmo da atualização
+    # pedida pelo NOC (ADR 0008).
+    from middleware_monitor.updater.instalar import FalhaNaInstalacao, instalar
 
-    # Standalone single-exe path: this is the ONLY path that works for the
-    # PyInstaller build delivered as MiddlewareMonitor-X.Y.Z.exe. Any
-    # tarball-based install (installer.py) assumes a venv + service and
-    # silently fails inside the .exe.
-    if getattr(sys, "frozen", False):
-        from middleware_monitor.desktop import get_data_dir, request_shutdown
-        from middleware_monitor.updater.standalone import (
-            UpdateError,
-            apply_standalone_update,
-            find_exe_asset,
-        )
-
-        asset = find_exe_asset(getattr(release, "assets", []))
-        if asset is None:
-            raise HTTPException(
-                status_code=500,
-                detail="no_exe_asset_in_release",
-            )
-        sha = getattr(release, "sha256sums", None)
-        sha_url = (getattr(sha, "api_url", "") or getattr(sha, "download_url", "")) if sha else None
-        try:
-            apply_standalone_update(
-                asset_url=asset["url"],
-                asset_name=asset["name"],
-                data_dir=get_data_dir(),
-                sha_url=sha_url,
-                token=get_settings().effective_update_token,
-            )
-        except (UpdateError, OSError) as exc:
-            log.error("standalone_update_failed", error=str(exc))
-            raise HTTPException(status_code=500, detail=f"download_failed: {exc}") from exc
-
-        # Helper batch is now waiting for our PID to die. Give the HTTP
-        # response a moment to flush, then signal the Tk main loop to
-        # tear everything down. The helper picks up the swap and relaunches.
-        log.info("standalone_update_scheduled", version=str(getattr(release, "version", "")))
-        threading.Timer(1.0, request_shutdown).start()
-        return {
-            "ok": True,
-            "mode": "standalone",
-            "started_for": str(getattr(release, "version", "")),
-            "shutdown_in_seconds": 1,
-        }
-
-    # Instalação Linux pelo .run (systemd): o serviço roda como `mmonitor`
-    # com /opt somente-leitura e não pode se atualizar. Só deixa o pedido em
-    # APP_DATA_DIR/update.request; a unidade middleware-monitor-update.path
-    # aciona o instalador como root (ver updater/systemd.py).
-    if get_settings().resolved_update_mode() == "systemd":
-        from middleware_monitor.updater.systemd import request_update
-
-        target = str(getattr(release, "version", ""))
-        request_update(target)
-        return {"ok": True, "mode": "systemd", "started_for": target}
-
-    # Legacy tarball-based path (kept for non-frozen installations that
-    # ship with their own service supervisor).
-    spawn(install_release(release))  # type: ignore[arg-type]
-    return {"ok": True, "mode": "legacy", "started_for": str(getattr(release, "version", ""))}
+    try:
+        return instalar(release)  # type: ignore[arg-type]
+    except FalhaNaInstalacao as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/update-history", response_model=list[UpdateHistoryItem])

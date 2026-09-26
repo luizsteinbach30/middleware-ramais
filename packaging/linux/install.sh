@@ -72,6 +72,15 @@ TOKEN="${MM_TOKEN:-${APP_UPDATE_TOKEN:-$F_TOKEN}}"
 AUTO_INSTALL="$(printf '%s' "${MM_AUTO_INSTALL:-${APP_UPDATE_AUTO_INSTALL:-$F_AUTO}}" | tr '[:upper:]' '[:lower:]')"
 WANT="${MM_VERSION:-}"
 WANT="${WANT#v}"
+# Pedido com versão (painel ou NOC, ADR 0008): instala exatamente ela, e não "a
+# mais nova do canal". O NOC decide o ritmo da frota; o `is_newer` abaixo continua
+# recusando descer de versão.
+if [[ -z "$WANT" && $MODE == ifnewer && -r "$DATA/update.request" ]]; then
+  REQ="$(head -n1 "$DATA/update.request" | tr -d '[:space:]')"; REQ="${REQ#v}"
+  if [[ "$REQ" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+-][0-9A-Za-z.+-]+)?$ ]]; then
+    WANT="$REQ"
+  fi
+fi
 
 command -v curl >/dev/null 2>&1 || die "preciso de curl (Debian/Ubuntu: apt-get install -y curl)"
 command -v sha256sum >/dev/null 2>&1 || die "preciso de sha256sum (coreutils)"

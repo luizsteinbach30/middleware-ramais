@@ -164,15 +164,27 @@ async def enrolar(url: str, *, codigo: str, maquina: str, sistema: str, csr: str
     )
 
 
-async def heartbeat(url: str, credencial: str, *, relogio_iso: str, manifesto_sha256: str) -> dict[str, Any]:
+async def heartbeat(
+    url: str,
+    credencial: str,
+    *,
+    relogio_iso: str,
+    manifesto_sha256: str,
+    atualizacao: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    corpo: dict[str, Any] = {
+        "versao": __version__,
+        "relogio": relogio_iso,
+        "manifestoSha256": manifesto_sha256,
+    }
+    # Só para NOC que anunciou `atualizacao` na resposta anterior (CONTRATO §12.1): o DTO
+    # do heartbeat recusa campo desconhecido, e um NOC antigo derrubaria o heartbeat inteiro.
+    if atualizacao is not None:
+        corpo["atualizacao"] = atualizacao
     resposta = await _pedir(
         url,
         "/agente/v1/heartbeat",
-        {
-            "versao": __version__,
-            "relogio": relogio_iso,
-            "manifestoSha256": manifesto_sha256,
-        },
+        corpo,
         credencial,
         tls=cert.contexto_do_agente(),
     )

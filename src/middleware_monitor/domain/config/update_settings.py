@@ -9,6 +9,11 @@ Decisão de produto (2026-08-03): o agendamento **só verifica e avisa** — nun
 instala sozinho. Instalar continua sendo o clique em "Atualizar agora". O que
 o operador configura aqui é *quando* verificar e em *qual canal*.
 
+Revisão de 2026-09-25 (ADR 0008): com o agente enrolado no NOC, a instalação
+sozinha passa a existir **só para a versão que o NOC pede**, na janela dele ou
+no "Atualizar agora" (``updater/automatico.py``). ``auto_noc`` é a chave local
+que desliga isso num cliente; a verificação por canal continua só avisando.
+
 As chaves vivem no mesmo KV das demais configs (`app_config`), com o `.env`
 servindo de fallback para o canal.
 """
@@ -30,6 +35,7 @@ KEY_CHANNEL = f"{_PREFIX}channel"
 KEY_HOUR = f"{_PREFIX}check_hour"
 KEY_MINUTE = f"{_PREFIX}check_minute"
 KEY_DAYS = f"{_PREFIX}check_days"
+KEY_AUTO_NOC = f"{_PREFIX}auto_noc"
 
 CHANNELS: tuple[str, ...] = ("stable", "beta")
 # APScheduler aceita `day_of_week` como "mon,tue,..."; guardamos nesse formato.
@@ -52,6 +58,9 @@ class UpdateSettings:
     check_minute: int = 0
     # Dias em que a verificação roda. Vazio nunca acontece: cai no padrão.
     check_days: tuple[str, ...] = field(default=WEEKDAYS)
+    # Instalar sozinho a versão desejada do NOC (ADR 0008). Ligado por padrão:
+    # é o que faz a frota andar sem visita.
+    auto_noc: bool = True
 
     @property
     def day_of_week(self) -> str:
@@ -65,6 +74,7 @@ class UpdateSettings:
             "check_hour": self.check_hour,
             "check_minute": self.check_minute,
             "check_days": list(self.check_days),
+            "auto_noc": self.auto_noc,
         }
 
 
@@ -108,12 +118,14 @@ def load_update_settings(db: DBSession) -> UpdateSettings:
     canal_raw = rows.get(KEY_CHANNEL) or get_settings().update_channel
     canal = canal_raw if canal_raw in CHANNELS else "stable"
     auto_raw = rows.get(KEY_AUTO_CHECK)
+    auto_noc_raw = rows.get(KEY_AUTO_NOC)
     return UpdateSettings(
         auto_check=True if auto_raw is None else auto_raw in _TRUE,
         channel=canal,
         check_hour=_as_int(rows.get(KEY_HOUR), 0, low=0, high=23),
         check_minute=_as_int(rows.get(KEY_MINUTE), 0, low=0, high=59),
         check_days=normalize_days(rows.get(KEY_DAYS)),
+        auto_noc=True if auto_noc_raw is None else auto_noc_raw in _TRUE,
     )
 
 
@@ -145,6 +157,8 @@ def save_update_settings(
 
     if "auto_check" in incoming:
         grava(KEY_AUTO_CHECK, "1" if incoming["auto_check"] else "0")
+    if "auto_noc" in incoming:
+        grava(KEY_AUTO_NOC, "1" if incoming["auto_noc"] else "0")
     if "channel" in incoming:
         canal = str(incoming["channel"])
         if canal not in CHANNELS:

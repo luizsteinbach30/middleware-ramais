@@ -14,9 +14,14 @@ Flow:
    ``SHA256SUMS`` asset. Mismatch aborts the update and deletes the file.
 4. Write a small ``apply_update.bat`` helper that:
    - waits for the current PID to terminate,
-   - moves the new ``.exe`` over the running one,
-   - re-launches the new ``.exe``,
-   - deletes itself.
+   - keeps the running ``.exe`` as ``<nome>.exe.bak``,
+   - moves the new ``.exe`` over the running one and re-launches it,
+   - **confere a saúde** (ADR 0008): ``/api/system/healthz`` tem de responder com a
+     versão nova em até 150 s; senão encerra a nova, devolve o ``.bak`` e sobe a
+     antiga — sem isso, uma release que não abre deixava o cliente sem middleware
+     até alguém ir lá,
+   - grava o desfecho em ``update_result.txt`` (lido no boot seguinte e mandado
+     ao NOC) e se apaga.
 5. Spawn the helper detached (no console window) so it survives our exit.
 6. Caller is expected to terminate the process so the helper can swap the
    binary (Windows refuses to overwrite a running ``.exe``).
@@ -70,6 +75,8 @@ def apply_standalone_update(
     current_exe: Path | None = None,
     sha_url: str | None = None,
     token: str | None = None,
+    versao_esperada: str | None = None,
+    porta: int | None = None,
 ) -> Path:
     """Download the new ``.exe`` and spawn the helper that will swap it in.
 
@@ -109,19 +116,14 @@ def apply_standalone_update(
     pid = os.getpid()
     helper = tmp_dir / "apply_update.bat"
     helper.write_text(
-        f"""@echo off
-chcp 65001 > nul
-:wait_loop
-tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
-if not errorlevel 1 (
-  timeout /t 1 /nobreak >nul
-  goto wait_loop
-)
-timeout /t 1 /nobreak >nul
-move /Y "{new_exe}" "{current_exe}" >nul
-start "" "{current_exe}"
-del "%~f0"
-""",
+        script_do_ajudante(
+            pid=pid,
+            novo=new_exe,
+            atual=current_exe,
+            alvo=versao_esperada or "",
+            porta=porta or _porta_local(),
+            resultado=data_dir / RESULTADO,
+        ),
         encoding="utf-8",
     )
 
@@ -140,3 +142,86 @@ del "%~f0"
     )
     log.info("update_helper_spawned", helper=str(helper), pid_to_wait=pid)
     return new_exe
+
+
+RESULTADO = "update_result.txt"
+ESPERA_DA_SAUDE_S = 150
+
+
+def _porta_local() -> int:
+    from middleware_monitor.settings import get_settings
+
+    return int(get_settings().port)
+
+
+def script_do_ajudante(*, pid: int, novo: Path, atual: Path, alvo: str, porta: int, resultado: Path) -> str:
+    """O ``.bat`` que troca o executável depois que este processo sai.
+
+    Sem ``alvo`` (versão desconhecida) a saúde aceita qualquer versão que
+    responda: ainda prova que o executável novo abre. As mensagens não levam
+    parênteses — dentro de bloco ``if (...)`` do cmd eles fecham o bloco.
+    """
+    bak = atual.with_name(atual.name + ".bak")
+    confere = (
+        f"powershell -NoProfile -NonInteractive -Command \"try{{(Invoke-RestMethod -UseBasicParsing "
+        f"-TimeoutSec 4 'http://127.0.0.1:{porta}/api/system/healthz').version}}catch{{}}\""
+    )
+    condicao = '"%V%"=="%ALVO%"' if alvo else 'not "%V%"==""'
+    return f"""@echo off
+chcp 65001 > nul
+set "ALVO={alvo}"
+set "RES={resultado}"
+:wait_loop
+tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
+if not errorlevel 1 (
+  timeout /t 1 /nobreak >nul
+  goto wait_loop
+)
+timeout /t 1 /nobreak >nul
+copy /Y "{atual}" "{bak}" >nul
+if errorlevel 1 goto sem_backup
+move /Y "{novo}" "{atual}" >nul
+if errorlevel 1 goto sem_troca
+start "" "{atual}"
+set /a T=0
+:saude
+timeout /t 5 /nobreak >nul
+set /a T+=5
+set "V="
+for /f "usebackq delims=" %%v in (`{confere}`) do set "V=%%v"
+if {condicao} goto ok
+if %T% LSS {ESPERA_DA_SAUDE_S} goto saude
+taskkill /F /IM "{atual.name}" >nul 2>&1
+timeout /t 3 /nobreak >nul
+move /Y "{bak}" "{atual}" >nul
+start "" "{atual}"
+> "%RES%" echo voltou %ALVO% a versao nova nao respondeu em {ESPERA_DA_SAUDE_S} s
+goto fim
+:sem_backup
+> "%RES%" echo falhou %ALVO% nao foi possivel guardar a copia do executavel atual
+del "{novo}" >nul 2>&1
+start "" "{atual}"
+goto fim
+:sem_troca
+> "%RES%" echo falhou %ALVO% nao foi possivel trocar o executavel
+start "" "{atual}"
+goto fim
+:ok
+> "%RES%" echo ok %ALVO%
+:fim
+del "%~f0"
+"""
+
+
+def ler_resultado(data_dir: Path) -> tuple[str, str, str] | None:
+    """``(desfecho, versao, motivo)`` da última troca, e apaga o arquivo. ``None`` se não houver."""
+    caminho = data_dir / RESULTADO
+    try:
+        texto = caminho.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return None
+    caminho.unlink(missing_ok=True)
+    partes = texto.split(" ", 2)
+    if len(partes) < 2 or partes[0] not in {"ok", "voltou", "falhou"}:
+        return None
+    return partes[0], partes[1], partes[2] if len(partes) > 2 else ""
