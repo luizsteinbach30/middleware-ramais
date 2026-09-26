@@ -12,6 +12,10 @@ Tudo aqui é puro — sem rede nem sessão — para que as regras se testem sozi
   aberto na outra aba — é o controle de fluxo por stream do HTTP/2 e do yamux.
 - **Balde de banda por sessão:** o que sobe do agente para o NOC não passa de
   ``X-Tunel-Banda-Kbps`` (0 = sem limite). O túnel divide o link com a telefonia.
+- **Fluxo TCP (2.16.0, ADR 0010):** ``tcp.abrir`` liga o agente a ``host:porta`` e os bytes
+  andam em quadros ``0x05`` nos dois sentidos, com janela nos dois sentidos. É o que leva o
+  RDP e o SSH do guacd do NOC até o servidor do cliente. O agente anuncia
+  ``X-Tunel-Recursos: tcp``; o NOC diz a duração da sessão em ``X-Tunel-Duracao-S``.
 - **Origens:** o link absoluto para outro endereço interno vira ``/__tunel/ir?u=<url>``; é
   o NOC quem cria a origem (subdomínio próprio) e leva o navegador até ela.
 """
@@ -28,13 +32,19 @@ from urllib.parse import quote, urlsplit
 PROTOCOLO = "2"
 CABECALHO_PROTOCOLO = "X-Tunel-Protocolo"
 CABECALHO_BANDA = "X-Tunel-Banda-Kbps"
+CABECALHO_RECURSOS = "X-Tunel-Recursos"
+CABECALHO_DURACAO = "X-Tunel-Duracao-S"
+RECURSOS = "tcp"
+# A sessão TCP (RDP/SSH) dura o que o NOC disser, até este teto.
+DURACAO_TETO_S = 12 * 60 * 60
 
 # Tipos de frame binário.
 REQ_CORPO = 0x01  # NOC -> agente
 RESP_CORPO = 0x02  # agente -> NOC
 WS_TEXTO = 0x03  # nos dois sentidos
 WS_BINARIO = 0x04  # nos dois sentidos
-_TIPOS = frozenset({REQ_CORPO, RESP_CORPO, WS_TEXTO, WS_BINARIO})
+TCP_DADOS = 0x05  # nos dois sentidos (2.16.0)
+_TIPOS = frozenset({REQ_CORPO, RESP_CORPO, WS_TEXTO, WS_BINARIO, TCP_DADOS})
 _CABECA = struct.Struct(">BI")
 
 JANELA_INICIAL = 256 * 1024
@@ -62,6 +72,15 @@ def banda_do_cabecalho(valor: str | None) -> int:
     except ValueError:
         return 0
     return kbps if 0 < kbps <= 10_000_000 else 0
+
+
+def duracao_do_cabecalho(valor: str | None, padrao: int) -> int:
+    """Segundos que o NOC deu para a sessão; ausente ou fora de forma = ``padrao``. Teto de 12 h."""
+    try:
+        s = int(str(valor or "").strip())
+    except ValueError:
+        return padrao
+    return min(s, DURACAO_TETO_S) if s >= 60 else padrao
 
 
 class Balde:

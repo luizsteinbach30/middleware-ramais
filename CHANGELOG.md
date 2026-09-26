@@ -2,6 +2,16 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [Unreleased]
+
+### Added
+
+- **Túnel TCP para RDP e SSH** (ADR 0010; NOC ADR 0029): o NOC passa a abrir, pelo mesmo túnel, a área de
+  trabalho remota de Windows Server/Hyper-V e o terminal SSH de servidores Linux da rede do cliente — no
+  navegador, já logado com a senha guardada no NOC (que nunca passa pelo middleware). O agente anuncia o recurso
+  (`X-Tunel-Recursos: tcp`), leva os bytes com janela nos dois sentidos e respeita a duração que o NOC der à
+  sessão (8 h; teto de 12 h).
+
 ## [2.15.2] — 2026-09-26
 
 ### Fixed
