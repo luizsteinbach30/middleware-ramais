@@ -35,6 +35,18 @@ decidiu: **só sobe**, **janela definida no NOC (padrão 02h–05h)** e **botão
      com console oculto (`CREATE_NO_WINDOW`), sem nenhum programa de console, espera **todos** os processos do
      `.exe` (o onefile roda dois) e os encerra depois de 60 s. Uma troca por vez (`tmp/update.lock`, que vence
      em 15 min, + mutex nomeado). O teste dispara pelo mesmo caminho da produção e conta as janelas de console.
+   - **A causa raiz, achada com o `.exe` real (26/09):** o pedido de encerramento vivia num `threading.Event` do
+     `desktop.py`. No `.exe` o PyInstaller roda esse arquivo como `__main__`, e o `instalar()` importava
+     `middleware_monitor.desktop` — outra cópia do módulo, outro evento. O "Atualizar" da página e o pedido do NOC
+     marcavam a cópia que ninguém olhava: o app não fechava, e o `.bat` esperava o PID para sempre (daí o laço sem
+     fim). Só o botão da bandeja funcionava, por rodar na cópia principal. O pedido passou para
+     `core/encerramento.py`; o ajudante encerrar à força depois de 60 s fica só como rede de segurança.
+   - **O segundo defeito, que o primeiro escondia:** com o app antigo fechando direito, o `.exe` novo mostrava
+     "Failed to load Python DLL '...\_MEIxxxx\python312.dll'". O carregador onefile deixa `_PYI_*` no ambiente
+     apontando para a pasta temporária dele; o ajudante herdava e passava ao `.exe` novo, que se achava filho do
+     antigo e procurava a DLL numa pasta já apagada. Morto à força, o antigo deixava a pasta — funcionava por acaso.
+     O ajudante nasce com `ambiente_limpo()` (sem `_PYI_*`/`_MEIPASS*`, com `PYINSTALLER_RESET_ENVIRONMENT=1`) e o
+     script limpa de novo antes do `Start-Process`.
    - **"voltou" não se repete sozinho** na mesma versão (as tentativas se esgotam); só o "Atualizar agora" ou
      uma versão desejada nova tentam de novo. Falha antes da troca (download, conferência) mantém as 3.
 8. **O estado volta ao NOC só quando ele anunciou o campo.** O DTO do heartbeat do NOC recusa campo

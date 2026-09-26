@@ -8,7 +8,7 @@ Três modos, decididos pela instalação e não pelo pedido:
 
 - **standalone** (``.exe`` do PyInstaller, Windows): baixa, confere o SHA256 e
   deixa o ajudante trocando o executável depois que este processo sair. Quem
-  chama precisa encerrar o processo (``desktop.request_shutdown``).
+  chama precisa encerrar o processo (``core.encerramento.pedir``).
 - **systemd** (``.run`` no Linux): o serviço não pode se atualizar; grava o
   pedido com a versão exata, e a unidade ``middleware-monitor-update.path``
   instala como root.
@@ -52,7 +52,8 @@ def instalar(release: Release, *, encerrar_em_s: float = 1.0) -> dict[str, Any]:
     alvo = str(release.version)
     m = modo()
     if m == "standalone":
-        from middleware_monitor.desktop import get_data_dir, request_shutdown
+        from middleware_monitor.core.encerramento import pedir as request_shutdown
+        from middleware_monitor.desktop import get_data_dir
         from middleware_monitor.updater.standalone import (
             UpdateError,
             apply_standalone_update,
