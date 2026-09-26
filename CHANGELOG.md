@@ -6,7 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ### Added
 
-- **Atualização automática pedida pelo NOC** (item 15 do `docs/AGENTE-NOC.md`, ADR 0008). O
+- **Atualização automática pedida pelo NOC** (item 16 do `docs/AGENTE-NOC.md`, ADR 0008). O
   middleware instala sozinho a versão desejada do NOC, dentro da janela definida lá (padrão
   02:00–05:00) ou na hora, pelo "Atualizar agora". Só sobe de versão e só instala ocioso (sem
   aplicação, escrita remota, túnel ou restauração em andamento). Cada agente espera um atraso próprio
