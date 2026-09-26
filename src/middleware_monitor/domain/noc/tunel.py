@@ -290,6 +290,9 @@ class Sessao:
         self._ws: Any = None
         self._envio = asyncio.Lock()
         self._http: httpx.AsyncClient | None = None
+        # Equipamento que derruba conexão reaproveitada: a sessão passa a abrir uma por pedido.
+        self._http_sem_reuso: httpx.AsyncClient | None = None
+        self.sem_reuso = False
         self.encerrada = False
 
     @property
@@ -313,18 +316,25 @@ class Sessao:
 
         from middleware_monitor.domain.noc import certificado as cert
 
+        comum: dict[str, Any] = {
+            "verify": False,  # equipamento de LAN tem certificado próprio; os adapters fazem igual
+            "follow_redirects": False,
+            "timeout": TIMEOUTS,
+            "trust_env": False,
+        }
+        # Keep-alive curto: telefone fecha a conexão parada em poucos segundos, e reusar uma
+        # conexão morta é uma requisição perdida (servidor embarcado costuma fechar em 2 a 5 s).
         self._http = httpx.AsyncClient(
-            verify=False,  # noqa: S501 - equipamento de LAN tem certificado próprio; os adapters fazem igual
-            follow_redirects=False,
-            timeout=TIMEOUTS,
-            trust_env=False,
-            # Keep-alive curto: telefone fecha a conexão parada em poucos segundos, e reusar uma
-            # conexão morta é uma requisição perdida (servidor embarcado costuma fechar em 2 a 5 s).
+            **comum,
             limits=httpx.Limits(
                 max_connections=CONEXOES_COM_O_EQUIPAMENTO,
                 max_keepalive_connections=CONEXOES_COM_O_EQUIPAMENTO,
                 keepalive_expiry=2.0,
             ),
+        )
+        self._http_sem_reuso = httpx.AsyncClient(
+            **comum,
+            limits=httpx.Limits(max_connections=CONEXOES_COM_O_EQUIPAMENTO, max_keepalive_connections=0),
         )
         tentativa = 0
         try:
@@ -363,6 +373,7 @@ class Sessao:
         finally:
             self.encerrada = True
             await self._http.aclose()
+            await self._http_sem_reuso.aclose()
             log.info(
                 "noc_tunel_encerrado",
                 sessao=self.id,
@@ -441,22 +452,31 @@ class Sessao:
         self, metodo: str, caminho: str, pares: list[list[str]], corpo: bytes
     ) -> httpx.Response:
         """Manda ao equipamento. Pedido que cai sem **nenhum byte** de resposta — a conexão que
-        o aparelho fechou enquanto estava parada — vai de novo, uma vez, numa conexão nova,
-        **qualquer método**: é a regra do Chromium (``ShouldResendRequest``), e o menu do
-        telefone que carrega por POST perdia pedaços. Com resposta começada, nunca repete.
-        O corpo está inteiro em memória (``_corpo``), então repetir manda o mesmo corpo."""
-        assert self._http is not None
+        o aparelho fechou enquanto estava parada, ou que ele não aceita reaproveitar — vai de
+        novo, uma vez, **qualquer método** (regra do Chromium, ``ShouldResendRequest``). Com
+        resposta começada, nunca repete. O corpo está inteiro em memória (``_corpo``).
+
+        A repetição vai **sempre por conexão nova**, e a sessão para de reaproveitar conexão
+        com esse equipamento: há servidor embarcado que atende um pedido por conexão e derruba
+        o segundo sem responder. Medido no Chrome contra um desses (26/09): repetir pelo pool
+        deixava 2 de 22 pedidos do menu em 502, porque a repetição caía em outra conexão velha."""
+        assert self._http is not None and self._http_sem_reuso is not None
         cabecalhos = cabecalhos_do_pedido(pares, self.destino, self.id)
+        cliente = self._http_sem_reuso if self.sem_reuso else self._http
         for tentativa in (1, 2):
-            pedido = self._http.build_request(
+            pedido = cliente.build_request(
                 metodo, f"{self.destino.base}{caminho}", headers=cabecalhos, content=corpo or None
             )
             try:
-                return await self._http.send(pedido, stream=True)
+                return await cliente.send(pedido, stream=True)
             except (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError) as exc:
                 if tentativa == 2:
                     raise
+                if not self.sem_reuso:
+                    self.sem_reuso = True
+                    log.info("noc_tunel_sem_reuso", sessao=self.id, destino=self.destino.rotulo)
                 log.info("noc_tunel_repetiu", sessao=self.id, metodo=metodo, motivo=type(exc).__name__)
+                cliente = self._http_sem_reuso
         raise AssertionError("inalcançável")
 
     async def _executar(self, fluxo: int, frame: dict[str, Any], f: _Fluxo) -> None:

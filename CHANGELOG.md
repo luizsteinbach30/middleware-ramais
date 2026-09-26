@@ -23,6 +23,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 - **Túnel: o menu do telefone que carrega por POST perdia pedaços** (502 "Server disconnected without sending a
   response"). Pedido que cai sem nenhum byte de resposta, na conexão parada que o aparelho fechou, vai de novo
   uma vez, de qualquer método, como o Chrome faz. Keep-alive com o aparelho de 5 s para 2 s.
+  A repetição vai por conexão nova, e o equipamento que derruba conexão reaproveitada (servidor embarcado
+  que atende um pedido por conexão) passa a receber uma conexão por pedido naquela sessão: medido no Chrome,
+  o menu carregava 12 de 22 partes na 2.14.1 e carrega 22 de 22.
 - **Túnel: tempos abaixo dos da Cloudflare** (leitura 95 s, espera por conexão 30 s): o navegador recebe a
   mensagem do agente em vez de um 524.
 
