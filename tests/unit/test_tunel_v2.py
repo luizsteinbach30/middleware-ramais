@@ -28,7 +28,7 @@ class _Aparelho(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     nome = "a"
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         if self.path == "/grande":
             corpo = b"x" * GRANDE
             tipo = "application/octet-stream"
@@ -120,7 +120,9 @@ async def _sessao(
     async with serve(tratar, "127.0.0.1", 0, process_response=cabecalhos) as servidor:
         porta_ws = servidor.sockets[0].getsockname()[1]
         destino = Destino("http", "127.0.0.1", porta_sessao, "teste")
-        tunel.abrir(f"v2{porta_ws}", destino, canal=f"http://127.0.0.1:{porta_ws}", credencial="ag.x", operador="t")
+        tunel.abrir(
+            f"v2{porta_ws}", destino, canal=f"http://127.0.0.1:{porta_ws}", credencial="ag.x", operador="t"
+        )
         await asyncio.wait_for(pronto.wait(), timeout=prazo)
         for _ in range(50):
             if not tunel.abertas():
@@ -215,7 +217,13 @@ async def test_websocket_do_aparelho_vai_e_volta(aparelhos: tuple[int, int]) -> 
         async def roteiro(ws: Any, noc: _Noc) -> None:
             await ws.send(
                 json.dumps(
-                    {"t": "ws.abrir", "f": 7, "caminho": "/ao-vivo", "cabecalhos": [], "protocolos": ["status"]}
+                    {
+                        "t": "ws.abrir",
+                        "f": 7,
+                        "caminho": "/ao-vivo",
+                        "cabecalhos": [],
+                        "protocolos": ["status"],
+                    }
                 )
             )
             await _esperar(lambda: noc.achou(lambda x: x["t"] == "ws.aberto") is not None)
