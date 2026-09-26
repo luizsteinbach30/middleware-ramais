@@ -146,6 +146,7 @@ def test_uma_tentativa_por_hora_e_tres_no_maximo() -> None:
     assert not d.instalar and d.estado.estado == a.FALHOU and d.estado.detalhe == "download"
 
 
+@pytest.mark.skipif(not sys.platform.startswith("win"), reason="o resultado da troca é do ajudante do Windows (desktop.py puxa o tkinter)")
 def test_versao_que_voltou_nao_se_repete_sozinha(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import middleware_monitor.desktop as desktop
 
