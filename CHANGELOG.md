@@ -2,6 +2,20 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [Unreleased]
+
+### Fixed
+
+- **Atualizar pelo Windows abria janelas do cmd em laço e era preciso finalizar a tarefa.** O ajudante
+  que troca o `.exe` era um `.bat` sem console: cada comando abria uma janela, e a espera (`timeout`) falhava
+  na hora, então o laço girava sem pausa. Agora é um ajudante PowerShell oculto, sem janela nenhuma, que
+  espera o app fechar (e o encerra depois de 60 s), troca, confere a versão nova e volta para a anterior se
+  ela não responder. Só uma atualização por vez. Vale para o botão da bandeja, o da página e o pedido do NOC.
+  - Quem está na 2.14.0 ou 2.14.1 ainda atualiza com o ajudante antigo: **instalar a 2.14.2 à mão uma vez**.
+- Uma versão que "voltou" (subiu e não respondeu) não é tentada de novo sozinha na janela seguinte; o
+  "Atualizar agora" do NOC tenta.
+- O botão da bandeja passou a conferir a versão exata que baixou (antes aceitava qualquer resposta).
+
 ## [2.14.1] — 2026-09-25
 
 ### Fixed

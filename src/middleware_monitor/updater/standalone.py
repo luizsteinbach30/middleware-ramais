@@ -12,8 +12,9 @@ Flow:
    ``%LOCALAPPDATA%/MiddlewareMonitor/tmp``.
 3. Verify the SHA256 of the downloaded ``.exe`` against the release's
    ``SHA256SUMS`` asset. Mismatch aborts the update and deletes the file.
-4. Write a small ``apply_update.bat`` helper that:
-   - waits for the current PID to terminate,
+4. Write a small ``apply_update.ps1`` helper that:
+   - waits for every process of the running ``.exe`` to terminate (and ends
+     them after 60 s),
    - keeps the running ``.exe`` as ``<nome>.exe.bak``,
    - moves the new ``.exe`` over the running one and re-launches it,
    - **confere a saúde** (ADR 0008): ``/api/system/healthz`` tem de responder com a
@@ -22,7 +23,9 @@ Flow:
      até alguém ir lá,
    - grava o desfecho em ``update_result.txt`` (lido no boot seguinte e mandado
      ao NOC) e se apaga.
-5. Spawn the helper detached (no console window) so it survives our exit.
+5. Spawn the helper with a hidden console (``disparar_ajudante``) so it survives
+   our exit without opening a single window. Only one helper runs at a time
+   (``update.lock`` + a named mutex).
 6. Caller is expected to terminate the process so the helper can swap the
    binary (Windows refuses to overwrite a running ``.exe``).
 """
@@ -32,6 +35,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +86,7 @@ def apply_standalone_update(
 
     Returns the path to the freshly-downloaded ``.exe`` (in tmp). After
     this call returns, the caller MUST terminate the current process —
-    otherwise the helper batch will wait forever for the PID to die.
+    otherwise the helper ends it after 60 s.
     """
     if not sys.platform.startswith("win"):
         raise UpdateError("standalone update is only supported on Windows")
@@ -93,12 +97,15 @@ def apply_standalone_update(
 
     tmp_dir = data_dir / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
+    trava = tmp_dir / TRAVA
+    tomar_trava(trava)
     new_exe = tmp_dir / asset_name
 
     log.info("update_download_started", asset=asset_name, url=asset_url)
     try:
         download_asset_sync(asset_url, new_exe, token=token)
     except Exception as exc:
+        trava.unlink(missing_ok=True)
         raise UpdateError(f"download failed: {exc}") from exc
     log.info("update_download_done", path=str(new_exe), bytes=new_exe.stat().st_size)
 
@@ -109,43 +116,98 @@ def apply_standalone_update(
     except Exception as exc:
         new_exe.unlink(missing_ok=True)
         sums_path.unlink(missing_ok=True)
+        trava.unlink(missing_ok=True)
         raise UpdateError(f"checksum verification failed: {exc}") from exc
     log.info("update_checksum_ok", asset=asset_name)
 
     current_exe = current_exe or Path(sys.executable).resolve()
-    pid = os.getpid()
-    helper = tmp_dir / "apply_update.bat"
+    helper = tmp_dir / AJUDANTE
     helper.write_text(
         script_do_ajudante(
-            pid=pid,
             novo=new_exe,
             atual=current_exe,
             alvo=versao_esperada or "",
             porta=porta or _porta_local(),
             resultado=data_dir / RESULTADO,
+            trava=trava,
         ),
-        encoding="utf-8",
+        encoding="utf-8-sig",  # o PowerShell 5.1 só lê acento em arquivo com BOM
     )
-
-    creationflags = (
-        getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-        | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
-        | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
-    )
-    subprocess.Popen(
-        ["cmd.exe", "/c", str(helper)],
-        creationflags=creationflags,
-        close_fds=True,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    log.info("update_helper_spawned", helper=str(helper), pid_to_wait=pid)
+    try:
+        disparar_ajudante(helper)
+    except OSError:
+        trava.unlink(missing_ok=True)
+        raise
+    log.info("update_helper_spawned", helper=str(helper), exe=str(current_exe))
     return new_exe
 
 
 RESULTADO = "update_result.txt"
+AJUDANTE = "apply_update.ps1"
+TRAVA = "update.lock"
 ESPERA_DA_SAUDE_S = 150
+ESPERA_DO_ENCERRAMENTO_S = 60
+TRAVA_VENCE_S = 15 * 60
+
+CREATE_NO_WINDOW = 0x08000000
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+
+
+def tomar_trava(trava: Path) -> None:
+    """Uma troca por vez. Dois cliques (ou botão local + pedido do NOC) disparavam dois
+    ajudantes disputando o mesmo ``.exe``. A trava vence sozinha: um ajudante que morreu
+    no meio não pode impedir a próxima atualização para sempre."""
+    try:
+        idade: float | None = time.time() - trava.stat().st_mtime
+    except OSError:
+        idade = None
+    if idade is not None and idade < TRAVA_VENCE_S:
+        raise UpdateError("já há uma atualização em andamento neste middleware")
+    trava.write_text(str(os.getpid()), encoding="ascii")
+
+
+def disparar_ajudante(helper: Path) -> subprocess.Popen[bytes]:
+    """Sobe o ajudante sem janela nenhuma.
+
+    ``CREATE_NO_WINDOW`` dá ao PowerShell um console **oculto**, que ele e o que ele
+    chamar herdam. Até a 2.14.1 o ajudante era um ``.bat`` com ``DETACHED_PROCESS``
+    (sem console): cada ``tasklist``/``timeout``/``powershell`` abria uma janela
+    própria, e o ``timeout`` sem console falha na hora (código 125) — as esperas do
+    ``.bat`` giravam sem pausa. Era o "abre telas do cmd e entra em laço" do campo.
+    """
+    comando = [
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-WindowStyle",
+        "Hidden",
+        "-File",
+        str(helper),
+    ]
+    base = CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
+    try:
+        # Fora do job do processo pai: um serviço ou terminal que mata o job ao fechar
+        # levaria o ajudante junto, no meio da troca. Job que não deixa sair recusa.
+        return subprocess.Popen(
+            comando,
+            creationflags=base | CREATE_BREAKAWAY_FROM_JOB,
+            close_fds=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        return subprocess.Popen(
+            comando,
+            creationflags=base,
+            close_fds=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
 
 def _porta_local() -> int:
@@ -154,62 +216,93 @@ def _porta_local() -> int:
     return int(get_settings().port)
 
 
-def script_do_ajudante(*, pid: int, novo: Path, atual: Path, alvo: str, porta: int, resultado: Path) -> str:
-    """O ``.bat`` que troca o executável depois que este processo sai.
+def _ps(texto: str | Path) -> str:
+    """Literal de PowerShell entre aspas simples (nada se expande dentro)."""
+    return "'" + str(texto).replace("'", "''") + "'"
 
-    Sem ``alvo`` (versão desconhecida) a saúde aceita qualquer versão que
-    responda: ainda prova que o executável novo abre. As mensagens não levam
-    parênteses — dentro de bloco ``if (...)`` do cmd eles fecham o bloco.
+
+def script_do_ajudante(
+    *, novo: Path, atual: Path, alvo: str, porta: int, resultado: Path, trava: Path
+) -> str:
+    """O ``.ps1`` que troca o executável depois que este processo sai.
+
+    Tudo acontece dentro do próprio PowerShell — espera, cópia, saúde —, sem chamar
+    programa de console nenhum. Espera **todos** os processos daquele ``.exe`` (o
+    PyInstaller onefile roda dois: o carregador e o Python) e, passado o prazo, os
+    encerra. Sem ``alvo`` (versão desconhecida) a saúde aceita qualquer versão que
+    responda: ainda prova que o executável novo abre.
     """
     bak = atual.with_name(atual.name + ".bak")
-    confere = (
-        f"powershell -NoProfile -NonInteractive -Command \"try{{(Invoke-RestMethod -UseBasicParsing "
-        f"-TimeoutSec 4 'http://127.0.0.1:{porta}/api/system/healthz').version}}catch{{}}\""
-    )
-    condicao = '"%V%"=="%ALVO%"' if alvo else 'not "%V%"==""'
-    return f"""@echo off
-chcp 65001 > nul
-set "ALVO={alvo}"
-set "RES={resultado}"
-:wait_loop
-tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
-if not errorlevel 1 (
-  timeout /t 1 /nobreak >nul
-  goto wait_loop
-)
-timeout /t 1 /nobreak >nul
-copy /Y "{atual}" "{bak}" >nul
-if errorlevel 1 goto sem_backup
-move /Y "{novo}" "{atual}" >nul
-if errorlevel 1 goto sem_troca
-start "" "{atual}"
-set /a T=0
-:saude
-timeout /t 5 /nobreak >nul
-set /a T+=5
-set "V="
-for /f "usebackq delims=" %%v in (`{confere}`) do set "V=%%v"
-if {condicao} goto ok
-if %T% LSS {ESPERA_DA_SAUDE_S} goto saude
-taskkill /F /IM "{atual.name}" >nul 2>&1
-timeout /t 3 /nobreak >nul
-move /Y "{bak}" "{atual}" >nul
-start "" "{atual}"
-> "%RES%" echo voltou %ALVO% a versao nova nao respondeu em {ESPERA_DA_SAUDE_S} s
-goto fim
-:sem_backup
-> "%RES%" echo falhou %ALVO% nao foi possivel guardar a copia do executavel atual
-del "{novo}" >nul 2>&1
-start "" "{atual}"
-goto fim
-:sem_troca
-> "%RES%" echo falhou %ALVO% nao foi possivel trocar o executavel
-start "" "{atual}"
-goto fim
-:ok
-> "%RES%" echo ok %ALVO%
-:fim
-del "%~f0"
+    return f"""$ErrorActionPreference = 'Continue'
+$ProgressPreference = 'SilentlyContinue'
+$novo = {_ps(novo)}
+$atual = {_ps(atual)}
+$bak = {_ps(bak)}
+$alvo = {_ps(alvo)}
+$res = {_ps(resultado)}
+$trava = {_ps(trava)}
+$saude = 'http://127.0.0.1:{int(porta)}/api/system/healthz'
+
+function Fim([string]$texto) {{
+  [IO.File]::WriteAllText($res, $texto, (New-Object Text.UTF8Encoding $false))
+}}
+function DoExe {{
+  @(Get-Process -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -eq $atual }})
+}}
+function Encerrar {{
+  $prazo = (Get-Date).AddSeconds({ESPERA_DO_ENCERRAMENTO_S})
+  while ((DoExe).Count -gt 0 -and (Get-Date) -lt $prazo) {{ Start-Sleep -Milliseconds 500 }}
+  DoExe | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 1
+}}
+function Trocar([string]$de, [string]$para) {{
+  for ($i = 0; $i -lt 10; $i++) {{
+    try {{ Move-Item -LiteralPath $de -Destination $para -Force -ErrorAction Stop; return $true }}
+    catch {{ Start-Sleep -Seconds 1 }}
+  }}
+  return $false
+}}
+function Subir {{
+  Start-Process -FilePath $atual -WorkingDirectory (Split-Path -Parent $atual) | Out-Null
+}}
+
+$mutex = New-Object Threading.Mutex($false, 'Global\\MiddlewareMonitorUpdate')
+if (-not $mutex.WaitOne(0)) {{ exit 0 }}
+try {{
+  Encerrar
+  try {{ Copy-Item -LiteralPath $atual -Destination $bak -Force -ErrorAction Stop }}
+  catch {{
+    Fim "falhou $alvo nao foi possivel guardar a copia do executavel atual"
+    Remove-Item -LiteralPath $novo -Force -ErrorAction SilentlyContinue
+    Subir
+    return
+  }}
+  if (-not (Trocar $novo $atual)) {{
+    Fim "falhou $alvo nao foi possivel trocar o executavel"
+    Subir
+    return
+  }}
+  Subir
+  $prazo = (Get-Date).AddSeconds({ESPERA_DA_SAUDE_S})
+  while ((Get-Date) -lt $prazo) {{
+    Start-Sleep -Seconds 5
+    $v = ''
+    try {{ $v = [string](Invoke-RestMethod -UseBasicParsing -TimeoutSec 4 -Uri $saude).version }} catch {{ }}
+    if (($alvo -and $v -eq $alvo) -or (-not $alvo -and $v)) {{
+      Fim "ok $alvo"
+      return
+    }}
+  }}
+  DoExe | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 3
+  if (Trocar $bak $atual) {{ Subir }}
+  Fim "voltou $alvo a versao nova nao respondeu em {ESPERA_DA_SAUDE_S} s"
+}}
+finally {{
+  Remove-Item -LiteralPath $trava -Force -ErrorAction SilentlyContinue
+  $mutex.ReleaseMutex()
+  Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+}}
 """
 
 

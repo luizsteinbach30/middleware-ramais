@@ -456,6 +456,9 @@ def _apply_update(release: dict, data_dir: Path) -> None:
             data_dir=data_dir,
             sha_url=release.get("sha_url"),
             token=token,
+            # Sem a versão, a saúde aceitava qualquer resposta — inclusive a do
+            # executável antigo que ainda não tinha saído.
+            versao_esperada=release.get("version"),
         )
     except (UpdateError, OSError) as exc:
         messagebox.showerror("Falha ao atualizar", str(exc))
