@@ -2,6 +2,20 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.15.2] — 2026-09-26
+
+### Fixed
+
+- **Túnel: o telefone não abria, ou abria com dados errados** (regressão da 2.15.0, reproduzida com um telefone de
+  teste — http que redireciona para https, login por POST, configuração carregada por POST):
+  - **Com o subdomínio por aparelho desligado, o telefone que redireciona para https nem abria** (caía em "Outro
+    endereço"). O redirecionamento para o próprio aparelho em outro esquema ou porta volta a trocar o destino da
+    sessão, como na 2.14 — com ou sem subdomínio.
+  - **Com o subdomínio ligado, valores de configuração apareciam trocados** (o servidor de provisionamento como
+    `/__tunel/ir?u=…`) — e salvar a tela gravaria isso no aparelho. O corpo das páginas volta à regra da 2.14: só
+    o endereço do próprio aparelho vira caminho. Só os links do HTML (`href`, `src`, `action`) para outro endereço
+    de dentro passam a abrir pelo NOC.
+
 ## [2.15.1] — 2026-09-26
 
 ### Fixed

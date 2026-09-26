@@ -125,63 +125,42 @@ def host_interno(host: str) -> bool:
     return bool(ip.is_private or ip.is_loopback or ip.is_link_local or (ip.version == 4 and ip in _CGNAT))
 
 
-def _porta_padrao(esquema: str) -> int:
-    return 443 if esquema == "https" else 80
-
-
-def para_o_tunel(url: str, esquema: str, host: str, porta: int) -> str | None:
-    """O que o navegador deve pedir no lugar de ``url`` absoluto, estando na origem
-    ``esquema://host:porta``: caminho (a mesma origem), ``/__tunel/ir?u=`` (outra origem de
-    dentro) ou ``None`` (fica como está — endereço público, ou forma que não é URL)."""
-    completo = f"{esquema}:{url}" if url.startswith("//") else url
-    try:
-        partes = urlsplit(completo)
-        porta_url = partes.port
-    except ValueError:
-        return None
-    if partes.scheme not in {"http", "https"} or not partes.hostname:
-        return None
-    porta_url = porta_url or _porta_padrao(partes.scheme)
-    caminho = (partes.path or "/") + (f"?{partes.query}" if partes.query else "")
-    if partes.hostname.lower() == host.lower() and partes.scheme == esquema and porta_url == porta:
-        return caminho + (f"#{partes.fragment}" if partes.fragment else "")
-    if partes.hostname.lower() == host.lower() or host_interno(partes.hostname):
-        return f"{CAMINHO_IR}?u={quote(completo, safe='')}"
-    return None
-
-
-# URL absoluta (ou relativa ao esquema) dentro de HTML/CSS/JS/JSON, com barras escapadas de JSON.
-_URL = re.compile(
-    rb"(?P<esquema>https?:)?(?P<barras>//|\\/\\/)(?P<host>\[[0-9a-fA-F:.]+\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?)"
-    rb"(?P<porta>:\d{1,5})?(?P<resto>(?:/|\\/)[^\s\"'<>)\\]*(?:\\/[^\s\"'<>)\\]*)*)?"
+# Só atributo de link do HTML. Valor de campo (``value=``), texto, JS e JSON ficam como estão:
+# a 2.15.0/2.15.1 reescreviam toda URL de endereço interno e corrompiam a configuração que o
+# telefone mostra (o servidor de provisionamento aparecia como /__tunel/ir?u=…, e salvar a tela
+# gravaria isso no aparelho — reproduzido em 26/09).
+_ATRIBUTO_DE_LINK = re.compile(
+    rb"""(?P<antes>\b(?:href|src|action)\s*=\s*)(?P<aspa>["'])(?P<url>https?://[^"'\s<>]+)(?P=aspa)""",
+    re.IGNORECASE,
 )
 
 
-def reescrever_links_v2(corpo: bytes, esquema: str, host: str, porta: int) -> bytes:
-    """Cada URL absoluta do corpo vai para onde o navegador a alcança pelo túnel
-    (:func:`para_o_tunel`). Protocolo v2: é o NOC que resolve ``/__tunel/ir``."""
+def reescrever_atributos_v2(corpo: bytes, host_da_sessao: str) -> bytes:
+    """Link do HTML para OUTRO endereço de dentro vira ``/__tunel/ir?u=<url>`` (o NOC abre a
+    origem dele). O endereço do próprio aparelho já virou caminho pela regra da v1."""
 
     def trocar(m: re.Match[bytes]) -> bytes:
-        esquema_url = m.group("esquema")
-        if esquema_url is None and m.start() > 0 and corpo[m.start() - 1 : m.start()] in {b"/", b"\\", b":"}:
-            return m.group(0)  # pedaço de outra URL, não o começo de uma
-        escapada = m.group("barras") == b"\\/\\/"
-        bruto = m.group(0).decode("latin1")
-        url = bruto.replace("\\/", "/")
-        novo = para_o_tunel(url, esquema, host, porta)
-        if novo is None:
+        url = m.group("url").decode("latin1")
+        try:
+            host = (urlsplit(url).hostname or "").lower()
+        except ValueError:
             return m.group(0)
-        if escapada:
-            novo = novo.replace("/", "\\/")
-        return novo.encode("latin1")
+        if not host or host == host_da_sessao.lower() or not host_interno(host):
+            return m.group(0)
+        aspa = m.group("aspa")
+        return m.group("antes") + aspa + f"{CAMINHO_IR}?u={quote(url, safe='')}".encode() + aspa
 
-    return _URL.sub(trocar, corpo)
+    return _ATRIBUTO_DE_LINK.sub(trocar, corpo)
 
 
-def location_v2(valor: str, esquema: str, host: str, porta: int) -> str:
-    """``Location`` do equipamento: caminho na mesma origem, ``/__tunel/ir`` para outra de
-    dentro — inclusive o próprio aparelho em outro esquema ou porta (o http que manda para
-    o https ganha a sua origem, em vez de trocar o destino da sessão como na v1)."""
-    if not urlsplit(valor).netloc:
-        return valor
-    return para_o_tunel(valor, esquema, host, porta) or valor
+def location_para_outro_host(valor: str, host_da_sessao: str) -> str | None:
+    """``Location`` para OUTRO endereço de dentro: ``/__tunel/ir``. ``None`` = segue a regra da v1
+    (o próprio aparelho em qualquer esquema/porta vira caminho e troca o destino da sessão)."""
+    try:
+        partes = urlsplit(valor)
+    except ValueError:
+        return None
+    host = (partes.hostname or "").lower()
+    if partes.scheme not in {"http", "https"} or not host or host == host_da_sessao.lower():
+        return None
+    return f"{CAMINHO_IR}?u={quote(valor, safe='')}" if host_interno(host) else None

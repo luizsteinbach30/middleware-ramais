@@ -207,8 +207,10 @@ def cabecalhos_da_resposta(
         if nome in _SALTO or nome in _RESPOSTA_DESCARTADA:
             continue
         valor = v
-        if nome in {"location", "content-location"} and v2:
-            valor = tp.location_v2(v, destino.esquema, destino.host, destino.porta)
+        eh_location = nome in {"location", "content-location"}
+        outro = tp.location_para_outro_host(v, destino.host) if v2 and eh_location else None
+        if outro is not None:
+            valor = outro
         elif nome in {"location", "content-location"}:
             partes = urlsplit(v)
             # O próprio equipamento, em qualquer esquema ou porta: o http que redireciona para
@@ -687,10 +689,11 @@ class Sessao:
         self, fluxo: int, resposta: httpx.Response, destino: Destino, f: _Fluxo | None = None
     ) -> None:
         local = resposta.headers.get("location")
-        # v1: o http que manda para o https troca o destino da sessão. Na v2 o Location vira
-        # /__tunel/ir e o NOC abre a origem https ao lado (location_v2).
+        # O http que manda para o https (ou outra porta) do mesmo aparelho troca o destino da
+        # sessão — como na v1, nas duas versões do protocolo. A 2.15.0/2.15.1 mandavam para
+        # /__tunel/ir, e com o subdomínio desligado o telefone nem abria (reproduzido em 26/09).
         redireciona = bool(local) and 300 <= resposta.status_code < 400
-        novo = para_onde(local, destino) if local and redireciona and not self.v2 else None
+        novo = para_onde(local, destino) if local and redireciona else None
         if novo is not None:
             log.info("noc_tunel_destino_mudou", sessao=self.id, de=destino.base, para=novo.base)
             self.destino = novo
@@ -705,10 +708,11 @@ class Sessao:
             # corpo passar pelo balde. Presa durante o envio, ela segurava os outros pedidos da
             # página na fila das 6 conexões (medido em 26/09 com o painel do USCall).
             await resposta.aclose()
-            if self.v2:
-                texto = tp.reescrever_links_v2(texto, destino.esquema, destino.host, destino.porta)
-            else:
-                texto = reescrever_links(texto, destino)
+            # A regra da v1 (só o endereço do próprio aparelho vira caminho) vale sempre; na v2, o
+            # link do HTML para outro endereço de dentro passa pelo NOC.
+            texto = reescrever_links(texto, destino)
+            if self.v2 and "text/html" in resposta.headers.get("content-type", "").lower():
+                texto = tp.reescrever_atributos_v2(texto, destino.host)
             # aiter_bytes já descomprimiu: o Content-Encoding do equipamento não vale mais.
             cabecalhos = [c for c in cabecalhos if c[0].lower() != "content-encoding"]
             texto, cabecalhos = comprimir_para_o_noc(texto, cabecalhos)
