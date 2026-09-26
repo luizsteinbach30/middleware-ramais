@@ -2,6 +2,22 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.14.1] — 2026-09-25
+
+### Fixed
+
+- **Túnel de acesso web: a página do telefone e do USCall "começava bem e travava".**
+  - A resposta do equipamento era juntada em blocos de 64 KB antes de ir ao NOC, e a página de status ao
+    vivo, que chega em pedacinhos, ficava presa. Agora cada pedaço sai assim que chega.
+  - Acima de 16 requisições simultâneas por sessão o túnel recusava. Pela Cloudflare o navegador dispara
+    dezenas de requisições de uma vez: agora o limite é 64, e elas esperam a vez.
+  - O túnel abria até 16 conexões com o aparelho. Agora abre no máximo 6, como um navegador, com
+    keep-alive curto, e GET que cai numa conexão que o aparelho já fechou é repetido uma vez.
+  - A espera pela resposta passou de 30 para 120 s (long-poll e página de status).
+- **Túnel: o clique saía para o IP da loja.** Os links absolutos que o firmware (ou o USCall) escreve
+  na página, como `http://<ip>/...`, viram caminho dentro do túnel. O aparelho que redireciona o http
+  para https passa a ser acessado por https, em vez de entrar num laço.
+
 ## [2.14.0] — 2026-09-25
 
 ### Added
