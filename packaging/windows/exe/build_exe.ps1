@@ -35,7 +35,10 @@ Write-Host "==> Installing build + runtime dependencies"
 & $Py -m pip install --upgrade pip wheel setuptools | Out-Null
 & $Py -m pip install --upgrade pyinstaller==6.10.0 | Out-Null
 Push-Location $Root
-& $Py -m pip install -e ".[metrics]" | Out-Null
+# As mesmas constraints do release.yml: sem elas o build local empacota o que estiver mais novo
+# no PyPI (o structlog 26 sem colorama quebra o boot, como na v2.7.0), e o .exe testado aqui não é
+# o que a release publica.
+& $Py -m pip install -e ".[metrics]" -c packaging\constraints-build.txt | Out-Null
 Pop-Location
 
 Write-Host "==> Running PyInstaller"
