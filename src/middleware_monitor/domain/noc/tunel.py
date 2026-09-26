@@ -31,14 +31,16 @@ import contextlib
 import ipaddress
 import json
 import re
+import ssl
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
 from middleware_monitor.core.logging import get_logger
+from middleware_monitor.domain.noc import tunel_protocolo as tp
 from middleware_monitor.version import __version__
 
 log = get_logger("noc.tunel")
@@ -192,7 +194,9 @@ def cabecalhos_do_pedido(
 _DOMINIO_DO_COOKIE = re.compile(r";\s*domain=[^;]*", re.IGNORECASE)
 
 
-def cabecalhos_da_resposta(pares: list[tuple[str, str]], destino: Destino) -> list[list[str]]:
+def cabecalhos_da_resposta(
+    pares: list[tuple[str, str]], destino: Destino, *, v2: bool = False
+) -> list[list[str]]:
     """O que volta ao navegador. ``Location`` absoluto do equipamento vira caminho
     (o navegador está no host de acesso do NOC, não no IP do aparelho), e o cookie
     perde o ``Domain`` — com ele, o navegador descartaria o cookie de sessão."""
@@ -202,7 +206,9 @@ def cabecalhos_da_resposta(pares: list[tuple[str, str]], destino: Destino) -> li
         if nome in _SALTO or nome in _RESPOSTA_DESCARTADA:
             continue
         valor = v
-        if nome in {"location", "content-location"}:
+        if nome in {"location", "content-location"} and v2:
+            valor = tp.location_v2(v, destino.esquema, destino.host, destino.porta)
+        elif nome in {"location", "content-location"}:
             partes = urlsplit(v)
             # O próprio equipamento, em qualquer esquema ou porta: o http que redireciona para
             # https é o mesmo aparelho, e a sessão passa a falar https com ele (``para_onde``).
@@ -271,6 +277,18 @@ def _b64(dados: bytes) -> str:
 class _Fluxo:
     fila: asyncio.Queue[bytes | None]
     tarefa: asyncio.Task[None] | None = None
+    # v2: a origem deste pedido (None = a da sessão) e o crédito do corpo da resposta.
+    destino: Destino | None = None
+    credito: int = tp.JANELA_INICIAL
+    tem_credito: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+@dataclass
+class _FluxoWs:
+    """Um WebSocket do navegador, levado até o equipamento (protocolo v2)."""
+
+    conexao: Any = None
+    tarefa: asyncio.Task[None] | None = None
 
 
 class Sessao:
@@ -292,8 +310,12 @@ class Sessao:
         self._http: httpx.AsyncClient | None = None
         # Equipamento que derruba conexão reaproveitada: a sessão passa a abrir uma por pedido.
         self._http_sem_reuso: httpx.AsyncClient | None = None
-        self.sem_reuso = False
+        self.sem_reuso: set[str] = set()  # bases (esquema://host:porta) que derrubam conexão reaproveitada
         self.encerrada = False
+        # Protocolo v2 (ADR 0009): negociado a cada conexão com o NOC.
+        self.v2 = False
+        self.balde = tp.Balde(0)
+        self.ws_fluxos: dict[int, _FluxoWs] = {}
 
     @property
     def url(self) -> str:
@@ -308,6 +330,14 @@ class Sessao:
             return
         async with self._envio:
             await self._ws.send(json.dumps(frame, separators=(",", ":")))
+
+    async def _enviar_binario(self, tipo: int, fluxo: int, dados: bytes) -> None:
+        """Corpo e mensagem de WebSocket na v2: sem base64, e pelo balde de banda."""
+        await self.balde.gastar(len(dados))
+        if self._ws is None:
+            return
+        async with self._envio:
+            await self._ws.send(tp.empacotar(tipo, fluxo, dados))
 
     async def rodar(self) -> None:
         """Conecta, atende e reconecta enquanto o NOC não disser que acabou."""
@@ -344,7 +374,10 @@ class Sessao:
                     async with connect(
                         self.url,
                         ssl=tls,
-                        additional_headers={"Authorization": f"Bearer {self.credencial}"},
+                        additional_headers={
+                            "Authorization": f"Bearer {self.credencial}",
+                            tp.CABECALHO_PROTOCOLO: tp.PROTOCOLO,
+                        },
                         user_agent_header=f"MiddlewareMonitor/{__version__}",
                         max_size=TAMANHO_MAXIMO_DO_FRAME * 2,
                         open_timeout=15,
@@ -353,7 +386,18 @@ class Sessao:
                     ) as ws:
                         self._ws = ws
                         tentativa = 0
-                        log.info("noc_tunel_conectado", sessao=self.id, destino=self.destino.rotulo)
+                        resposta_do_noc = getattr(ws, "response", None)
+                        cab = getattr(resposta_do_noc, "headers", None) or {}
+                        self.v2 = cab.get(tp.CABECALHO_PROTOCOLO) == tp.PROTOCOLO
+                        banda = tp.banda_do_cabecalho(cab.get(tp.CABECALHO_BANDA))
+                        self.balde = tp.Balde(banda if self.v2 else 0)
+                        log.info(
+                            "noc_tunel_conectado",
+                            sessao=self.id,
+                            destino=self.destino.rotulo,
+                            protocolo=2 if self.v2 else 1,
+                            banda_kbps=int(self.balde.taxa * 8 / 1000),
+                        )
                         await asyncio.wait_for(self._atender(ws), timeout=max(1.0, self._restante()))
                 except InvalidStatus as exc:
                     status = exc.response.status_code
@@ -386,6 +430,8 @@ class Sessao:
     async def _atender(self, ws: Any) -> None:
         async for mensagem in ws:
             if isinstance(mensagem, bytes):
+                if self.v2:
+                    await self._receber_binario(mensagem)
                 continue
             try:
                 frame = json.loads(mensagem)
@@ -405,17 +451,37 @@ class Sessao:
             return
         if not (isinstance(fluxo, int) and not isinstance(fluxo, bool)):
             return
-        if tipo == "req":
-            if fluxo in self.fluxos:
+        if tipo in {"req", "ws.abrir"}:
+            if fluxo in self.fluxos or fluxo in self.ws_fluxos:
                 return
-            if len(self.fluxos) >= MAXIMO_DE_FLUXOS:
+            if len(self.fluxos) + len(self.ws_fluxos) >= MAXIMO_DE_FLUXOS:
                 await self._enviar(
                     {"t": "erro", "f": fluxo, "mensagem": "Muitas requisições ao mesmo tempo nesta sessão."}
                 )
                 return
-            novo = _Fluxo(asyncio.Queue())
+            try:
+                destino = self._destino_do_frame(frame)
+            except DestinoRecusado as exc:
+                await self._enviar({"t": "erro", "f": fluxo, "mensagem": str(exc)})
+                return
+            if tipo == "ws.abrir":
+                ws_fluxo = _FluxoWs()
+                self.ws_fluxos[fluxo] = ws_fluxo
+                ws_fluxo.tarefa = asyncio.create_task(self._websocket(fluxo, frame, destino, ws_fluxo))
+                return
+            novo = _Fluxo(asyncio.Queue(), destino=destino)
             self.fluxos[fluxo] = novo
             novo.tarefa = asyncio.create_task(self._executar(fluxo, frame, novo))
+            return
+        if tipo == "ws.fechar":
+            w = self.ws_fluxos.get(fluxo)
+            if w is not None and w.conexao is not None:
+                codigo = frame.get("codigo")
+                with contextlib.suppress(Exception):
+                    valido = isinstance(codigo, int) and 1000 <= codigo <= 4999
+                    await w.conexao.close(codigo if valido else 1000)
+            elif w is not None and w.tarefa:
+                w.tarefa.cancel()
             return
         f = self.fluxos.get(fluxo)
         if f is None:
@@ -432,6 +498,94 @@ class Sessao:
             return
         if tipo == "cancelar" and f.tarefa:
             f.tarefa.cancel()
+            return
+        if tipo == "janela":
+            credito = frame.get("bytes")
+            if isinstance(credito, int) and not isinstance(credito, bool) and credito > 0:
+                f.credito += credito
+                f.tem_credito.set()
+
+    def _destino_do_frame(self, frame: dict[str, Any]) -> Destino:
+        """A origem do pedido (v2): outra origem que o NOC abriu na mesma sessão, conferida
+        pela mesma regra do destino da sessão. Sem ``origem``, é a da sessão."""
+        origem = frame.get("origem")
+        if not self.v2 or not isinstance(origem, dict):
+            return self.destino
+        return destino_da_lan(origem.get("host"), origem.get("porta"), origem.get("esquema"))
+
+    async def _receber_binario(self, quadro: bytes) -> None:
+        lido = tp.desempacotar(quadro)
+        if lido is None:
+            return
+        tipo, fluxo, dados = lido
+        if tipo == tp.REQ_CORPO:
+            f = self.fluxos.get(fluxo)
+            if f is not None:
+                f.fila.put_nowait(dados)
+        elif tipo in {tp.WS_TEXTO, tp.WS_BINARIO}:
+            w = self.ws_fluxos.get(fluxo)
+            if w is not None and w.conexao is not None:
+                with contextlib.suppress(Exception):
+                    await w.conexao.send(dados.decode("utf-8", "replace") if tipo == tp.WS_TEXTO else dados)
+
+    async def _websocket(self, fluxo: int, frame: dict[str, Any], destino: Destino, w: _FluxoWs) -> None:
+        """O WebSocket do equipamento (status ao vivo, painel do USCall): abre do lado de cá e
+        leva as mensagens nos dois sentidos, em frames binários pelo balde da sessão."""
+        from websockets.asyncio.client import connect
+        from websockets.exceptions import ConnectionClosed
+
+        caminho = str(frame.get("caminho") or "/")
+        if not caminho.startswith("/"):
+            caminho = "/" + caminho
+        bruto = frame.get("cabecalhos")
+        pares = [x for x in (bruto if isinstance(bruto, list) else []) if isinstance(x, list) and len(x) == 2]
+        extras = [
+            (k, v)
+            for k, v in cabecalhos_do_pedido(pares, destino, self.id)
+            if k.lower() not in {"host", "user-agent"} and not k.lower().startswith("sec-websocket")
+        ]
+        protocolos = [str(x) for x in (frame.get("protocolos") or []) if isinstance(x, str)][:10]
+        url = ("wss" if destino.esquema == "https" else "ws") + destino.base[len(destino.esquema) :] + caminho
+        contexto: ssl.SSLContext | None = None
+        if destino.esquema == "https":
+            contexto = ssl.create_default_context()
+            contexto.check_hostname = False
+            contexto.verify_mode = ssl.CERT_NONE  # equipamento de LAN tem certificado próprio
+        codigo = 1011
+        try:
+            async with connect(
+                url,
+                additional_headers=extras,
+                subprotocols=protocolos or None,  # type: ignore[arg-type]
+                ssl=contexto,
+                open_timeout=15,
+                max_size=TAMANHO_MAXIMO_DO_FRAME,
+                compression=None,
+                proxy=None,
+                user_agent_header=None,
+            ) as conexao:
+                w.conexao = conexao
+                await self._enviar({"t": "ws.aberto", "f": fluxo, "protocolo": conexao.subprotocol})
+                try:
+                    async for mensagem in conexao:
+                        if isinstance(mensagem, str):
+                            await self._enviar_binario(tp.WS_TEXTO, fluxo, mensagem.encode("utf-8"))
+                        else:
+                            await self._enviar_binario(tp.WS_BINARIO, fluxo, bytes(mensagem))
+                except ConnectionClosed:
+                    pass
+                codigo = conexao.close_code or 1000
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if w.conexao is None:
+                mensagem = f"Não foi possível abrir o WebSocket de {url}: {type(exc).__name__}"
+                await self._erro(fluxo, mensagem[:300])
+                return
+        finally:
+            self.ws_fluxos.pop(fluxo, None)
+        with contextlib.suppress(Exception):
+            await self._enviar({"t": "ws.fechar", "f": fluxo, "codigo": codigo})
 
     async def _corpo(self, f: _Fluxo) -> bytes:
         """O corpo inteiro, até o ``req.fim``. Juntar em vez de repassar em pedaços é
@@ -449,7 +603,7 @@ class Sessao:
             partes.append(pedaco)
 
     async def _mandar(
-        self, metodo: str, caminho: str, pares: list[list[str]], corpo: bytes
+        self, destino: Destino, metodo: str, caminho: str, pares: list[list[str]], corpo: bytes
     ) -> httpx.Response:
         """Manda ao equipamento. Pedido que cai sem **nenhum byte** de resposta — a conexão que
         o aparelho fechou enquanto estava parada, ou que ele não aceita reaproveitar — vai de
@@ -461,20 +615,20 @@ class Sessao:
         o segundo sem responder. Medido no Chrome contra um desses (26/09): repetir pelo pool
         deixava 2 de 22 pedidos do menu em 502, porque a repetição caía em outra conexão velha."""
         assert self._http is not None and self._http_sem_reuso is not None
-        cabecalhos = cabecalhos_do_pedido(pares, self.destino, self.id)
-        cliente = self._http_sem_reuso if self.sem_reuso else self._http
+        cabecalhos = cabecalhos_do_pedido(pares, destino, self.id)
+        cliente = self._http_sem_reuso if destino.base in self.sem_reuso else self._http
         for tentativa in (1, 2):
             pedido = cliente.build_request(
-                metodo, f"{self.destino.base}{caminho}", headers=cabecalhos, content=corpo or None
+                metodo, f"{destino.base}{caminho}", headers=cabecalhos, content=corpo or None
             )
             try:
                 return await cliente.send(pedido, stream=True)
             except (httpx.RemoteProtocolError, httpx.ReadError, httpx.WriteError) as exc:
                 if tentativa == 2:
                     raise
-                if not self.sem_reuso:
-                    self.sem_reuso = True
-                    log.info("noc_tunel_sem_reuso", sessao=self.id, destino=self.destino.rotulo)
+                if destino.base not in self.sem_reuso:
+                    self.sem_reuso.add(destino.base)
+                    log.info("noc_tunel_sem_reuso", sessao=self.id, destino=destino.rotulo)
                 log.info("noc_tunel_repetiu", sessao=self.id, metodo=metodo, motivo=type(exc).__name__)
                 cliente = self._http_sem_reuso
         raise AssertionError("inalcançável")
@@ -493,9 +647,10 @@ class Sessao:
         self.requisicoes += 1
         try:
             corpo = await asyncio.wait_for(self._corpo(f), timeout=TIMEOUT_DO_EQUIPAMENTO_S * 4)
-            resposta = await self._mandar(metodo, caminho, pares, corpo)
+            destino = f.destino or self.destino
+            resposta = await self._mandar(destino, metodo, caminho, pares, corpo)
             try:
-                await self._responder(fluxo, resposta)
+                await self._responder(fluxo, resposta, destino, f)
             finally:
                 await resposta.aclose()
         except asyncio.CancelledError:
@@ -506,35 +661,42 @@ class Sessao:
             await self._erro(fluxo, "O equipamento não respondeu a tempo.")
         except httpx.ConnectError:
             await self._erro(
-                fluxo, f"Não foi possível conectar em {self.destino.base} a partir do middleware."
+                fluxo,
+                f"Não foi possível conectar em {(f.destino or self.destino).base} a partir do middleware.",
             )
         except Exception as exc:  # o fluxo sempre ganha resposta
             await self._erro(fluxo, f"{type(exc).__name__}: {exc}"[:300])
         finally:
             self.fluxos.pop(fluxo, None)
 
-    async def _responder(self, fluxo: int, resposta: httpx.Response) -> None:
-        destino = self.destino
+    async def _responder(
+        self, fluxo: int, resposta: httpx.Response, destino: Destino, f: _Fluxo | None = None
+    ) -> None:
         local = resposta.headers.get("location")
-        novo = para_onde(local, destino) if local and 300 <= resposta.status_code < 400 else None
+        # v1: o http que manda para o https troca o destino da sessão. Na v2 o Location vira
+        # /__tunel/ir e o NOC abre a origem https ao lado (location_v2).
+        redireciona = bool(local) and 300 <= resposta.status_code < 400
+        novo = para_onde(local, destino) if local and redireciona and not self.v2 else None
         if novo is not None:
             log.info("noc_tunel_destino_mudou", sessao=self.id, de=destino.base, para=novo.base)
             self.destino = novo
-        cabecalhos = cabecalhos_da_resposta(list(resposta.headers.multi_items()), destino)
+        cabecalhos = cabecalhos_da_resposta(list(resposta.headers.multi_items()), destino, v2=self.v2)
         if reescreve(resposta.headers.get("content-type", "")) and resposta.status_code != 206:
             texto = b""
             async for pedaco in resposta.aiter_bytes():
                 texto += pedaco
                 if len(texto) > TEXTO_MAXIMO_PARA_REESCREVER:
                     raise ValueError("página grande demais para reescrever os links")
-            texto = reescrever_links(texto, destino)
+            if self.v2:
+                texto = tp.reescrever_links_v2(texto, destino.esquema, destino.host, destino.porta)
+            else:
+                texto = reescrever_links(texto, destino)
             # aiter_bytes já descomprimiu: o Content-Encoding do equipamento não vale mais.
             cabecalhos = [c for c in cabecalhos if c[0].lower() != "content-encoding"]
             await self._enviar(
                 {"t": "resp", "f": fluxo, "status": resposta.status_code, "cabecalhos": cabecalhos}
             )
-            for i in range(0, len(texto), PEDACO):
-                await self._enviar({"t": "resp.corpo", "f": fluxo, "dados": _b64(texto[i : i + PEDACO])})
+            await self._corpo_ao_noc(fluxo, f, texto)
         else:
             await self._enviar(
                 {"t": "resp", "f": fluxo, "status": resposta.status_code, "cabecalhos": cabecalhos}
@@ -542,9 +704,23 @@ class Sessao:
             # Cada pedaço sai assim que chega. Juntar até 64 KB prendia a página de status ao
             # vivo, que chega em pedacinhos e nunca completa o bloco (25/09).
             async for pedaco in resposta.aiter_raw():
-                for i in range(0, len(pedaco), PEDACO):
-                    await self._enviar({"t": "resp.corpo", "f": fluxo, "dados": _b64(pedaco[i : i + PEDACO])})
+                await self._corpo_ao_noc(fluxo, f, pedaco)
         await self._enviar({"t": "resp.fim", "f": fluxo})
+
+    async def _corpo_ao_noc(self, fluxo: int, f: _Fluxo | None, dados: bytes) -> None:
+        """v1: JSON com base64. v2: frame binário, só com crédito da janela do fluxo — um
+        download grande não enche o canal na frente do menu da outra aba — e pelo balde."""
+        for i in range(0, len(dados), PEDACO):
+            parte = dados[i : i + PEDACO]
+            if not self.v2:
+                await self._enviar({"t": "resp.corpo", "f": fluxo, "dados": _b64(parte)})
+                continue
+            if f is not None:
+                while f.credito <= 0:
+                    f.tem_credito.clear()
+                    await asyncio.wait_for(f.tem_credito.wait(), timeout=TIMEOUTS.read)
+                f.credito -= len(parte)
+            await self._enviar_binario(tp.RESP_CORPO, fluxo, parte)
 
     async def _erro(self, fluxo: int, mensagem: str) -> None:
         with contextlib.suppress(Exception):
@@ -555,6 +731,10 @@ class Sessao:
             if f.tarefa and not f.tarefa.done():
                 f.tarefa.cancel()
         self.fluxos.clear()
+        for w in list(self.ws_fluxos.values()):
+            if w.tarefa and not w.tarefa.done():
+                w.tarefa.cancel()
+        self.ws_fluxos.clear()
 
 
 # --- Registro das sessões abertas --------------------------------------------------------------
