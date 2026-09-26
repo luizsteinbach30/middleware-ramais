@@ -83,8 +83,8 @@ Logo após iniciar, o app verifica o GitHub Releases em segundo plano:
 Clique em **Atualizar agora**:
 1. Baixa o `.exe` novo para `%LOCALAPPDATA%\MiddlewareMonitor\tmp\`.
 2. Fecha o app atual.
-3. Substitui o `.exe` antigo pelo novo via script `.bat` helper.
-4. Reabre a versão nova automaticamente.
+3. Substitui o `.exe` antigo pelo novo por um ajudante em segundo plano (sem janela), que guarda o antigo como `.bak`.
+4. Reabre a versão nova automaticamente. Se ela não responder em 150 s, o ajudante volta para a anterior.
 
 Você também pode forçar a checagem com o botão **Verificar atualização**.
 

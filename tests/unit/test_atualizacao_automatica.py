@@ -6,7 +6,6 @@ instalando no horário comercial, descendo de versão, ou tentando para sempre.
 
 from __future__ import annotations
 
-import subprocess
 import sys
 import threading
 import time as relogio
@@ -17,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from middleware_monitor.updater import automatico as a
+from middleware_monitor.updater import standalone as st
 from middleware_monitor.updater.standalone import ler_resultado, script_do_ajudante
 
 AGORA = datetime(2026, 9, 26, 3, 30)  # 03:30, dentro da janela 02:00 a 05:00
@@ -146,6 +146,19 @@ def test_uma_tentativa_por_hora_e_tres_no_maximo() -> None:
     assert not d.instalar and d.estado.estado == a.FALHOU and d.estado.detalhe == "download"
 
 
+def test_versao_que_voltou_nao_se_repete_sozinha(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import middleware_monitor.desktop as desktop
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(desktop, "get_data_dir", lambda: tmp_path)
+    (tmp_path / "update_result.txt").write_text("voltou 2.14.0 a versao nova nao respondeu em 150 s\n")
+    instalando = a.Estado(a.INSTALANDO, "2.14.0", tentativas=1, ultima_tentativa=AGORA - timedelta(hours=2))
+    depois = a._resultado_do_windows(instalando)
+    assert depois.estado == a.FALHOU and depois.tentativas == a.MAXIMO_DE_TENTATIVAS
+    assert not decidir(depois).instalar  # na janela, e mesmo assim não tenta
+    assert decidir(depois, pedido(agora="2026-09-26T03:29:00Z")).instalar  # o botão força
+
+
 def test_atualizar_agora_zera_as_tentativas() -> None:
     esgotou = a.Estado(
         a.FALHOU, "2.14.0", "download", tentativas=3, ultima_tentativa=AGORA - timedelta(minutes=5)
@@ -212,12 +225,58 @@ async def test_ciclo_grava_e_devolve_o_estado(db, monkeypatch) -> None:
 
 
 # --- O ajudante do Windows, de verdade ----------------------------------------------------------
+#
+# O ajudante sobe por ``disparar_ajudante`` — o mesmo caminho da produção. Até a 2.14.1 este
+# teste rodava o ``.bat`` com ``subprocess.run`` dentro do console do pytest, e com console o
+# ``timeout`` espera; destacado, na produção, falhava na hora e abria uma janela por comando.
 
 
 def test_ler_resultado(tmp_path: Path) -> None:
     (tmp_path / "update_result.txt").write_text("voltou 2.14.0 a versao nova nao respondeu em 150 s\n")
     assert ler_resultado(tmp_path) == ("voltou", "2.14.0", "a versao nova nao respondeu em 150 s")
     assert ler_resultado(tmp_path) is None  # lido uma vez só
+
+
+def test_o_ajudante_nao_chama_programa_de_console(tmp_path: Path) -> None:
+    script = script_do_ajudante(
+        novo=tmp_path / "n.exe",
+        atual=tmp_path / "a.exe",
+        alvo="2.14.2",
+        porta=8080,
+        resultado=tmp_path / "r.txt",
+        trava=tmp_path / "t.lock",
+    ).lower()
+    for proibido in ("cmd", "tasklist", "timeout /t", "find ", "taskkill", "powershell ", "chcp"):
+        assert proibido not in script, proibido
+
+
+def test_caminho_com_aspas_simples_nao_quebra_o_script(tmp_path: Path) -> None:
+    script = script_do_ajudante(
+        novo=Path("C:/Users/D'Avila/tmp/n.exe"),
+        atual=Path("C:/Users/D'Avila/app/a.exe"),
+        alvo="2.14.2",
+        porta=8080,
+        resultado=tmp_path / "r.txt",
+        trava=tmp_path / "t.lock",
+    )
+    assert "D''Avila" in script
+
+
+def test_uma_troca_por_vez(tmp_path: Path) -> None:
+    trava = tmp_path / "update.lock"
+    st.tomar_trava(trava)
+    with pytest.raises(st.UpdateError, match="em andamento"):
+        st.tomar_trava(trava)
+
+
+def test_trava_esquecida_vence_sozinha(tmp_path: Path) -> None:
+    import os
+
+    trava = tmp_path / "update.lock"
+    trava.write_text("1")
+    velha = relogio.time() - st.TRAVA_VENCE_S - 1
+    os.utime(trava, (velha, velha))
+    st.tomar_trava(trava)  # não levanta
 
 
 class _Saude(BaseHTTPRequestHandler):
@@ -235,69 +294,96 @@ class _Saude(BaseHTTPRequestHandler):
         pass
 
 
-def _rodar_ajudante(tmp_path: Path, *, com_saude: bool, espera: int) -> tuple[str, bytes]:
-    import middleware_monitor.updater.standalone as st
+def _janelas_de_console() -> set[int]:
+    """Janelas de console visíveis agora (conhost clássico e Windows Terminal)."""
+    import ctypes
+    from ctypes import wintypes
 
+    user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+    classes = {"ConsoleWindowClass", "CASCADIA_HOSTING_WINDOW_CLASS"}
+    achadas: set[int] = set()
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)  # type: ignore[attr-defined]
+    def cada(hwnd: int, _: int) -> bool:
+        if user32.IsWindowVisible(hwnd):
+            nome = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, nome, 256)
+            if nome.value in classes:
+                achadas.add(int(hwnd))
+        return True
+
+    user32.EnumWindows(cada, 0)
+    return achadas
+
+
+def _rodar_ajudante(tmp_path: Path, *, com_saude: bool, espera: int) -> tuple[str, bytes, float, set[int]]:
     sistema = Path("C:/Windows/System32")
     atual = tmp_path / "app" / "FakeMonitor.exe"
     novo = tmp_path / "tmp" / "novo.exe"
     atual.parent.mkdir()
     novo.parent.mkdir()
-    atual.write_bytes((sistema / "whoami.exe").read_bytes())
-    novo.write_bytes((sistema / "hostname.exe").read_bytes())
+    # Executável de janela (GUI), como o middleware (console=False no .spec) e que sai na
+    # hora: um de console abriria a própria janela e esconderia uma do ajudante.
+    gui = (sistema / "rundll32.exe").read_bytes()
+    atual.write_bytes(gui + b"\x00antigo")
+    novo.write_bytes(gui + b"\x00novo")
     antigo = atual.read_bytes()
+    trava = tmp_path / "tmp" / st.TRAVA
+    st.tomar_trava(trava)
     servidor = ThreadingHTTPServer(("127.0.0.1", 0), _Saude)
     porta = servidor.server_address[1]
     if com_saude:
         threading.Thread(target=servidor.serve_forever, daemon=True).start()
     else:
         servidor.server_close()
-    morto = subprocess.run(["cmd", "/c", "exit"], check=True)  # PID que já não existe
-    assert morto.returncode == 0
     original = st.ESPERA_DA_SAUDE_S
     st.ESPERA_DA_SAUDE_S = espera
+    antes = _janelas_de_console()
+    novas: set[int] = set()
+    inicio = relogio.monotonic()
     try:
-        bat = tmp_path / "apply_update.bat"
-        bat.write_text(
+        ps1 = tmp_path / st.AJUDANTE
+        ps1.write_text(
             script_do_ajudante(
-                pid=999999,
                 novo=novo,
                 atual=atual,
                 alvo="2.14.0",
                 porta=porta,
                 resultado=tmp_path / "update_result.txt",
+                trava=trava,
             ),
-            encoding="utf-8",
+            encoding="utf-8-sig",
         )
-        subprocess.run(
-            ["cmd", "/c", str(bat)],
-            timeout=espera + 60,
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        processo = st.disparar_ajudante(ps1)
+        while processo.poll() is None and relogio.monotonic() - inicio < espera + 60:
+            novas |= _janelas_de_console() - antes
+            relogio.sleep(0.2)
+        processo.wait(timeout=5)
     finally:
         st.ESPERA_DA_SAUDE_S = original
         if com_saude:
             servidor.shutdown()
-    for _ in range(20):
-        if (tmp_path / "update_result.txt").exists():
-            break
-        relogio.sleep(0.5)
+    duracao = relogio.monotonic() - inicio
     resultado = (tmp_path / "update_result.txt").read_text(encoding="utf-8").strip()
-    return resultado, atual.read_bytes() if atual.read_bytes() != antigo else b"ANTIGO"
+    assert not trava.exists()  # a trava sai junto com o ajudante
+    assert not (tmp_path / st.AJUDANTE).exists()  # e o ajudante se apaga
+    return resultado, atual.read_bytes() if atual.read_bytes() != antigo else b"ANTIGO", duracao, novas
 
 
-@pytest.mark.skipif(not sys.platform.startswith("win"), reason="o ajudante é .bat do Windows")
+@pytest.mark.skipif(not sys.platform.startswith("win"), reason="o ajudante é do Windows")
 def test_ajudante_troca_quando_a_versao_nova_responde(tmp_path: Path) -> None:
-    resultado, conteudo = _rodar_ajudante(tmp_path, com_saude=True, espera=20)
+    resultado, conteudo, _, janelas = _rodar_ajudante(tmp_path, com_saude=True, espera=20)
     assert resultado == "ok 2.14.0"
     assert conteudo != b"ANTIGO"  # o executável novo ficou
     assert (tmp_path / "app" / "FakeMonitor.exe.bak").exists()
+    assert janelas == set()  # nenhuma janela de console
 
 
-@pytest.mark.skipif(not sys.platform.startswith("win"), reason="o ajudante é .bat do Windows")
+@pytest.mark.skipif(not sys.platform.startswith("win"), reason="o ajudante é do Windows")
 def test_ajudante_volta_quando_a_versao_nova_nao_responde(tmp_path: Path) -> None:
-    resultado, conteudo = _rodar_ajudante(tmp_path, com_saude=False, espera=10)
+    resultado, conteudo, duracao, janelas = _rodar_ajudante(tmp_path, com_saude=False, espera=10)
     assert resultado.startswith("voltou 2.14.0")
     assert conteudo == b"ANTIGO"  # o executável anterior voltou
+    # A espera espera de verdade: o .bat destacado girava sem pausa (timeout saía com 125).
+    assert duracao >= 10
+    assert janelas == set()

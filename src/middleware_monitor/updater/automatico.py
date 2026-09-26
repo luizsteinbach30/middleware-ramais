@@ -348,7 +348,7 @@ def _restauracao_pendente() -> bool:
 
 
 def _resultado_do_windows(e: Estado) -> Estado:
-    """O ``.bat`` do Windows deixa o desfecho da troca num arquivo (standalone.py)."""
+    """O ajudante do Windows deixa o desfecho da troca num arquivo (standalone.py)."""
     import sys
 
     if not getattr(sys, "frozen", False):
@@ -363,7 +363,11 @@ def _resultado_do_windows(e: Estado) -> Estado:
     if desfecho == "ok":
         return e  # a versão rodando já diz; decidir() marca EM_DIA
     log.warning("atualizacao_voltou", desfecho=desfecho, versao=versao, motivo=motivo)
-    return replace(e, estado=FALHOU, alvo=versao or e.alvo, detalhe=motivo or desfecho)
+    # "voltou" = o executável novo subiu e não respondeu: tentar de novo na mesma versão
+    # troca o cliente de executável mais duas vezes sem mudar nada. Só o botão do NOC (ou
+    # uma versão desejada nova) tenta outra vez.
+    tentativas = MAXIMO_DE_TENTATIVAS if desfecho == "voltou" else e.tentativas
+    return replace(e, estado=FALHOU, alvo=versao or e.alvo, detalhe=motivo or desfecho, tentativas=tentativas)
 
 
 async def ciclo(resposta: Any, *, agente_id: str) -> dict[str, Any] | None:

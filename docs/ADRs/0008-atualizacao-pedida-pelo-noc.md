@@ -24,10 +24,19 @@ decidiu: **só sobe**, **janela definida no NOC (padrão 02h–05h)** e **botão
 5. **Frota espalhada** dentro da janela por um atraso fixo derivado do id do agente (até 60 min).
 6. **Três tentativas por versão**, no máximo uma por hora. O "Atualizar agora" zera a contagem.
    `SEM_RELEASE` consulta o GitHub de novo só depois de uma hora.
-7. **Windows ganhou verificação e volta.** O ajudante `.bat` guarda o `.exe` atual como `.bak`, sobe o novo e
+7. **Windows ganhou verificação e volta.** O ajudante (`apply_update.ps1` desde a 2.14.2) guarda o `.exe` atual como `.bak`, sobe o novo e
    exige que `/api/system/healthz` responda com a versão nova em até 150 s. Se não responder, encerra o novo,
    devolve o `.bak` e sobe o antigo. O desfecho fica em `update_result.txt` e vira o próximo estado. Antes disso,
    uma release que não abrisse deixava o cliente sem middleware até alguém ir lá.
+   - **Emenda 2.14.2 — sem janela e sem laço.** Até a 2.14.1 o ajudante era um `.bat` com `DETACHED_PROCESS`:
+     cada `tasklist`/`timeout`/`powershell` abria uma janela própria, e o `timeout` sem console sai na hora
+     com código 125 (medido), então as esperas giravam sem pausa — "abre telas do cmd e entra em laço", no
+     campo. O teste passava porque rodava o `.bat` dentro do console do pytest. Agora o ajudante é PowerShell
+     com console oculto (`CREATE_NO_WINDOW`), sem nenhum programa de console, espera **todos** os processos do
+     `.exe` (o onefile roda dois) e os encerra depois de 60 s. Uma troca por vez (`tmp/update.lock`, que vence
+     em 15 min, + mutex nomeado). O teste dispara pelo mesmo caminho da produção e conta as janelas de console.
+   - **"voltou" não se repete sozinho** na mesma versão (as tentativas se esgotam); só o "Atualizar agora" ou
+     uma versão desejada nova tentam de novo. Falha antes da troca (download, conferência) mantém as 3.
 8. **O estado volta ao NOC só quando ele anunciou o campo.** O DTO do heartbeat do NOC recusa campo
    desconhecido. Se o NOC responder 400, o próximo heartbeat vai sem o campo.
 9. **Chave local `update.auto_noc`**, ligada por padrão, na tela de atualizações. Desligada, o NOC vê
