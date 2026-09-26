@@ -16,6 +16,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   na hora, então o laço girava sem pausa. Agora é um ajudante PowerShell oculto, sem janela nenhuma, que
   espera o app fechar (e o encerra depois de 60 s), troca, confere a versão nova e volta para a anterior se
   ela não responder. Só uma atualização por vez. Vale para o botão da bandeja, o da página e o pedido do NOC.
+  - **A causa raiz do laço:** o "Atualizar" da página e o pedido do NOC não fechavam o app do `.exe`. O pedido
+    de encerramento ficava numa cópia do módulo que a janela não olhava (o `.exe` roda o `desktop.py` como programa
+    principal, e o atualizador o importava de novo). O app nunca saía, e o ajudante esperava para sempre. Agora o
+    pedido mora num módulo só (`core/encerramento.py`); medido com o `.exe` real, o app fecha em segundos.
   - Quem está na 2.14.0 ou 2.14.1 ainda atualiza com o ajudante antigo: **instalar a 2.14.2 à mão uma vez**.
 - Uma versão que "voltou" (subiu e não respondeu) não é tentada de novo sozinha na janela seguinte; o
   "Atualizar agora" do NOC tenta.

@@ -48,15 +48,15 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
-# Cross-thread shutdown signal. Set this from any thread (e.g. the uvicorn
-# worker running the FastAPI app) to ask the Tk main loop to close the
-# window and exit. The DesktopApp polls it in the UI thread.
-_SHUTDOWN_REQUEST = threading.Event()
-
-
 def request_shutdown() -> None:
-    """Ask the desktop app to terminate from any thread. Idempotent."""
-    _SHUTDOWN_REQUEST.set()
+    """Ask the desktop app to terminate from any thread. Idempotent.
+
+    O pedido mora em ``core.encerramento``: no ``.exe`` este arquivo roda como
+    ``__main__`` e quem o importa ganha outra cópia — um evento aqui seria dois.
+    """
+    from middleware_monitor.core import encerramento
+
+    encerramento.pedir()
 
 
 def get_data_dir() -> Path:
@@ -537,7 +537,9 @@ class DesktopApp:
         """Watch the cross-thread shutdown flag (set by the API layer when
         the user clicks "atualizar agora" from the web panel, or by the
         Tk banner flow). When set, close without prompting."""
-        if _SHUTDOWN_REQUEST.is_set():
+        from middleware_monitor.core import encerramento
+
+        if encerramento.pedido():
             logging.getLogger("desktop").info("shutdown_requested_externally")
             self.server.stop()
             self.root.after(150, self.root.destroy)
