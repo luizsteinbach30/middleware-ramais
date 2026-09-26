@@ -529,6 +529,25 @@ quase nada. É o que AWS IoT Shadow, Azure Device Twin e o proxy do Zabbix evita
   manda `dispositivos` de novo; de que o retrato de segurança sai aos 15 min; e o `.run` testado no Linux (paridade
   em toda release).
 
+### 15 — Atualização automática pedida pelo NOC
+
+`src/middleware_monitor/updater/automatico.py` · **ADR 0008** · ✅ **feito (25/09, branch `feat/atualizacao-automatica`)**
+
+O NOC anuncia no heartbeat a versão desejada, a janela (padrão 02:00–05:00, hora local) e o "Atualizar agora". O
+agente decide a hora e instala **exatamente** a versão desejada, pelo mesmo caminho do botão local
+(`updater/instalar.py`). O contrato está em `noc-workconnect/docs/CONTRATO-DO-AGENTE.md` §12.
+
+- **Só sobe.** Com a desejada abaixo da instalada, o agente fica `ACIMA_DA_DESEJADA` e nada acontece.
+- **Travas:**
+  - só instala ocioso (sem aplicação, escrita remota, túnel aberto ou restauração pendente);
+  - atraso fixo por agente dentro da janela;
+  - 3 tentativas por versão, com 1 h entre elas.
+- **Volta sozinha:** no Windows, `.exe.bak` + saúde por `/api/system/healthz` em 150 s; no Linux,
+  `install-bundle.sh`.
+- **Estado para o NOC** (`EM_DIA`, `AGUARDANDO_JANELA`, `OCUPADO`, `INSTALANDO`, `FALHOU`…) só depois que o NOC
+  anunciou o campo.
+- **Desliga por cliente** em Sistema → Atualizações: "Instalar a versão pedida pelo NOC".
+
 ---
 
 ## Resumo por fase
@@ -542,6 +561,7 @@ quase nada. É o que AWS IoT Shadow, Azure Device Twin e o proxy do Zabbix evita
 | **6** | `publish` no cliente MQTT (8) · ~~mTLS~~ (feito na Fase 1) |
 | **I3 do NOC** ✅ | retrato de `ambientes[]` com `id` e lista branca (11) · estado do coletor MQTT (12) — 2026-09-17, no lote de telemetria |
 | **I5 do NOC** | edição central com conferência do `de` e releitura (13) |
+| **Atualização** | a versão desejada do NOC instalada sozinha, na janela ou na hora, com volta automática (15) — 2026-09-25 |
 | **Túnel** | acesso web a equipamento da LAN e a USCall cadastrado, com a conexão saindo daqui (14) — 2026-09-25 |
 | **Telemetria leve** | retrato só quando muda, sem retrato repetido na fila, chave estável na retentativa (15) |
 

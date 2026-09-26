@@ -57,7 +57,8 @@ class Release:
 
 def _parse_release(item: dict[str, Any]) -> Release | None:
     tag = item.get("tag_name") or ""
-    if not tag:
+    # Rascunho aparece na listagem para quem tem token de escrita, e ainda não é release.
+    if not tag or item.get("draft"):
         return None
     try:
         version = Version(tag.lstrip("v"))
@@ -198,3 +199,15 @@ class GithubReleasesClient:
             return None
         candidates.sort(key=lambda r: r.version, reverse=True)
         return candidates[0]
+
+    async def release_for_version(self, version: Version, *, mode: UpdateMode = "legacy") -> Release | None:
+        """A release com exatamente esta versão, publicada e com os arquivos do modo.
+
+        É o caminho da atualização pedida pelo NOC (ADR 0008): instala-se a versão
+        desejada, e não "a mais nova do canal". Rascunho não conta; pré-release só
+        se foi ela a pedida — o NOC escolheu, o canal local não veta.
+        """
+        for r in await self.list_releases():
+            if r.version == version and _has_required_assets(r, mode):
+                return r
+        return None

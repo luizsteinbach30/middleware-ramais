@@ -22,6 +22,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
@@ -101,8 +102,13 @@ async def run_noc_heartbeat(*, forcar: bool = False) -> estado.EstadoNoc:
             credencial or "",
             relogio_iso=agora.isoformat(timespec="seconds").replace("+00:00", "Z"),
             manifesto_sha256=corpo["sha256"],
+            atualizacao=_atualizacao.estado,
         )
     except cliente.ErroDoNoc as erro:
+        if erro.status == 400 and _atualizacao.estado is not None:
+            # O NOC recusou o corpo: pode ter voltado para uma versão que não conhece
+            # o campo. O próximo heartbeat vai sem ele, e a resposta diz de novo.
+            _atualizacao.estado = None
         situacao = _situacao_do_erro(erro.codigo)
         with session_factory() as db:
             estado.gravar(
@@ -162,10 +168,30 @@ async def run_noc_heartbeat(*, forcar: bool = False) -> estado.EstadoNoc:
 
     _registrar_transicao(atual.situacao, estado.CONECTADO, None)
     _garantir_tarefas()
+    await _cuidar_da_atualizacao(resposta, depois.agente_id or "")
     if depois.intervalo_s != atual.intervalo_s:
         # O intervalo é do NOC: mudar em /configuracao lá chega aqui sem visita.
         reschedule(JOB_ID, depois.intervalo_s)
     return depois
+
+
+@dataclass
+class _EstadoDaAtualizacao:
+    # O que vai no próximo heartbeat; None enquanto o NOC não anunciar o campo.
+    estado: dict[str, Any] | None = None
+
+
+_atualizacao = _EstadoDaAtualizacao()
+
+
+async def _cuidar_da_atualizacao(resposta: dict[str, Any], agente_id: str) -> None:
+    """A atualização pedida pelo NOC (ADR 0008). Nada daqui derruba o heartbeat."""
+    from middleware_monitor.updater import automatico
+
+    try:
+        _atualizacao.estado = await automatico.ciclo(resposta.get("atualizacao"), agente_id=agente_id)
+    except Exception as exc:
+        log.error("noc_atualizacao_quebrou", erro=f"{type(exc).__name__}: {exc}")
 
 
 async def _renovar(canal: str, credencial: str) -> dict[str, str | None]:

@@ -6,6 +6,17 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ### Added
 
+- **Atualização automática pedida pelo NOC** (item 15 do `docs/AGENTE-NOC.md`, ADR 0008). O
+  middleware instala sozinho a versão desejada do NOC, dentro da janela definida lá (padrão
+  02:00–05:00) ou na hora, pelo "Atualizar agora". Só sobe de versão e só instala ocioso (sem
+  aplicação, escrita remota, túnel ou restauração em andamento). Cada agente espera um atraso próprio
+  dentro da janela. São no máximo 3 tentativas por versão, e o estado (`EM_DIA`,
+  `AGUARDANDO_JANELA`, `FALHOU`...) volta ao NOC. Dá para desligar por cliente em Sistema → Atualizações.
+- **Windows: a troca do `.exe` confere a saúde e volta sozinha.** O executável anterior fica como
+  `.bak`. Se a versão nova não responder em `/api/system/healthz` em 150 s, a anterior volta.
+- `/api/system/healthz` passa a dizer a versão.
+- Linux: o `install.sh --if-newer` instala a versão escrita em `update.request`, e não mais sempre a
+  mais nova do canal.
 - **Túnel de acesso web pelo NOC** (item 14 do `docs/AGENTE-NOC.md`, ADR 0007). O NOC pede
   `abrir_acesso_web` e o middleware abre um WebSocket **de saída** pelo canal mTLS. Por ele a pessoa
   no NOC usa a interface web de um equipamento da rede local (só IPv4 privado) ou de um servidor USCall

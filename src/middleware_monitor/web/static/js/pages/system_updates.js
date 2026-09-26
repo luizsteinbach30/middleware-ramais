@@ -51,6 +51,9 @@ async function loadUpdateSettings() {
   $('upd-auto').checked = cfg.auto_check;
   $('upd-auto-label').textContent = cfg.auto_check
     ? 'Avisa quando houver versão nova' : 'Desligada';
+  $('upd-auto-noc').checked = cfg.auto_noc;
+  $('upd-auto-noc-label').textContent = cfg.auto_noc
+    ? 'Na janela do NOC ou no "Atualizar agora" dele' : 'Desligada — o NOC vê como "desligada no cliente"';
   $('upd-channel').value = cfg.channel;
   $('upd-hour').value = cfg.check_hour;
   $('upd-minute').value = cfg.check_minute;
@@ -104,6 +107,7 @@ $('upd-cfg-save').addEventListener('click', async () => {
       method: 'PUT',
       body: {
         auto_check: $('upd-auto').checked,
+        auto_noc: $('upd-auto-noc').checked,
         channel: $('upd-channel').value,
         check_hour: parseInt($('upd-hour').value || '0', 10),
         check_minute: parseInt($('upd-minute').value || '0', 10),

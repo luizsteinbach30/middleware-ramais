@@ -38,7 +38,7 @@ def test_update_em_modo_systemd_deixa_o_pedido_para_a_unidade(client, db, monkey
     monkeypatch.setattr(get_settings(), "update_mode", "systemd")
     monkeypatch.setattr("middleware_monitor.api.system.get_state", lambda: {"available": release})
     monkeypatch.setattr(
-        "middleware_monitor.api.system.spawn",
+        "middleware_monitor.updater.instalar.spawn",
         lambda *_a, **_k: pytest.fail("o caminho legado (tarball no próprio processo) não pode rodar"),
     )
     csrf = _admin_csrf(client, db)

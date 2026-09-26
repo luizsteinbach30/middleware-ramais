@@ -303,6 +303,47 @@ async def test_manifesto_so_sobe_quando_o_noc_pede(db) -> None:
 
 
 @respx.mock
+async def test_estado_da_atualizacao_so_vai_para_noc_que_anunciou(db) -> None:
+    """CONTRATO §12.1: o DTO do heartbeat recusa campo desconhecido — mandar o estado
+    para um NOC antigo derrubaria o heartbeat. Só depois do anúncio, e 400 volta atrás."""
+    import json
+
+    from middleware_monitor.jobs import noc_agent
+
+    noc_agent._atualizacao.estado = None
+    _enrolado_direto(db)
+    anuncio = {
+        "intervaloHeartbeatS": 60,
+        "versaoDesejada": "0.0.1",
+        "atualizacao": {
+            "versaoDesejada": "0.0.1",
+            "janela": {"inicio": "02:00", "fim": "05:00"},
+            "atualizarAgoraPedidoEm": None,
+        },
+    }
+    rotas = _mock_noc(heartbeat=httpx.Response(200, json=anuncio))
+
+    await run_noc_heartbeat()
+    primeiro = json.loads(rotas["heartbeat"].calls[0].request.content)
+    assert "atualizacao" not in primeiro
+
+    await run_noc_heartbeat()
+    segundo = json.loads(rotas["heartbeat"].calls[1].request.content)
+    # Instalada acima da desejada: só sobe, e o NOC fica sabendo.
+    assert segundo["atualizacao"]["estado"] == "ACIMA_DA_DESEJADA"
+
+    rotas["heartbeat"].mock(
+        return_value=httpx.Response(400, json={"codigo": "ENTRADA_INVALIDA", "mensagem": "x"})
+    )
+    await run_noc_heartbeat()
+    rotas["heartbeat"].mock(return_value=httpx.Response(200, json={"intervaloHeartbeatS": 60}))
+    await run_noc_heartbeat()
+    quarto = json.loads(rotas["heartbeat"].calls[3].request.content)
+    assert "atualizacao" not in quarto
+    noc_agent._atualizacao.estado = None
+
+
+@respx.mock
 async def test_renova_o_certificado_quando_o_noc_pede(db) -> None:
     ca = _enrolado_direto(db)
     antes = certificado.expira_em()
