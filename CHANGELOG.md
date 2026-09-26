@@ -2,7 +2,12 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
-## [Unreleased]
+## [2.14.2] — 2026-09-26
+
+### Added
+
+- `scripts/atualizar-middleware.bat`: instala a última versão à mão, uma vez, em quem está na 2.14.1 ou antes
+  (RUNBOOK §4.0). Confere o SHA256, guarda o `.exe.bak` e volta sozinho se a nova não responder.
 
 ### Fixed
 
