@@ -529,7 +529,7 @@ quase nada. É o que AWS IoT Shadow, Azure Device Twin e o proxy do Zabbix evita
   manda `dispositivos` de novo; de que o retrato de segurança sai aos 15 min; e o `.run` testado no Linux (paridade
   em toda release).
 
-### 15 — Atualização automática pedida pelo NOC
+### 16 — Atualização automática pedida pelo NOC
 
 `src/middleware_monitor/updater/automatico.py` · **ADR 0008** · ✅ **feito (25/09, branch `feat/atualizacao-automatica`)**
 
@@ -561,7 +561,7 @@ agente decide a hora e instala **exatamente** a versão desejada, pelo mesmo cam
 | **6** | `publish` no cliente MQTT (8) · ~~mTLS~~ (feito na Fase 1) |
 | **I3 do NOC** ✅ | retrato de `ambientes[]` com `id` e lista branca (11) · estado do coletor MQTT (12) — 2026-09-17, no lote de telemetria |
 | **I5 do NOC** | edição central com conferência do `de` e releitura (13) |
-| **Atualização** | a versão desejada do NOC instalada sozinha, na janela ou na hora, com volta automática (15) — 2026-09-25 |
+| **Atualização** | a versão desejada do NOC instalada sozinha, na janela ou na hora, com volta automática (16) — 2026-09-25 |
 | **Túnel** | acesso web a equipamento da LAN e a USCall cadastrado, com a conexão saindo daqui (14) — 2026-09-25 |
 | **Telemetria leve** | retrato só quando muda, sem retrato repetido na fila, chave estável na retentativa (15) |
 

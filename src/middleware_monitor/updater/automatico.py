@@ -1,4 +1,4 @@
-"""A atualização pedida pelo NOC — ``docs/AGENTE-NOC.md`` item 15, ADR 0008.
+"""A atualização pedida pelo NOC — ``docs/AGENTE-NOC.md`` item 16, ADR 0008.
 
 O NOC diz qual versão quer (``frota.versao_desejada``), em que janela, e se
 alguém apertou "Atualizar agora". Este módulo decide **se e quando** instalar,
