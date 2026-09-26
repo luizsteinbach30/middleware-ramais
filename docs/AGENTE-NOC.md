@@ -491,7 +491,9 @@ abre um WebSocket de saída em `agente/v1/tunel/{sessao}` (mTLS + Bearer). O con
 
 - **Pedido:** `{ sessao, tipoDeDestino: "lan", destino, porta, esquema }` ou `{ sessao, tipoDeDestino: "uscall",
   uscall }`. Resultado: `{ aberto, reaberto, destino }`.
-- **Destino conferido aqui:** só IPv4 privado em `lan`, e só pelo nome do cadastro em `uscall`.
+- **Destino conferido aqui:** ~~só IPv4 privado em `lan`~~ desde a 2.14.2, qualquer IPv4 ou nome de host que esta
+  máquina alcança, inclusive a interface do próprio middleware (ADR 0007, emenda); em `uscall`, só pelo nome do
+  cadastro.
 - **Exceção declarada ao item 10:** pelo túnel a pessoa alcança a página de rede do aparelho. As tarefas continuam
   sem campo de rede.
 - **Sem credencial injetada**, 60 minutos no máximo, reconexão limitada, e cada sessão no log com a pessoa

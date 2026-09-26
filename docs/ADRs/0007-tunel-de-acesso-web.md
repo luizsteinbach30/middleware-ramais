@@ -24,13 +24,14 @@ middleware faz a chamada real ao equipamento.
 
 Há dois tipos de destino:
 
-- **`lan`**: o NOC informa IP, porta e esquema, e o middleware só aceita **IPv4 privado** (10/8, 172.16/12,
-  192.168/16). Loopback, link-local, endereço público, nome de host e a própria interface do middleware são
-  recusados.
+- **`lan`**: o NOC informa endereço, porta e esquema. ~~Só IPv4 privado; loopback, link-local, endereço
+  público, nome de host e a própria interface do middleware recusados.~~ **Emenda 2.14.2 (26/09):** vale
+  **qualquer destino que esta máquina alcança** — IPv4 de qualquer faixa (inclusive `127.0.0.1` e a própria
+  interface do middleware) ou nome de host resolvido pelo DNS daqui. Ver a emenda no fim.
 - **`uscall`**: o NOC informa só o **nome** do servidor cadastrado aqui, e o endereço sai do cadastro local.
   Endereço público só vale assim, cadastrado por quem opera o middleware.
 
-O túnel não vira proxy para a internet.
+~~O túnel não vira proxy para a internet.~~ Revogado pela emenda de 26/09.
 
 ### 3. Acesso completo, inclusive a rede, por decisão do dono
 
@@ -61,3 +62,26 @@ reentregue não abre de novo.
 - A v1 não carrega WebSocket do próprio equipamento. Uma interface que dependa disso abre, mas sem as partes
   ao vivo.
 - `websockets` passa a ser dependência explícita. Já vinha de carona pelo `uvicorn[standard]`.
+
+## Emenda 2.14.2 (26/09) — o túnel é o navegador sentado nesta máquina
+
+Pedido do dono, depois de testar em produção: *"quero literalmente emular uma conexão web pelo middleware, como
+se eu estivesse naquela máquina"* — a começar pela interface do próprio middleware, que era recusada.
+
+- **Destino:** qualquer IPv4 que não seja multicast, `0.0.0.0` ou difusão, ou nome de host (RFC 1123). O nome
+  **não** é fixado num IP: com todo destino permitido, a fixação contra DNS rebinding não protege nada, e
+  conectar pelo nome preserva o SNI e o virtual host. **Quem pode abrir continua sendo decisão do NOC**
+  (permissão `equipamento.acesso_web`, auditoria de cada requisição) — esta ponta só recusa o que não é forma
+  de endereço.
+- **A interface do middleware pelo túnel:** o login continua exigido (conferido: `api/auth.py` não dá passe
+  livre a `127.0.0.1`). Todo pedido do túnel leva `X-Noc-Tunel: <sessão>`, e o bloqueio por senha errada conta
+  por sessão quando o pedido vem desta máquina — senão as tentativas de um operador travariam os outros e quem
+  usa o painel aqui mesmo. De outro IP a marca é ignorada, para não virar um jeito de escapar do bloqueio.
+- **Pedido repetido:** o que cai sem nenhum byte de resposta (a conexão parada que o aparelho fechou) vai de
+  novo, uma vez, **qualquer método** — regra do Chromium (`ShouldResendRequest`). Só GET/HEAD/OPTIONS eram
+  repetidos, e o menu de telefone que carrega por POST virava 502 ("Server disconnected without sending a
+  response", reproduzido em teste). Keep-alive com o aparelho de 5 s para 2 s.
+- **Tempos:** leitura 95 s e espera por conexão 30 s — abaixo dos 100 s da Cloudflare e dos 110 s do nginx do
+  NOC, para quem desiste primeiro ser o agente, com mensagem, e não a borda com um 524.
+- Continua para a v2 do protocolo (NOC ADR 0028): endereço por origem, WebSocket do equipamento, frames
+  binários, janela por fluxo e limite de banda por sessão.

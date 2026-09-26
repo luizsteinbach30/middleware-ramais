@@ -15,6 +15,18 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 - Uma versão que "voltou" (subiu e não respondeu) não é tentada de novo sozinha na janela seguinte; o
   "Atualizar agora" do NOC tenta.
 - O botão da bandeja passou a conferir a versão exata que baixou (antes aceitava qualquer resposta).
+- **Túnel: o menu do telefone que carrega por POST perdia pedaços** (502 "Server disconnected without sending a
+  response"). Pedido que cai sem nenhum byte de resposta, na conexão parada que o aparelho fechou, vai de novo
+  uma vez, de qualquer método, como o Chrome faz. Keep-alive com o aparelho de 5 s para 2 s.
+- **Túnel: tempos abaixo dos da Cloudflare** (leitura 95 s, espera por conexão 30 s): o navegador recebe a
+  mensagem do agente em vez de um 524.
+
+### Changed
+
+- **Túnel: vale qualquer destino que esta máquina alcança** (ADR 0007, emenda). A interface do próprio
+  middleware (`127.0.0.1`), nome de host da rede, VPN e qualquer faixa de IP passam a abrir; quem pode abrir
+  continua sendo decisão do NOC. O login do middleware pelo túnel conta as senhas erradas por sessão
+  (`X-Noc-Tunel`), sem travar o painel local.
 
 ## [2.14.1] — 2026-09-25
 
