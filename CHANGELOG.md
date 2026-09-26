@@ -2,6 +2,19 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [Unreleased]
+
+### Added
+
+- **Túnel v2** (ADR 0009; NOC ADR 0028), com o NOC que o anuncia — com o NOC antigo, tudo segue como na 2.14:
+  - **outro endereço de dentro abre a partir da página**: o link para outro telefone, o PABX ou a mesma interface
+    em https/outra porta vai pelo NOC para um subdomínio próprio, com cookie e login separados;
+  - **WebSocket do equipamento** passa pelo túnel (status ao vivo, painel do USCall);
+  - **limite de banda por sessão**, definido no NOC (padrão 2 Mbit/s), para o túnel não disputar o link da loja
+    com a telefonia;
+  - corpo sem base64 (−25 % de bytes) e **janela por pedido**: um download grande não prende o menu aberto em
+    outra aba.
+
 ## [2.14.2] — 2026-09-26
 
 ### Added
