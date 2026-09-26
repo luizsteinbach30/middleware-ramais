@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import gzip
 import ipaddress
 import json
 import re
@@ -51,7 +52,7 @@ TIMEOUT_DO_EQUIPAMENTO_S = 30.0
 # mas abaixo dos 100 s da Cloudflare e dos 110 s do nginx do NOC: quem desiste primeiro é o agente,
 # e o navegador recebe a mensagem dele em vez de um 524 sem explicação. Esperar a vez numa das 6
 # conexões não passa de 30 s — mais que isso a página já desistiu.
-TIMEOUTS = httpx.Timeout(connect=10.0, read=95.0, write=60.0, pool=30.0)
+TIMEOUTS = httpx.Timeout(connect=10.0, read=95.0, write=60.0, pool=60.0)
 PEDACO = 64 * 1024
 # Requisições em andamento por sessão. Pela Cloudflare o navegador fala HTTP/2 e dispara dezenas
 # de uma vez; acima disto vira erro. As que passam esperam a vez na conexão com o equipamento.
@@ -264,6 +265,19 @@ def reescrever_links(corpo: bytes, destino: Destino) -> bytes:
     inicio = esquema + barra + barra + host + porta
     corpo = re.sub(inicio + rb"(?=" + barra + rb"|[?#])", b"", corpo, flags=re.I)
     return re.sub(inicio + rb"(?=[\"'\s<>)]|$)", b"/", corpo, flags=re.I)
+
+
+# CSS, JS e JSON reescritos voltam comprimidos: descomprimir para reescrever e mandar cru fazia
+# passar 3x mais bytes pelo link da loja (medido em 26/09: 1507 KB em vez de 491 KB no painel do
+# USCall, 6,7 s a 2 Mbit/s). O HTML fica cru: o NOC põe nele o script de presença.
+COMPRIMIR_A_PARTIR_DE = 1024
+
+
+def comprimir_para_o_noc(corpo: bytes, cabecalhos: list[list[str]]) -> tuple[bytes, list[list[str]]]:
+    tipo = next((v for k, v in cabecalhos if k.lower() == "content-type"), "").lower()
+    if len(corpo) < COMPRIMIR_A_PARTIR_DE or "text/html" in tipo:
+        return corpo, cabecalhos
+    return gzip.compress(corpo, compresslevel=5), [*cabecalhos, ["Content-Encoding", "gzip"]]
 
 
 # --- A sessão --------------------------------------------------------------------------------
@@ -687,12 +701,17 @@ class Sessao:
                 texto += pedaco
                 if len(texto) > TEXTO_MAXIMO_PARA_REESCREVER:
                     raise ValueError("página grande demais para reescrever os links")
+            # O corpo inteiro já está aqui: a conexão com o equipamento volta ao pool antes de o
+            # corpo passar pelo balde. Presa durante o envio, ela segurava os outros pedidos da
+            # página na fila das 6 conexões (medido em 26/09 com o painel do USCall).
+            await resposta.aclose()
             if self.v2:
                 texto = tp.reescrever_links_v2(texto, destino.esquema, destino.host, destino.porta)
             else:
                 texto = reescrever_links(texto, destino)
             # aiter_bytes já descomprimiu: o Content-Encoding do equipamento não vale mais.
             cabecalhos = [c for c in cabecalhos if c[0].lower() != "content-encoding"]
+            texto, cabecalhos = comprimir_para_o_noc(texto, cabecalhos)
             await self._enviar(
                 {"t": "resp", "f": fluxo, "status": resposta.status_code, "cabecalhos": cabecalhos}
             )

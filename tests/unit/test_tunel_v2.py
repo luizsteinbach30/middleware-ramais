@@ -173,8 +173,8 @@ async def test_balde_limita_a_banda_da_sessao(aparelhos: tuple[int, int]) -> Non
     noc = await _sessao(roteiro, aparelhos[0], banda=2048, prazo=40)  # 2 Mbit/s = 256 KB/s
     tempos = noc.chegadas[1]
     duracao = tempos[-1][0] - tempos[0][0]
-    # 600 KB a 256 KB/s, com rajada de 64 KB: ~2,1 s. Sem o balde seria instantâneo.
-    assert duracao >= 1.6, duracao
+    # 600 KB a 256 KB/s, com rajada de 1 s (256 KB): ~1,34 s. Sem o balde seria instantâneo.
+    assert duracao >= 1.15, duracao
 
 
 async def test_pedido_para_outra_origem_da_sessao(aparelhos: tuple[int, int]) -> None:

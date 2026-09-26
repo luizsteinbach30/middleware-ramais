@@ -2,6 +2,18 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.15.1] — 2026-09-26
+
+### Fixed
+
+- **Túnel: páginas pesadas (painel do USCall) demoravam a terminar de carregar.** Para reescrever os links, o
+  agente descomprimia CSS, JS e JSON e mandava sem compressão: passavam ~3x mais bytes pelo limite de banda da
+  sessão. Agora voltam comprimidos (o HTML segue cru, por causa do script de presença). Medido no Chrome com um
+  painel de 36 arquivos a 2 Mbit/s: de 6,7 s para 2,1 s (1507 KB → 509 KB pelo túnel).
+- A conexão com o equipamento é liberada assim que o corpo é lido, antes de passar pelo limite de banda — presa,
+  ela deixava os outros pedidos da página esperando vaga. Espera por conexão sobe de 30 para 60 s.
+- O limite de banda aceita uma rajada de 1 s (a média continua no limite): a página abre de uma vez.
+
 ## [2.15.0] — 2026-09-26
 
 ### Added
