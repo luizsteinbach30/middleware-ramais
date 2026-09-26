@@ -68,12 +68,13 @@ class Balde:
     """Limite de banda por sessão (token bucket com dívida).
 
     Cada envio gasta os bytes na hora; se o saldo fica negativo, quem enviou espera o tempo
-    de repor a dívida. Uma rajada de até ``capacidade`` sai sem espera. ``kbps`` 0 = livre.
+    de repor a dívida. Uma rajada de até ``capacidade`` (1 s de banda) sai sem espera. ``kbps`` 0 = livre.
     """
 
     def __init__(self, kbps: int, *, relogio: object = time.monotonic) -> None:
         self.taxa = kbps * 1000 / 8  # bytes por segundo
-        self.capacidade = max(64 * 1024, self.taxa / 4)
+        # Rajada de 1 s de banda: a página abre de uma vez; a média continua no limite.
+        self.capacidade = max(64 * 1024, self.taxa)
         self.saldo = self.capacidade
         self._relogio = relogio
         self._ultimo = self._agora()

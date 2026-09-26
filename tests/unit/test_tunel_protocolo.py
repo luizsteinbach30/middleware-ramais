@@ -89,3 +89,22 @@ def test_location() -> None:
     assert p.location_v2("https://192.168.0.20/", *TEL) == "/__tunel/ir?u=https%3A%2F%2F192.168.0.20%2F"
     assert p.location_v2("/ja/relativo", *TEL) == "/ja/relativo"
     assert p.location_v2("https://www.google.com/", *TEL) == "https://www.google.com/"
+
+
+def test_css_e_js_reescritos_voltam_comprimidos_e_o_html_cru() -> None:
+    """Medido em 26/09: descomprimir para reescrever e mandar cru passava 3x mais bytes pelo link."""
+    import gzip
+
+    from middleware_monitor.domain.noc.tunel import comprimir_para_o_noc
+
+    js = b"var a = function(){ return 'x'; };\n" * 200
+    corpo, cab = comprimir_para_o_noc(js, [["Content-Type", "application/javascript"]])
+    assert ["Content-Encoding", "gzip"] in cab and gzip.decompress(corpo) == js and len(corpo) < len(js) / 3
+    html = b"<html><head></head><body>" + b"x" * 5000 + b"</body></html>"
+    assert comprimir_para_o_noc(html, [["Content-Type", "text/html; charset=utf-8"]]) == (
+        html,
+        [["Content-Type", "text/html; charset=utf-8"]],
+    )
+    assert comprimir_para_o_noc(b"pequeno", [["Content-Type", "text/css"]])[1] == [
+        ["Content-Type", "text/css"]
+    ]
