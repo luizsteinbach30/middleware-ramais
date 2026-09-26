@@ -104,6 +104,21 @@ O banco de antes da tentativa fica em
 (migrations não voltam sozinhas; se a versão antiga não abrir o banco novo,
 pare o serviço e restaure esse arquivo em `db/app.db`).
 
+### 4.0 Windows: "Atualizar" abre janelas do cmd em laço (2.14.1 ou antes)
+
+Até a 2.14.1 o ajudante que troca o `.exe` era um `.bat` sem console: cada comando abria uma
+janela, e a espera falhava na hora, então o laço girava sem pausa (ADR 0008, emenda 2.14.2). Quem
+está nessas versões **instala a 2.14.2 à mão uma vez**; dali em diante o NOC atualiza sozinho.
+
+1. Se houver janelas do cmd em laço, finalize no Gerenciador de Tarefas os `cmd.exe`, `timeout.exe`
+   e `tasklist.exe` que sobraram.
+2. Baixe `scripts/atualizar-middleware.bat` do repositório (público) e rode com dois cliques, com o
+   mesmo usuário do Windows que usa o middleware. Ele acha o `.exe` que está rodando, baixa a
+   última release, confere o SHA256, troca (guardando o `.exe.bak`), reabre e confere a versão na
+   porta 8080; se a nova não responder em 150 s, volta a anterior. `atualizar-middleware.bat 2.14.2`
+   instala uma versão exata.
+3. Linux não tem o problema: `middleware-monitor-ctl update` ou o pedido do NOC.
+
 ### 4.1 Token de leitura de releases (repo privado)
 
 O repositório está **público desde 2026-09**: o updater, o `install.sh` e o
