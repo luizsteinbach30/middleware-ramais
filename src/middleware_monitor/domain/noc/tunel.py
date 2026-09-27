@@ -65,6 +65,8 @@ TEXTO_MAXIMO_PARA_REESCREVER = 8 * 1024 * 1024
 # O frame JSON leva o pedaço em base64 (+33 %) e os cabeçalhos.
 TAMANHO_MAXIMO_DO_FRAME = 1024 * 1024
 RECONEXOES = (1, 2, 5, 10, 30)
+# Pedaço lido do servidor num fluxo TCP: uma tela RDP anda em rajadas; 64 KiB cabe folgado no frame.
+PEDACO_TCP = 64 * 1024
 # Formulário e upload de firmware cabem; mais que isso não é interface web.
 CORPO_MAXIMO = 128 * 1024 * 1024
 
@@ -146,6 +148,13 @@ def destino_da_lan(destino: Any, porta: Any, esquema: Any) -> Destino:
     if ip.version != 4 or ip.is_multicast or ip.is_unspecified or ip == _DIFUSAO:
         raise DestinoRecusado(f"destino {ip}: não é o endereço de um equipamento.")
     return Destino(esquema, str(ip), porta, f"{esquema}://{ip}:{porta}")
+
+
+def destino_tcp(host: Any, porta: Any) -> Destino:
+    """Um servidor do cliente para o fluxo TCP (RDP, SSH): a mesma regra de endereço do
+    acesso web — qualquer coisa que esta máquina alcança — sem esquema."""
+    d = destino_da_lan(host, porta, "http")
+    return Destino("tcp", d.host, d.porta, f"tcp://{d.host}:{d.porta}")
 
 
 def destino_uscall(nome: Any, servidores: list[tuple[str, str]]) -> Destino:
@@ -300,6 +309,23 @@ class _Fluxo:
 
 
 @dataclass
+class _FluxoTcp:
+    """Uma conexão TCP até o servidor do cliente (RDP/SSH do guacd do NOC, 2.16.0).
+
+    Janela nos dois sentidos: o que sobe gasta ``credito`` (o NOC devolve depois de entregar);
+    o que desce é escrito, esperado o ``drain`` e só então devolvido como crédito ao NOC —
+    um servidor lento não enche a memória daqui. Sem o timeout de leitura do HTTP: uma
+    sessão RDP parada é normal; quem a encerra é o NOC (ócio e duração).
+    """
+
+    escritor: asyncio.StreamWriter | None = None
+    tarefa: asyncio.Task[None] | None = None
+    fila: asyncio.Queue[bytes | None] = field(default_factory=asyncio.Queue)
+    credito: int = tp.JANELA_INICIAL
+    tem_credito: asyncio.Event = field(default_factory=asyncio.Event)
+
+
+@dataclass
 class _FluxoWs:
     """Um WebSocket do navegador, levado até o equipamento (protocolo v2)."""
 
@@ -332,6 +358,9 @@ class Sessao:
         self.v2 = False
         self.balde = tp.Balde(0)
         self.ws_fluxos: dict[int, _FluxoWs] = {}
+        self.tcp_fluxos: dict[int, _FluxoTcp] = {}
+        self.duracao_s = DURACAO_MAXIMA_S
+        self.bytes_tcp = 0
 
     @property
     def url(self) -> str:
@@ -339,7 +368,7 @@ class Sessao:
         return f"{base}/agente/v1/tunel/{self.id}"
 
     def _restante(self) -> float:
-        return DURACAO_MAXIMA_S - (time.monotonic() - self.inicio)
+        return self.duracao_s - (time.monotonic() - self.inicio)
 
     async def _enviar(self, frame: dict[str, Any]) -> None:
         if self._ws is None:
@@ -393,6 +422,7 @@ class Sessao:
                         additional_headers={
                             "Authorization": f"Bearer {self.credencial}",
                             tp.CABECALHO_PROTOCOLO: tp.PROTOCOLO,
+                            tp.CABECALHO_RECURSOS: tp.RECURSOS,
                         },
                         user_agent_header=f"MiddlewareMonitor/{__version__}",
                         max_size=TAMANHO_MAXIMO_DO_FRAME * 2,
@@ -407,6 +437,8 @@ class Sessao:
                         self.v2 = cab.get(tp.CABECALHO_PROTOCOLO) == tp.PROTOCOLO
                         banda = tp.banda_do_cabecalho(cab.get(tp.CABECALHO_BANDA))
                         self.balde = tp.Balde(banda if self.v2 else 0)
+                        duracao = cab.get(tp.CABECALHO_DURACAO)
+                        self.duracao_s = tp.duracao_do_cabecalho(duracao, DURACAO_MAXIMA_S)
                         log.info(
                             "noc_tunel_conectado",
                             sessao=self.id,
@@ -440,6 +472,7 @@ class Sessao:
                 destino=self.destino.rotulo,
                 operador=self.operador,
                 requisicoes=self.requisicoes,
+                bytes_tcp=self.bytes_tcp,
                 duracao_s=int(time.monotonic() - self.inicio),
             )
 
@@ -467,10 +500,13 @@ class Sessao:
             return
         if not (isinstance(fluxo, int) and not isinstance(fluxo, bool)):
             return
+        if tipo == "tcp.abrir" or fluxo in self.tcp_fluxos:
+            await self._receber_tcp(tipo, fluxo, frame)
+            return
         if tipo in {"req", "ws.abrir"}:
-            if fluxo in self.fluxos or fluxo in self.ws_fluxos:
+            if fluxo in self.fluxos or fluxo in self.ws_fluxos or fluxo in self.tcp_fluxos:
                 return
-            if len(self.fluxos) + len(self.ws_fluxos) >= MAXIMO_DE_FLUXOS:
+            if self._em_uso() >= MAXIMO_DE_FLUXOS:
                 await self._enviar(
                     {"t": "erro", "f": fluxo, "mensagem": "Muitas requisições ao mesmo tempo nesta sessão."}
                 )
@@ -521,6 +557,91 @@ class Sessao:
                 f.credito += credito
                 f.tem_credito.set()
 
+    def _em_uso(self) -> int:
+        return len(self.fluxos) + len(self.ws_fluxos) + len(self.tcp_fluxos)
+
+    # --- Fluxo TCP (2.16.0, ADR 0010) -------------------------------------------------------
+
+    async def _receber_tcp(self, tipo: Any, fluxo: int, frame: dict[str, Any]) -> None:
+        if tipo == "tcp.abrir":
+            if not self.v2 or fluxo in self.tcp_fluxos or fluxo in self.fluxos or fluxo in self.ws_fluxos:
+                return
+            if self._em_uso() >= MAXIMO_DE_FLUXOS:
+                await self._erro(fluxo, "Muitas conexões ao mesmo tempo nesta sessão.")
+                return
+            # Só a sessão aberta como TCP carrega TCP, e só até o servidor que a tarefa nomeou.
+            if self.destino.esquema != "tcp":
+                await self._erro(fluxo, "Esta sessão não é de conexão TCP.")
+                return
+            destino = self.destino
+            novo = _FluxoTcp()
+            self.tcp_fluxos[fluxo] = novo
+            novo.tarefa = asyncio.create_task(self._tcp(fluxo, destino, novo))
+            return
+        t = self.tcp_fluxos.get(fluxo)
+        if t is None:
+            return
+        if tipo == "tcp.fechar":
+            t.fila.put_nowait(None)
+        elif tipo == "janela":
+            credito = frame.get("bytes")
+            if isinstance(credito, int) and not isinstance(credito, bool) and credito > 0:
+                t.credito += credito
+                t.tem_credito.set()
+
+    async def _tcp(self, fluxo: int, destino: Destino, t: _FluxoTcp) -> None:
+        """Conecta, avisa o NOC e leva os bytes nos dois sentidos até um dos lados fechar."""
+        motivo = "fim"
+        try:
+            try:
+                leitor, escritor = await asyncio.wait_for(
+                    asyncio.open_connection(destino.host, destino.porta), timeout=15
+                )
+            except (OSError, TimeoutError) as exc:
+                mensagem = f"Não foi possível conectar em {destino.rotulo}: {type(exc).__name__}"
+                await self._erro(fluxo, mensagem[:300])
+                return
+            t.escritor = escritor
+            log.info("noc_tunel_tcp_aberto", sessao=self.id, destino=destino.rotulo, operador=self.operador)
+            await self._enviar({"t": "tcp.aberto", "f": fluxo})
+            subida = asyncio.create_task(self._tcp_subida(fluxo, leitor, t))
+            descida = asyncio.create_task(self._tcp_descida(fluxo, escritor, t))
+            feitas, pendentes = await asyncio.wait({subida, descida}, return_when=asyncio.FIRST_COMPLETED)
+            for p in pendentes:
+                p.cancel()
+            motivo = "servidor" if subida in feitas else "noc"
+            with contextlib.suppress(Exception):
+                escritor.close()
+        finally:
+            self.tcp_fluxos.pop(fluxo, None)
+            if motivo != "noc":
+                with contextlib.suppress(Exception):
+                    await self._enviar({"t": "tcp.fechar", "f": fluxo})
+
+    async def _tcp_subida(self, fluxo: int, leitor: asyncio.StreamReader, t: _FluxoTcp) -> None:
+        """Servidor -> NOC, gastando a janela e o balde de banda."""
+        while True:
+            dados = await leitor.read(PEDACO_TCP)
+            if not dados:
+                return
+            while t.credito <= 0:
+                t.tem_credito.clear()
+                await t.tem_credito.wait()
+            t.credito -= len(dados)
+            self.bytes_tcp += len(dados)
+            await self._enviar_binario(tp.TCP_DADOS, fluxo, dados)
+
+    async def _tcp_descida(self, fluxo: int, escritor: asyncio.StreamWriter, t: _FluxoTcp) -> None:
+        """NOC -> servidor; o crédito volta ao NOC só depois do ``drain``."""
+        while True:
+            dados = await t.fila.get()
+            if dados is None:
+                return
+            escritor.write(dados)
+            await escritor.drain()
+            self.bytes_tcp += len(dados)
+            await self._enviar({"t": "janela", "f": fluxo, "bytes": len(dados)})
+
     def _destino_do_frame(self, frame: dict[str, Any]) -> Destino:
         """A origem do pedido (v2): outra origem que o NOC abriu na mesma sessão, conferida
         pela mesma regra do destino da sessão. Sem ``origem``, é a da sessão."""
@@ -538,6 +659,10 @@ class Sessao:
             f = self.fluxos.get(fluxo)
             if f is not None:
                 f.fila.put_nowait(dados)
+        elif tipo == tp.TCP_DADOS:
+            t = self.tcp_fluxos.get(fluxo)
+            if t is not None:
+                t.fila.put_nowait(dados)
         elif tipo in {tp.WS_TEXTO, tp.WS_BINARIO}:
             w = self.ws_fluxos.get(fluxo)
             if w is not None and w.conexao is not None:
@@ -758,6 +883,10 @@ class Sessao:
             if w.tarefa and not w.tarefa.done():
                 w.tarefa.cancel()
         self.ws_fluxos.clear()
+        for t in list(self.tcp_fluxos.values()):
+            if t.tarefa and not t.tarefa.done():
+                t.tarefa.cancel()
+        self.tcp_fluxos.clear()
 
 
 # --- Registro das sessões abertas --------------------------------------------------------------

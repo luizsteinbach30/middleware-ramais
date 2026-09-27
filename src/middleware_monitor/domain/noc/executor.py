@@ -880,12 +880,15 @@ async def _abrir_acesso_web(p: dict[str, Any], ctx: Contexto) -> Resultado:
     try:
         if p.get("tipoDeDestino") == "lan":
             destino = tunel.destino_da_lan(p.get("destino"), p.get("porta"), p.get("esquema"))
+        elif p.get("tipoDeDestino") == "tcp":
+            # RDP/SSH (2.16.0): a sessão só carrega fluxos TCP até este servidor.
+            destino = tunel.destino_tcp(p.get("destino"), p.get("porta"))
         elif p.get("tipoDeDestino") == "uscall":
             with session_factory() as db:
                 servidores = [(s.nome, s.host) for s in uscall_repo.list_servers(db, enabled_only=True)]
             destino = tunel.destino_uscall(p.get("uscall"), servidores)
         else:
-            return Resultado(ok=False, erro="tipoDeDestino: use lan ou uscall.")
+            return Resultado(ok=False, erro="tipoDeDestino: use lan, tcp ou uscall.")
         nova = tunel.abrir(sessao, destino, canal=ctx.canal, credencial=ctx.credencial, operador=ctx.operador)
     except tunel.DestinoRecusado as exc:
         return Resultado(ok=False, erro=str(exc))

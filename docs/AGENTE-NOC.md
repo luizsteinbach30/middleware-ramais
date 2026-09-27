@@ -550,6 +550,20 @@ agente decide a hora e instala **exatamente** a versão desejada, pelo mesmo cam
   anunciou o campo.
 - **Desliga por cliente** em Sistema → Atualizações: "Instalar a versão pedida pelo NOC".
 
+### 17 — Túnel TCP: RDP e SSH dos servidores do cliente pelo NOC
+
+`src/middleware_monitor/domain/noc/tunel.py` · **ADR 0010** · ✅ **feito (26/09, 2.16.0)** · NOC: ADR 0029
+
+A Documentação do cliente no NOC abre a área de trabalho remota (Windows Server, Hyper-V) e o terminal SSH (Linux)
+no navegador, já logado. O `guacd` fica no NOC; a conexão TCP até o servidor sai **daqui**, pelo WebSocket do túnel
+(`tipoDeDestino: "tcp"`, quadro `0x05`, janela nos dois sentidos). O contrato está em
+`noc-workconnect/docs/CONTRATO-DO-AGENTE.md` §11.7.
+
+- **A senha não passa pelo middleware:** o NOC a injeta no guacd; aqui só andam bytes.
+- **Só a sessão TCP carrega TCP, e só até o servidor da tarefa.**
+- A sessão dura o que o NOC mandar em `X-Tunel-Duracao-S` (8 h), com teto de 12 h. Enquanto ela está aberta, a
+  atualização automática espera (trava "túnel aberto" do item 16).
+
 ---
 
 ## Resumo por fase
