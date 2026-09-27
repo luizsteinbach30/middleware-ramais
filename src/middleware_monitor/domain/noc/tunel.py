@@ -154,7 +154,9 @@ def destino_da_lan(destino: Any, porta: Any, esquema: Any) -> Destino:
                 "destino: informe um IPv4 (ex.: 192.168.0.20) ou um nome de host (ex.: pabx.loja.local)."
             ) from None
         return Destino(esquema, texto, porta, f"{esquema}://{texto}:{porta}")
-    nao_e_equipamento = ip.is_multicast or ip.is_unspecified or ip in {_DIFUSAO, _METADADOS} or ip in _REDE_ZERO
+    nao_e_equipamento = (
+        ip.is_multicast or ip.is_unspecified or ip in {_DIFUSAO, _METADADOS} or ip in _REDE_ZERO
+    )
     if ip.version != 4 or nao_e_equipamento:
         raise DestinoRecusado(f"destino {ip}: não é o endereço de um equipamento.")
     return Destino(esquema, str(ip), porta, f"{esquema}://{ip}:{porta}")
