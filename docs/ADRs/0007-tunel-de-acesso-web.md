@@ -27,7 +27,10 @@ Há dois tipos de destino:
 - **`lan`**: o NOC informa endereço, porta e esquema. ~~Só IPv4 privado; loopback, link-local, endereço
   público, nome de host e a própria interface do middleware recusados.~~ **Emenda 2.14.2 (26/09):** vale
   **qualquer destino que esta máquina alcança** — IPv4 de qualquer faixa (inclusive `127.0.0.1` e a própria
-  interface do middleware) ou nome de host resolvido pelo DNS daqui. Ver a emenda no fim.
+  interface do middleware) ou nome de host resolvido pelo DNS daqui. Ver a emenda no fim. **Emenda de 27/09
+  (análise de segurança do NOC, ADR 0030 de lá):** ficam fora só o que não é equipamento e um proxy aberto
+  não deve alcançar — o endereço de metadados de nuvem (`169.254.169.254`, que entrega credenciais da própria
+  máquina) e a rede zero (`0.0.0.0/8`). O resto do `169.254/16` (telefone em APIPA) continua valendo.
 - **`uscall`**: o NOC informa só o **nome** do servidor cadastrado aqui, e o endereço sai do cadastro local.
   Endereço público só vale assim, cadastrado por quem opera o middleware.
 

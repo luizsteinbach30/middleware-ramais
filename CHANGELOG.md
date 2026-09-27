@@ -2,6 +2,18 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [Unreleased]
+
+### Security
+
+- **O canal do NOC não é rebaixado**: o endereço de canal que o NOC anuncia no heartbeat continua sendo
+  aceito (troca sem visita), mas um canal em `https` nunca vira `http` — o pedido é recusado, fica no log
+  e no detalhe da tela Sistema → NOC. A troca de endereço também passa a ficar no log. O laboratório
+  enrolado em `http://` continua como está (análise de 27/09 do NOC, ADR 0030 de lá).
+- **O túnel não alcança o endereço de metadados de nuvem (`169.254.169.254`) nem a rede zero
+  (`0.0.0.0/8`)** — o resto continua como a emenda 2.14.2 do ADR 0007: qualquer destino que a máquina
+  alcança, inclusive um telefone que caiu em APIPA.
+
 ## [2.16.0] — 2026-09-26
 
 ### Added

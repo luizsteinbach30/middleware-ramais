@@ -53,6 +53,18 @@ def test_o_que_nao_e_equipamento_e_recusado(destino: str) -> None:
         tunel.destino_da_lan(destino, 80, "http")
 
 
+@pytest.mark.parametrize("destino", ["169.254.169.254", "0.1.2.3", "0.255.255.255"])
+def test_metadados_de_nuvem_e_rede_zero_sao_recusados(destino: str) -> None:
+    # 27/09: um proxy que alcança tudo não pode alcançar o endereço de metadados da nuvem (que
+    # entrega credenciais da própria máquina) nem a rede zero. O resto do 169.254/16 continua
+    # valendo — telefone em APIPA é o que se abre pelo túnel para consertar.
+    with pytest.raises(DestinoRecusado):
+        tunel.destino_da_lan(destino, 80, "http")
+    with pytest.raises(DestinoRecusado):
+        tunel.destino_tcp(destino, 22)
+    assert tunel.destino_da_lan("169.254.1.1", 80, "http").base == "http://169.254.1.1"
+
+
 @pytest.mark.parametrize(("porta", "esquema"), [(0, "http"), (70000, "http"), (True, "http"), (80, "ftp")])
 def test_porta_e_esquema_fora_de_forma(porta: object, esquema: str) -> None:
     with pytest.raises(DestinoRecusado):
