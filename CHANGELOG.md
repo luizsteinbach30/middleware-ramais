@@ -2,7 +2,7 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
-## [Unreleased]
+## [2.16.1] — 2026-09-27
 
 ### Security
 
