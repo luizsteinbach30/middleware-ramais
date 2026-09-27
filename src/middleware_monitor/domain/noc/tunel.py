@@ -9,10 +9,13 @@ módulo faz a chamada real ao equipamento e devolve a resposta.
 
 As regras que não se re-derivam lendo o código:
 
-- **O destino é decidido aqui.** Endereço de LAN só vale se for IPv4 privado
-  (10/8, 172.16/12, 192.168/16); loopback e o próprio middleware ficam de fora.
-  USCall vem pelo nome do cadastro local — o NOC nunca manda endereço público
-  solto, e o túnel não vira proxy para a internet.
+- **O destino é decidido aqui.** Qualquer endereço que esta máquina alcança (ADR 0007,
+  emenda 2.14.2 — "como se eu estivesse naquela máquina"): LAN, VPN, `127.0.0.1`, nome
+  resolvido pelo DNS daqui, inclusive um telefone que caiu em APIPA (`169.254.x.x`).
+  Só ficam de fora o que não é equipamento: multicast, difusão, a rede zero
+  (`0.0.0.0/8`) e o endereço de metadados de nuvem (`169.254.169.254`, que responderia
+  com credenciais da própria máquina se o middleware um dia rodar numa VM de nuvem —
+  27/09). USCall vem pelo nome do cadastro local.
 - **Acesso completo, por decisão do dono (25/09).** O túnel deixa passar a página
   de rede do aparelho; é a exceção declarada ao "nenhuma tarefa mexe na rede". O
   que compensa é o registro: o NOC grava método e caminho de cada requisição, e
@@ -71,6 +74,12 @@ PEDACO_TCP = 64 * 1024
 CORPO_MAXIMO = 128 * 1024 * 1024
 
 _DIFUSAO = ipaddress.ip_address("255.255.255.255")
+# O que não é equipamento e um proxy aberto não deve alcançar (27/09): a rede zero (RFC 1122,
+# "esta rede") e o endereço de metadados das nuvens (AWS, GCP, Azure), que entrega credenciais
+# da própria máquina a quem pergunta. O resto do 169.254/16 continua valendo: telefone que caiu
+# em APIPA é exatamente o que se abre pelo túnel para consertar.
+_METADADOS = ipaddress.ip_address("169.254.169.254")
+_REDE_ZERO = ipaddress.ip_network("0.0.0.0/8")
 # RFC 1123: rótulos de 1 a 63 caracteres, até 253 no total.
 _NOME_DE_HOST = re.compile(
     r"^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$"
@@ -145,7 +154,10 @@ def destino_da_lan(destino: Any, porta: Any, esquema: Any) -> Destino:
                 "destino: informe um IPv4 (ex.: 192.168.0.20) ou um nome de host (ex.: pabx.loja.local)."
             ) from None
         return Destino(esquema, texto, porta, f"{esquema}://{texto}:{porta}")
-    if ip.version != 4 or ip.is_multicast or ip.is_unspecified or ip == _DIFUSAO:
+    nao_e_equipamento = (
+        ip.is_multicast or ip.is_unspecified or ip in {_DIFUSAO, _METADADOS} or ip in _REDE_ZERO
+    )
+    if ip.version != 4 or nao_e_equipamento:
         raise DestinoRecusado(f"destino {ip}: não é o endereço de um equipamento.")
     return Destino(esquema, str(ip), porta, f"{esquema}://{ip}:{porta}")
 

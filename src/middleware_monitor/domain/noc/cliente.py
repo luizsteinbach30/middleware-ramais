@@ -65,6 +65,22 @@ def normalizar_url(url: str) -> str:
     return limpa
 
 
+def aceitar_canal_anunciado(atual: str, anunciado: Any) -> str:
+    """O canal que o NOC anuncia no heartbeat, se ele puder ser aceito (27/09).
+
+    O NOC pode trocar o endereço do canal sem visita — mas **nunca para baixo**: canal
+    atual em ``https`` não vira ``http``, porque o Bearer do agente andaria em claro por
+    ordem de quem quer que esteja controlando o NOC naquele momento. Fora isso vale a
+    forma de sempre (:func:`normalizar_url`). O laboratório, que enrola em ``http://``,
+    continua como está: só o rebaixamento é recusado."""
+    if not isinstance(anunciado, str) or not anunciado.strip():
+        raise ValueError("endereço vazio")
+    novo = normalizar_url(anunciado)
+    if atual.lower().startswith("https://") and novo.lower().startswith("http://"):
+        raise ValueError(f"o canal atual é https e o anunciado é http ({novo}): rebaixamento recusado")
+    return novo
+
+
 def _cabecalhos(credencial: str | None = None) -> dict[str, str]:
     h = {"User-Agent": f"MiddlewareMonitor/{__version__}", "Accept": "application/json"}
     if credencial:

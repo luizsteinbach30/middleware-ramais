@@ -155,8 +155,18 @@ async def run_noc_heartbeat(*, forcar: bool = False) -> estado.EstadoNoc:
 
     canal = resposta.get("urlDoCanal")
     if isinstance(canal, str) and canal:
-        # O NOC pode mudar o endereço do canal sem visita: ele avisa pelo próprio canal.
-        valores[estado.KEY_URL_CANAL] = cliente.normalizar_url(canal)
+        # O NOC pode mudar o endereço do canal sem visita: ele avisa pelo próprio canal. Mas
+        # nunca para baixo (https não vira http: o Bearer andaria em claro), e a troca de
+        # endereço fica no log — é o agente inteiro que passa a falar com outro lugar (27/09).
+        try:
+            novo = cliente.aceitar_canal_anunciado(atual.endereco_do_canal, canal)
+        except ValueError as exc:
+            log.warning("noc_canal_anunciado_recusado", motivo=str(exc), anunciado=canal[:200])
+            valores[estado.KEY_DETALHE] = f"Canal anunciado pelo NOC recusado: {exc}"[:500]
+        else:
+            if atual.url_canal and novo != atual.url_canal:
+                log.warning("noc_canal_mudou", de=atual.url_canal, para=novo)
+            valores[estado.KEY_URL_CANAL] = novo
 
     if resposta.get("renovarCertificado"):
         valores.update(await _renovar(atual.endereco_do_canal, credencial or ""))
