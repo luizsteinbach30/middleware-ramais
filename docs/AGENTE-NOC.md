@@ -566,6 +566,114 @@ no navegador, já logado. O `guacd` fica no NOC; a conexão TCP até o servidor 
 
 ---
 
+## As pendências da expansão do NOC (2026-09-29) — linha paralela, só local
+
+O dono quer o NOC operando CFTV, servidores, switches e o resto, além da telefonia (NOC: ADR 0033, ADR 0034 e
+`PLANO-DA-EXPANSAO.md`). **Acesso já existe** — o túnel dos itens 14 e 17 chega a qualquer endereço da rede. O que
+falta aqui é **monitoria**.
+
+Três ordens dele valem para todos os itens abaixo:
+
+- **Monitoria é só leitura.** Nenhum item escreve em gravador, switch ou servidor.
+- **Linha paralela, só local.** O trabalho vai para a branch `expansao`, não para a `main`, e não vira release até
+  ele mandar. Sem push.
+- **Nada muda na telefonia.** `Device`, `ExtensionLine`, o configurador e o coletor MQTT ficam como estão.
+
+O contrato está em `noc-workconnect/docs/CONTRATO-DO-AGENTE.md` §13 (rascunho).
+
+### 18 — Não existe cadastro de equipamento: a identidade é o ramal
+
+`src/middleware_monitor/core/models.py` (`Device`) · **Plano 0** · pendente
+
+`Device.name` é único e é o ramal que veio do PBX. Câmera, switch e servidor não têm ramal, e não vêm do USCall.
+
+- Domínio novo `domain/equipamentos`, com tabela própria: `id` (`eq_<16 hex>`, emitido aqui), tipo, nome,
+  endereço, MAC, fabricante, modelo, `pai_id`, estado e desde quando. E a tabela das verificações de cada um.
+- **A lista chega do NOC** pelo verbo `definir_equipamentos` (item 21) e fica guardada aqui, para a monitoria
+  continuar com o NOC fora do ar.
+- A tela local mostra a lista e o estado. Editar localmente fica para depois.
+- Migration nova do Alembic, só com tabelas novas.
+
+### 19 — A sonda só sabe pingar, e só pinga ramal
+
+`src/middleware_monitor/integrations/network/` · `src/middleware_monitor/jobs/monitor_devices.py` · **Plano 0** · pendente
+
+A `PingProbe` pinga qualquer IP, mas o job que a usa só lê `Device`.
+
+- `TcpProbe` (a porta abre?) e `HttpProbe` (a página responde com o status esperado?) ao lado da `PingProbe`,
+  no mesmo `base.py` e `factory.py`.
+- Job novo `monitor_equipamentos`, no molde do `monitor_devices`: semáforo de concorrência, tempo limite,
+  resultado gravado por verificação. Registrado pelo `core/scheduler.py`.
+- **A queda só é declarada depois de falhas seguidas** (padrão 3), e a volta na primeira resposta. É o agente
+  quem declara, e a transição vira evento com `id` local.
+- Estados: `no_ar`, `degradado` (pinga, e outra verificação falha), `fora`, `desconhecido`.
+- O job de telefonia **não é tocado**, nem o reaplicar automático que mora nele.
+
+### 20 — O lote e o manifesto não falam de equipamento
+
+`src/middleware_monitor/domain/noc/telemetria.py` · `manifesto.py` · **Plano 0** · pendente
+
+- Três partes novas no lote: `equipamentos[]` (retrato, **só quando o hash muda** — item 15),
+  `amostrasDeVerificacao[]` e `eventosDeEquipamento[]` (por cursor, como `amostras` e `eventos`).
+- `VERSAO_DO_CONTRATO` continua `1`: o NOC lê chave a chave.
+- O manifesto ganha `modulos`, a lista fechada do que este agente monitora. Começa com `disponibilidade`.
+  **Nada volátil entra**: o sha256 do manifesto viaja em todo heartbeat.
+- A hora do evento vai crua, como sempre. O NOC guarda a crua como identidade e a corrigida para a tela.
+
+### 21 — Dois verbos novos no executor
+
+`src/middleware_monitor/domain/noc/executor.py` (`ACOES`) · **Plano 0** · pendente
+
+| Verbo | Raio | Pedido |
+|---|---|---|
+| `verificar_equipamento` | leitura | `{ equipamento }` — roda agora as verificações e devolve cada resultado |
+| `definir_equipamentos` | escrita | `{ de, para }` — grava a lista aqui, nunca no equipamento |
+
+- `definir_equipamentos` segue a edição central do item 13: confere o `de` antes do backup e de novo na
+  transação; lista que mudou é recusada com `LISTA_MUDOU`. Backup antes, como toda escrita.
+- O `id` dos equipamentos novos nasce aqui e volta no resultado.
+
+### 22 — Rede por SNMP
+
+`src/middleware_monitor/integrations/snmp/` (novo) · **Plano 2** · pendente
+
+- Leitura por SNMP v2c e v3, com as tabelas padrão: identificação e tempo ligado, estado e contadores das portas,
+  nobreak.
+- **Validar a biblioteca antes de escolher**: tem de funcionar dentro do `.exe` do PyInstaller e da wheel do
+  `.run` (Python 3.11 exato, `cp311`).
+- Estado de porta só vira registro quando muda. Tráfego só das portas marcadas como monitoradas.
+- Credencial (comunidade, usuário v3) cifrada em repouso, como as do configurador. De onde ela vem é decisão do
+  dono (NOC, ADR 0033, decisão em aberto 5).
+- Sem descoberta varrendo a rede do cliente.
+
+### 23 — CFTV por adaptador de fabricante
+
+`src/middleware_monitor/integrations/cftv/vendors/` (novo) · **Plano 1** · pendente
+
+- Contrato novo `CftvAdapter`, no molde do `VendorAdapter`
+  (`integrations/extension_configurator/vendors/base.py`) e do `registry.py`: `fingerprint`, `discover`,
+  `estado`, `capabilities`. **Só leitura**: não há `send_config` nem `execute_action`.
+- `estado` devolve canais (com vídeo ou sem), discos (saúde e ocupação), gravação por canal, dias guardados,
+  hora do equipamento e firmware.
+- Primeiro adaptador: **Intelbras/Dahua** (a família de CGI do terminal SS3542MFW). Segundo: **Hikvision**.
+  Reserva: **ONVIF** com conferência do fluxo RTSP.
+- **Firmware é dimensão de teste**: anotar a versão de cada gravador homologado, e testar com resposta gravada
+  do equipamento real.
+- Resposta vazia com HTTP 200 é falha, nunca sucesso.
+
+### 24 — Servidores e virtualização
+
+`src/middleware_monitor/integrations/servidores/` (novo) · **Plano 3** · pendente, e depende de decisão do dono
+
+Do mais simples ao mais difícil: **Proxmox** pela API (credencial só de leitura), **iDRAC/iLO** por Redfish,
+**Linux por SSH** com lista fechada de comandos de leitura, **Windows Server e Hyper-V** por WinRM.
+
+- O dono ainda decide entre coletar por aqui e integrar ferramenta que já existe.
+- SSH e WinRM trazem dependência nova: a mesma validação do item 22 (`.exe` e `.run`).
+- Nenhum agente é instalado dentro do servidor do cliente.
+
+---
+
 ## Resumo por fase
 
 | Fase | O que este repositório entrega |
@@ -580,6 +688,8 @@ no navegador, já logado. O `guacd` fica no NOC; a conexão TCP até o servidor 
 | **Atualização** | a versão desejada do NOC instalada sozinha, na janela ou na hora, com volta automática (16) — 2026-09-25 |
 | **Túnel** | acesso web a equipamento da LAN e a USCall cadastrado, com a conexão saindo daqui (14) — 2026-09-25 |
 | **Telemetria leve** | retrato só quando muda, sem retrato repetido na fila, chave estável na retentativa (15) |
+| **Expansão · Plano 0** | cadastro de equipamento (18) · sondas de porta e página, job de disponibilidade (19) · partes novas do lote e `modulos` (20) · dois verbos (21) — linha paralela, só local |
+| **Expansão · Planos 1 a 3** | CFTV por adaptador (23) · rede por SNMP (22) · servidores (24) |
 
 ---
 
