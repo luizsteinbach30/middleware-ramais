@@ -648,7 +648,8 @@ a 21). Onde o texto do §13 e o que está abaixo divergirem, vale o que está ab
     começa 24 h para trás. A hora vai crua (UTC sem fuso): é a identidade do evento no NOC.
   - Os cursores só andam com 202, como os das partes que já existiam; bater no limite faz o ciclo mandar outro lote.
 - **O manifesto ganha** `"modulos": [{ "nome": "disponibilidade", "versao": 1, "homologado": true }]`, sem nada
-  volátil (o hash do manifesto muda uma vez, na atualização).
+  volátil (o hash do manifesto muda uma vez, na atualização). *No Plano 1 cada módulo passou a levar também
+  `aceito`, `aceitoEm` e `aceitoPor` — ver o item 25.*
 - **Não entrou aqui:** o "só quando muda" das partes antigas (`dispositivos`, `perfis`, `ambientes`…) — continua sendo
   o item 15. O mecanismo de `equipamentos` é o que o item 15 descreve, e serve de molde para ele.
 
@@ -699,18 +700,46 @@ a 21). Onde o texto do §13 e o que está abaixo divergirem, vale o que está ab
 
 ### 23 — CFTV por adaptador de fabricante
 
-`src/middleware_monitor/integrations/cftv/vendors/` (novo) · **Plano 1** · pendente
+`src/middleware_monitor/integrations/cftv/` · `domain/equipamentos/cftv.py` · `tools/simuladores/` · **Plano 1** ·
+✅ **feito (30/09, branch `feat/expansao-modulos-cftv` → `expansao`, só local) — os três `homologado: false`**
 
-- Contrato novo `CftvAdapter`, no molde do `VendorAdapter`
-  (`integrations/extension_configurator/vendors/base.py`) e do `registry.py`: `fingerprint`, `discover`,
-  `estado`, `capabilities`. **Só leitura**: não há `send_config` nem `execute_action`.
-- `estado` devolve canais (com vídeo ou sem), discos (saúde e ocupação), gravação por canal, dias guardados,
-  hora do equipamento e firmware.
-- Primeiro adaptador: **Intelbras/Dahua** (a família de CGI do terminal SS3542MFW). Segundo: **Hikvision**.
-  Reserva: **ONVIF** com conferência do fluxo RTSP.
-- **Firmware é dimensão de teste**: anotar a versão de cada gravador homologado, e testar com resposta gravada
-  do equipamento real.
-- Resposta vazia com HTTP 200 é falha, nunca sucesso.
+- **Contrato `CftvAdapter`** (`integrations/cftv/base.py`), no molde do `VendorAdapter` e do `registry.py` do
+  configurador, com uma diferença que é a regra do dono: **só `ler`**. Não há `send_config` nem `execute_action`;
+  todo pedido é `GET` (o UniFi faz também o `POST` de login, que é autenticação). Sem dependência nova: `httpx`
+  (`DigestAuth`) e `xml.etree`. Sem proxy do sistema e sem conferir certificado (gravador de loja, autoassinado).
+- **Três adaptadores**, escritos pela documentação pública:
+
+  | Adaptador | Módulo | Credencial | O que lê |
+  |---|---|---|---|
+  | `intelbras` (Intelbras e Dahua) | `cftv.intelbras` | `HTTP` | CGI digest: `magicBox getSystemInfo`/`getSoftwareVersion`, `ChannelTitle`, `eventManager getEventIndexes` (`VideoLoss`, `StorageLowSpace`), `RecordMode`, `storageDevice getDeviceAllInfo`, `global getCurrentTime` |
+  | `hikvision` | `cftv.hikvision` | `HTTP` | ISAPI digest/XML: `System/deviceInfo`, `InputProxy/channels/status` (ou `System/Video/inputs/channels` no DVR analógico, `resDesc = NO VIDEO`), `record/tracks`, `Storage/hdd`, `System/time` |
+  | `unifi` (UniFi Protect) | `cftv.unifi` | `API` | `POST /api/auth/login` (cookie `TOKEN` + `X-CSRF-Token`), `GET /proxy/protect/api/bootstrap` |
+
+- **Resposta vazia não é sucesso, e 200 não prova nada**: cada leitura obrigatória confere a forma (a chave
+  `deviceType`, a raiz do XML, o objeto `nvr`); o que não tem forma é `RespostaInvalida`. XML com DTD é recusado.
+- **O que ficou decidido sem equipamento na mão** (a conferir no WORKCONNECT LAB):
+  - Intelbras: `getEventIndexes` sem evento ativo responde **vazio** — só ali, 200 vazio é "nenhum canal";
+    `Error` deixa o vídeo `desconhecido`, nunca `ok`. Disco `cheio` = alarme `StorageLowSpace` ativo.
+  - `gravando` no Intelbras é o `RecordMode` (2 = parado) e no Hikvision a trilha `Enable` — **configuração de
+    gravar**, não a prova de arquivo sendo escrito (isso pediria busca, e busca na ISAPI é `POST`). No UniFi é o
+    `isRecording` de verdade.
+  - Hikvision: disco `ok`/`idle` = ok, `notexist` = ausente, `full` = cheio (a confirmar se o firmware informa),
+    o resto = defeito. Capacidade em MB.
+  - UniFi: a hora do console é o cabeçalho `Date` do bootstrap; o número do canal é a posição da câmera ordenada
+    pelo `id` (não muda quando renomeiam); câmera não adotada fica fora; não existe "disco cheio" (grava por cima).
+    **A sessão é reaproveitada** em memória: o console limita logins.
+  - Hora sem fuso (Intelbras) é lida como a hora local desta máquina, que está na mesma loja.
+  - `diasGuardados` sai `null` nos três: nenhum informa sem busca.
+- **Senha recusada segura a próxima tentativa por 30 min** com a mesma credencial (gravador bloqueia o usuário
+  depois de algumas senhas erradas, e a monitoria não pode trancar o dono fora da própria loja). Credencial nova
+  (outra impressão) tenta na hora; `verificar_equipamento` (pedido de uma pessoa) também.
+- **Simuladores** em `tools/simuladores/` (fora do pacote, não vão na wheel nem no `.exe`): um servidor
+  `http.server` por fabricante, com digest escrito à mão, cenário mudado ao vivo em `POST /_sim/estado` e registro
+  de cada pedido. `subir-<fabricante>.sh`/`.bat` nas portas 18081 (Intelbras), 18082 (Hikvision) e 18083 (UniFi),
+  usuário `admin`, senha `simulador123`. Passo a passo em `tools/simuladores/README.md`.
+- **Testes:** `tests/unit/test_cftv_adaptadores.py` (cada adaptador contra o simulador e contra respostas montadas
+  da documentação) e `tests/api/test_noc_cftv.py` (de ponta a ponta com o simulador).
+- **Firmware é dimensão de teste**: ao homologar, anotar a versão de cada gravador e guardar a resposta real.
 
 ### 24 — Servidores e virtualização
 
@@ -724,6 +753,97 @@ Do mais simples ao mais difícil: **Proxmox** pela API (credencial só de leitur
 - Nenhum agente é instalado dentro do servidor do cliente.
 
 ---
+
+### 25 — Módulos aceitos: o que o agente sabe × o que ele pode usar
+
+`domain/equipamentos/modulos.py` · `domain/noc/manifesto.py` · `domain/noc/executor.py` (`definir_modulos`) ·
+`api/noc.py` (`/api/noc/modulos`) · tela `/system/noc` · **CONTRATO §13.8** · ✅ **feito (30/09)**
+
+- **Saber é da versão, aceitar é deste agente.** O catálogo (`CATALOGO`) traz `telefonia`, `disponibilidade`,
+  `cftv.intelbras`, `cftv.hikvision` e `cftv.unifi`; o aceite fica no KV `app_config`, chave `modulos.aceitos`
+  (JSON `{nome: {aceito, aceitoEm, aceitoPor}}`), e **não viaja no pacote portável** (`LOCAL_ONLY_KEYS`), como a
+  lista de equipamentos.
+- **Padrão:** `telefonia` e `disponibilidade` aceitos; os três de CFTV não. Sem registro, `aceitoEm`/`aceitoPor`
+  são `null`.
+- **`telefonia` é só sinal para as telas** (decisão de 30/09): aceito por padrão em todo agente, novo e existente.
+  **Desligar não para nada do que a telefonia faz hoje** — coleta do USCall, MQTT, configurador, jobs e as partes do
+  lote continuam iguais. O desligado só esconde a frente do menu (aqui e no NOC) e fica no manifesto. Um teste
+  (`test_desligar_telefonia_nao_para_nada_da_telefonia`) quebra se algum código de telefonia passar a consultar
+  os módulos.
+- **Manifesto:** `modulos: [{ nome, versao, homologado, aceito, aceitoEm, aceitoPor }]`, todos os da versão, na
+  ordem do catálogo. `aceitoEm` em UTC com `Z`; `aceitoPor` é `local:<usuário>` ou `noc:<email>`. Mudou o aceite →
+  corpo novo → sha256 novo → o NOC pede o manifesto no heartbeat seguinte. Regravar o mesmo valor não muda nada.
+- **Vale a última mudança**, venha da tela local ou do NOC.
+- **Verbo `definir_modulos`** (`ESCRITA_REVERSIVEL`, está em `acoes`): `{ de: [{nome, aceito}], para: [{nome,
+  aceito}] }`.
+  - `de` é a lista inteira como o manifesto mostrou (chaves a mais, como `versao`, são ignoradas), conferida por
+    `(nome, aceito)`: diferente → `LISTA_MUDOU` com `atual` (a lista na forma do manifesto), sem backup.
+  - `para`: módulo fora do catálogo → `VALOR_INVALIDO` com `indice`; `aceito` que não é booleano ou nome repetido
+    também. **Módulo ausente do `para` fica como está.**
+  - Backup antes, confere o `de` de novo na transação, grava, relê. Resultado: `{ backup, modulos: [ … na forma do
+    manifesto ] }`.
+- **Módulo desligado não roda.** As verificações dele ficam guardadas com `estado: "pausada"` (zeradas: sem
+  `ultimaEm`, `ultimoValor`, `ultimoErro`), sem amostra e sem evento, e não contam para o estado do equipamento.
+  Religado, voltam de `desconhecido` e rodam na rodada seguinte. O job confere o aceite também na hora de rodar.
+- **`definir_equipamentos` com verificação de módulo não aceito → `VALOR_INVALIDO`** (`"módulo cftv.hikvision não
+  aceito neste agente."`, com `indice` e `verificacao`) **quando a verificação nasce ou muda de medida**. A que já
+  existia e vem igual passa e continua pausada — senão desligar um módulo travaria qualquer edição da lista até o
+  NOC apagar as verificações dele.
+- **Tela local** (`/system/noc`, seção **Módulos**): uma chave por módulo com nome amigável, versão, "não
+  homologado" quando for o caso e quem ligou/desligou e quando. Só admin troca (`PUT /api/noc/modulos/{nome}` com
+  `{ aceito }` e CSRF; `GET /api/noc/modulos` para qualquer usuário, com `pode_editar`). Grava
+  `aceitoPor = "local:<usuário>"`. A repaginação do menu por módulo fica para a entrega do menu.
+
+### 26 — A credencial de monitoria e o `cftv` no retrato
+
+`domain/equipamentos/lista.py` · `jobs/monitor_equipamentos.py` · migration `0016_cftv` · **CONTRATO §13.9** ·
+✅ **feito (30/09)**
+
+- **Migration `0016_cftv`**, repetível como a 0015: `equipamento_credenciais` (tipo, usuário, segredo cifrado,
+  impressão) e `equipamento_cftv` (a última leitura de cada gravador, para os eventos saírem por diferença).
+- **Verificação `cftv`** só em equipamento `gravador`, uma por equipamento: `parametros: { adaptador, esquema,
+  porta }` guardados com os padrões (`esquema` `http` — `https` no UniFi —, porta 80/443 pelo esquema).
+- **Credencial:** cada item do `para` pode levar `credenciais: [{ tipo, usuario, segredo }]`, com `tipo` ∈ `HTTP ·
+  API · ONVIF · SNMP_V2C · SNMP_V3 · SSH · WINRM · REDFISH` (ADR 0037 do NOC), um de cada. Intelbras e Hikvision
+  usam `HTTP`; UniFi usa `API`.
+  - **`credenciais` ausente (ou `null`) mantém as guardadas; `[]` apaga** — a regra do lote: parte ausente é "não
+    mudou". O `de` não leva credencial (se vier, é ignorada).
+  - O segredo é gravado **cifrado com a `SecretBox`** (`enc:v1:`). Instalação sem `APP_SECRET_KEY` utilizável
+    recusa a credencial (`VALOR_INVALIDO`) em vez de gravar em claro.
+  - **O segredo nunca sai:** o retrato leva `credenciais: [{ tipo, usuario, impressao }]` (12 primeiros hex do
+    sha256 do segredo); o pedido guardado em `noc_tarefas` tem `segredo` trocado por `***`; recusa, resultado e log
+    não o repetem. Um teste varre resultado, lote, pedido e resultado guardados, `system_logs` e a saída do
+    processo.
+  - **Credencial nova zera a verificação `cftv`** do equipamento (o "senha recusada" de antes falava da velha).
+- **O retrato** leva, em todo equipamento, `credenciais` (lista, vazia quando não há) e `cftv` (`null` sem leitura):
+  `{ lidoEm, canais: [{ numero, nome, video: ok|sem_video|desconhecido, gravando: true|false|null }], discos: [{
+  numero, estado: ok|defeito|cheio|ausente, totalGb, livreGb }], horaDoGravador, desvioS, diasGuardados }`, horas
+  em UTC sem fuso, GB decimais com uma casa. `desvioS` = hora do gravador − hora desta máquina.
+- **"Só quando muda"** ignora `lidoEm`, `horaDoGravador` e `desvioS` (entra só se cruzou 120 s) e mede `livreGb`
+  em faixas de 1% do total — senão um disco gravando mudaria o retrato a cada leitura.
+- **`ok`** quando leu e não achou problema. Problema: canal sem vídeo, canal que não grava, disco com defeito ou
+  cheio, gravador sem nenhum disco, hora a mais de 120 s. `ultimoErro` junta todos (`"canal 2 sem vídeo; disco 1
+  com defeito"`), ou diz por que não leu (`"senha recusada"`, `"sem credencial (HTTP)"`, `"HTTP 200 com a resposta
+  vazia em …"`). A queda para `falha` segue a máquina do item 19 (`tentativasParaCair`) e o equipamento fica
+  `degradado` se ainda responde à verificação principal.
+- **Eventos `cftv.*`**, pela trilha de `eventosDeEquipamento`, com `verificacao` = a verificação cftv, na **hora da
+  leitura** (não esperam as N falhas — é o fato do canal ou do disco), só na transição:
+
+  | Tipo | `de` → `para` | `detalhe` |
+  |---|---|---|
+  | `cftv.canal_sem_video` | vídeo anterior (`ok`/`desconhecido`) → `sem_video` | `canal 2 (CAM 2) sem vídeo` |
+  | `cftv.canal_voltou` | `sem_video` → `ok` | `canal 2 (CAM 2) voltou` |
+  | `cftv.parou_de_gravar` | `gravando`/`desconhecido` → `parado` | `canal 4 (CAM 4) parou de gravar` |
+  | `cftv.voltou_a_gravar` | `parado` → `gravando` | `canal 4 (CAM 4) voltou a gravar` |
+  | `cftv.disco_com_defeito` | estado anterior → `defeito` ou `cheio` | `disco 1 com defeito` / `disco 1 cheio` |
+  | `cftv.disco_normalizou` | `defeito`/`cheio` → o novo estado | `disco 1 ok` |
+  | `cftv.hora_errada` | `certa`/`desconhecida` → `errada` | `hora do gravador 600 s atrasada (-600 s)` |
+  | `cftv.hora_certa` | `errada` → `certa` | idem |
+
+  A primeira leitura só gera evento de problema (voltar sem ter ido não é notícia). Leitura que falhou não apaga a
+  anterior nem gera evento de canal/disco.
+- **`verificar_equipamento`** devolve, na verificação `cftv`, também `cftv` (a leitura, na forma do retrato); a
+  pausada volta `ok: false` com `"pausada: módulo … não aceito neste agente"` sem rodar.
 
 ## Resumo por fase
 
@@ -740,7 +860,8 @@ Do mais simples ao mais difícil: **Proxmox** pela API (credencial só de leitur
 | **Túnel** | acesso web a equipamento da LAN e a USCall cadastrado, com a conexão saindo daqui (14) — 2026-09-25 |
 | **Telemetria leve** | retrato só quando muda, sem retrato repetido na fila, chave estável na retentativa (15) |
 | **Expansão · Plano 0** ✅ | cadastro de equipamento (18) · sondas de porta e página, job de disponibilidade (19) · partes novas do lote e `modulos` (20) · dois verbos (21) — 2026-09-30, linha paralela, só local |
-| **Expansão · Planos 1 a 3** | CFTV por adaptador (23) · rede por SNMP (22) · servidores (24) |
+| **Expansão · Plano 1** ✅ | CFTV por adaptador, com simuladores (23) · módulos aceitos e `telefonia` como sinal (25) · credencial de monitoria e `cftv` no retrato (26) — 2026-09-30, linha paralela, só local |
+| **Expansão · Planos 2 e 3** | rede por SNMP (22) · servidores (24) |
 
 ---
 

@@ -126,6 +126,22 @@
       </div>
     </div>
   </div>
+
+  <!-- Módulos: o que esta versão sabe monitorar e o que ESTE agente aceita usar
+       (CONTRATO §13.8). O NOC também liga e desliga pelo verbo definir_modulos;
+       vale a última mudança. Só admin troca. -->
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-700/60">
+      <h3 class="text-sm font-semibold text-gray-100">Módulos</h3>
+      <p class="text-xs text-gray-500 mt-1 max-w-2xl">
+        O que este agente pode monitorar além dos ramais. Módulo desligado não roda: as verificações dele ficam
+        guardadas e <strong class="text-gray-300">pausadas</strong>. Toda monitoria é <strong class="text-gray-300">só
+        leitura</strong> — nenhum módulo muda configuração de equipamento.
+        <span id="noc-modulos-so-admin" class="hidden">Só administrador troca.</span>
+      </p>
+    </div>
+    <ul id="noc-modulos-lista" class="divide-y divide-gray-700/60"></ul>
+  </div>
 </div>
 <script type="module" src="/static/js/pages/system_noc.js"></script>
 {% endblock %}

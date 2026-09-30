@@ -50,11 +50,13 @@ class Fingerprinter(Protocol):
 
 @dataclass(frozen=True)
 class ResultadoDaSonda:
-    """``valor`` é a latência em ms quando ``ok``; ``erro`` diz por que não foi."""
+    """``valor`` é a latência em ms quando ``ok``; ``erro`` diz por que não foi.
+    ``dados`` é o que a leitura trouxe além disso (o ``cftv`` do retrato, no Plano 1)."""
 
     ok: bool
     valor: int | None = None
     erro: str | None = None
+    dados: dict[str, Any] | None = None
 
 
 class TcpProbe(Protocol):

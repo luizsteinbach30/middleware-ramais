@@ -5,6 +5,9 @@ middleware que abre a conexão para fora (a CSP da interface é
 ``connect-src 'self'``, e a credencial não passa pelo JavaScript).
 
 Nada aqui loga o código de enrolamento nem a credencial.
+
+Os **módulos aceitos** (CONTRATO §13.8) também se trocam aqui, só por admin: é o
+outro caminho, além do verbo ``definir_modulos`` do NOC, e vale a última mudança.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from sqlalchemy.orm import Session as DBSession
 from middleware_monitor.api.deps import get_current_user, get_session, require_admin, require_csrf
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import User
+from middleware_monitor.domain.equipamentos import modulos
 from middleware_monitor.domain.noc import certificado, cliente, estado, executor, manifesto
 from middleware_monitor.jobs.noc_agent import apply_noc_schedule, run_noc_heartbeat
 from middleware_monitor.version import __version__
@@ -32,6 +36,10 @@ class EnrolarIn(BaseModel):
 
 class UrlIn(BaseModel):
     url: str = Field(min_length=3, max_length=255)
+
+
+class ModuloIn(BaseModel):
+    aceito: bool
 
 
 # Código do NOC → status HTTP daqui. O que não está no mapa é falha de caminho
@@ -162,3 +170,36 @@ def desenrolar(
     apply_noc_schedule(estado.carregar(db))
     log.warning("noc_desenrolado", agente_id=atual.agente_id, operador=user.username)
     return _saida(db)
+
+
+def _modulos(db: DBSession, user: User) -> dict[str, object]:
+    return {
+        "modulos": [
+            {
+                **m,
+                "rotulo": modulos.POR_NOME[m["nome"]].rotulo,
+                "descricao": modulos.POR_NOME[m["nome"]].descricao,
+            }
+            for m in modulos.listar(db)
+        ],
+        "pode_editar": user.role == "admin",
+    }
+
+
+@router.get("/modulos")
+def ver_modulos(
+    user: User = Depends(get_current_user), db: DBSession = Depends(get_session)
+) -> dict[str, object]:
+    return _modulos(db, user)
+
+
+@router.put("/modulos/{nome}", dependencies=[Depends(require_csrf), Depends(require_admin)])
+def trocar_modulo(
+    nome: str, payload: ModuloIn, user: User = Depends(require_admin), db: DBSession = Depends(get_session)
+) -> dict[str, object]:
+    if nome not in modulos.POR_NOME:
+        raise HTTPException(404, f"Módulo {nome[:64]!r} desconhecido nesta versão.")
+    modulos.definir(db, {nome: payload.aceito}, por=f"local:{user.username}", user_id=user.id)
+    db.commit()
+    log.info("modulo_trocado_localmente", modulo=nome, aceito=payload.aceito, operador=user.username)
+    return _modulos(db, user)

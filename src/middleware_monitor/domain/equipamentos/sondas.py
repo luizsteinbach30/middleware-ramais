@@ -2,15 +2,19 @@
 
 ``icmp`` usa a ``PingProbe`` de sempre (a que pinga os ramais); nome de host é
 resolvido aqui antes, porque a sonda de ping só aceita IP. ``tcp`` abre e fecha
-a porta; ``http`` faz um ``GET`` sem corpo, com tempo limite curto.
+a porta; ``http`` faz um ``GET`` sem corpo, com tempo limite curto; ``cftv`` lê o
+gravador pelo adaptador do fabricante (``cftv.py``), com a credencial já aberta.
 """
 
 from __future__ import annotations
 
 import asyncio
 import socket
+import time
+from datetime import UTC, datetime
 from typing import Any
 
+from middleware_monitor.domain.equipamentos import cftv
 from middleware_monitor.integrations.network import make_http_probe, make_ping_probe, make_tcp_probe
 from middleware_monitor.integrations.network.base import ResultadoDaSonda, is_valid_ip
 
@@ -34,9 +38,28 @@ async def _resolver(host: str) -> str | None:
 
 
 async def executar(  # noqa: PLR0911 - uma saída por tipo e por falha
-    tipo: str, host: str, parametros: dict[str, Any], *, timeout_ping_ms: int
+    tipo: str,
+    host: str,
+    parametros: dict[str, Any],
+    *,
+    timeout_ping_ms: int,
+    verificacao: str = "",
+    credencial: cftv.Credencial | None = None,
+    respeitar_espera: bool = True,
 ) -> ResultadoDaSonda:
     try:
+        if tipo == "cftv":
+            inicio = time.perf_counter()
+            lido = await cftv.ler(
+                verificacao,
+                host,
+                parametros,
+                credencial,
+                datetime.now(UTC).replace(tzinfo=None),
+                respeitar_espera=respeitar_espera,
+            )
+            ms = round((time.perf_counter() - inicio) * 1000)
+            return ResultadoDaSonda(ok=lido.ok, valor=ms, erro=lido.erro, dados=lido.retrato)
         if tipo == "icmp":
             ip = await _resolver(host)
             if ip is None:

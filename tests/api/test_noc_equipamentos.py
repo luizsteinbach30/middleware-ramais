@@ -138,7 +138,15 @@ def test_os_verbos_e_os_raios() -> None:
 
 def test_manifesto_declara_o_modulo_disponibilidade(db) -> None:
     m = manifesto.montar(db)
-    assert m["modulos"] == [{"nome": "disponibilidade", "versao": 1, "homologado": True}]
+    # Plano 1 (CONTRATO §13.8): todos os módulos da versão, com o aceite deste agente.
+    assert {x["nome"]: x for x in m["modulos"]}["disponibilidade"] == {
+        "nome": "disponibilidade",
+        "versao": 1,
+        "homologado": True,
+        "aceito": True,
+        "aceitoEm": None,
+        "aceitoPor": None,
+    }
     assert {DEFINIR, VERIFICAR} <= set(m["acoes"])
 
 
@@ -488,8 +496,10 @@ async def test_lote_leva_amostras_e_eventos_por_cursor_e_o_retrato_so_quando_mud
     nvr = retrato["noc-nvr"]
     assert set(nvr) == {
         "id", "ref", "tipo", "nome", "host", "mac", "fabricante", "modelo", "paiId",
-        "tentativasParaCair", "estado", "estadoDesde", "verificacoes",
+        "tentativasParaCair", "estado", "estadoDesde", "verificacoes", "credenciais", "cftv",
     }  # fmt: skip
+    # Plano 1: sem credencial e sem leitura de CFTV, as duas partes vão vazias.
+    assert (nvr["credenciais"], nvr["cftv"]) == ([], None)
     assert set(nvr["verificacoes"][0]) == {
         "id", "ref", "tipo", "parametros", "intervaloS", "estado", "estadoDesde",
         "ultimoValor", "ultimaEm", "ultimoErro",

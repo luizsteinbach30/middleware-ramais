@@ -623,6 +623,10 @@ class Equipamento(Base):
         cascade="all, delete-orphan",
         order_by="VerificacaoDeEquipamento.posicao",
     )
+    credenciais: Mapped[list[CredencialDeEquipamento]] = relationship(
+        cascade="all, delete-orphan",
+        order_by="CredencialDeEquipamento.tipo",
+    )
 
 
 class VerificacaoDeEquipamento(Base):
@@ -634,12 +638,12 @@ class VerificacaoDeEquipamento(Base):
     )
     ref: Mapped[str] = mapped_column(String(64), nullable=False)
     posicao: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    # icmp | tcp | http
+    # icmp | tcp | http | cftv
     tipo: Mapped[str] = mapped_column(String(8), nullable=False)
     # JSON, já normalizado (com os padrões preenchidos).
     parametros: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     intervalo_s: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
-    # ok | falha | desconhecido
+    # ok | falha | desconhecido | pausada (módulo não aceito — CONTRATO §13.8)
     estado: Mapped[str] = mapped_column(String(16), nullable=False, default="desconhecido")
     estado_desde: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     falhas_seguidas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -681,10 +685,50 @@ class EventoDeEquipamento(Base):
     detalhe: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+# --- Expansão do NOC, Plano 1: CFTV (AGENTE-NOC itens 23 e 26, CONTRATO §13.9) -------------
+
+
+class CredencialDeEquipamento(Base):
+    """Credencial de monitoria de um equipamento, já resolvida pelo NOC.
+
+    ``segredo`` é **sempre** cifrado com a ``SecretBox`` (prefixo ``enc:v1:``) e
+    nunca sai daqui: o retrato leva só ``impressao`` (os 12 primeiros hex do
+    sha256 do segredo), que é por onde o NOC sabe que a credencial chegou.
+    """
+
+    __tablename__ = "equipamento_credenciais"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    equipamento_id: Mapped[str] = mapped_column(
+        ForeignKey("equipamentos.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # HTTP | API | ONVIF | SNMP_V2C | SNMP_V3 | SSH | WINRM | REDFISH (ADR 0037 do NOC)
+    tipo: Mapped[str] = mapped_column(String(16), nullable=False)
+    usuario: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    segredo: Mapped[str] = mapped_column(Text, nullable=False)
+    impressao: Mapped[str] = mapped_column(String(12), nullable=False)
+
+
+class LeituraDeCftv(Base):
+    """A última leitura de CFTV de um equipamento (canais, discos, hora) — o
+    ``cftv`` do retrato, guardado para os eventos saírem por diferença."""
+
+    __tablename__ = "equipamento_cftv"
+
+    equipamento_id: Mapped[str] = mapped_column(
+        ForeignKey("equipamentos.id", ondelete="CASCADE"), primary_key=True
+    )
+    verificacao_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    # JSON na forma do retrato (CONTRATO §13.9).
+    leitura: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    lido_em: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 __all__: list[str] = [
     "AmostraDeVerificacao",
     "AppConfig",
     "Collection",
+    "CredencialDeEquipamento",
     "Device",
     "DeviceActionEvent",
     "DevicePing",
@@ -697,6 +741,7 @@ __all__: list[str] = [
     "ExtensionEnvironment",
     "ExtensionLine",
     "ExtensionStatusEvent",
+    "LeituraDeCftv",
     "LineReapplyEvent",
     "LoginAttempt",
     "MqttBroker",
