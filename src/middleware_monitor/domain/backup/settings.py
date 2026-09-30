@@ -41,9 +41,13 @@ KEY_LAST_DETAIL = f"{_PREFIX}last_detail"
 # A identidade do agente do NOC (`noc.*`) tambem nao viaja: o pacote leva a
 # configuracao para OUTRA maquina, e levar a credencial junto faria duas maquinas
 # se apresentarem ao NOC como o mesmo agente (v2.13.0).
-LOCAL_ONLY_KEYS: frozenset[str] = frozenset(
-    {KEY_PASSPHRASE, KEY_LAST_AT, KEY_LAST_STATUS, KEY_LAST_DETAIL}
-) | _CHAVES_DO_NOC
+#
+# Os módulos aceitos (`modulos.aceitos`, expansão do NOC) também não: seguem a
+# lista de equipamentos, que é deste agente e não viaja no pacote.
+LOCAL_ONLY_KEYS: frozenset[str] = (
+    frozenset({KEY_PASSPHRASE, KEY_LAST_AT, KEY_LAST_STATUS, KEY_LAST_DETAIL, "modulos.aceitos"})
+    | _CHAVES_DO_NOC
+)
 
 _TRUE = {"1", "true", "True", "on", "yes"}
 

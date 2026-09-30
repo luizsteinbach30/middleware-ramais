@@ -15,6 +15,8 @@ As regras que não se re-derivam lendo o código:
 - **Só transição gera evento**, e só as quatro do contrato. ``desconhecido →
   no_ar`` não é notícia (é o primeiro ciclo), e voltar a ``desconhecido`` só
   acontece por edição da lista, que não é fato do equipamento.
+- **Verificação ``pausada`` (módulo não aceito) não conta** para o estado do
+  equipamento: não roda, então não sabe nada.
 """
 
 from __future__ import annotations
@@ -31,6 +33,8 @@ DESCONHECIDO = "desconhecido"
 
 OK = "ok"
 FALHA = "falha"
+# Módulo não aceito (CONTRATO §13.8): guardada, sem rodar, sem amostra e sem evento.
+PAUSADA = "pausada"
 
 CAIU = "equipamento.caiu"
 VOLTOU = "equipamento.voltou"
@@ -65,7 +69,8 @@ def registrar(
 
 
 def estado_do_equipamento(verificacoes: Iterable[VerificacaoDeEquipamento]) -> str:
-    todas = list(verificacoes)
+    """Derivado das verificações que rodam: as ``pausada`` não contam."""
+    todas = [v for v in verificacoes if v.estado != PAUSADA]
     if not todas:
         return DESCONHECIDO
     principais = [v for v in todas if v.tipo == "icmp"] or todas

@@ -20,6 +20,18 @@ As regras que não se re-derivam lendo o código:
   equipamento inteiro; ``tipo`` ou ``parametros`` novos zeram a verificação. O
   estado antigo falava de outra coisa.
 - **Editar não gera evento.** Evento é fato do equipamento, não da lista.
+
+Plano 1 (CFTV, CONTRATO §13.8 e §13.9):
+
+- **Verificação de módulo não aceito é recusada** quando nasce ou muda de medida;
+  a que já existia e continua igual fica guardada e ``pausada``
+  (``aplicar_modulos``). Sem isso, desligar um módulo travaria qualquer edição da
+  lista até o NOC apagar as verificações dele.
+- **``credenciais`` ausente (ou ``null``) no item do ``para`` mantém as guardadas**;
+  ``[]`` apaga. É a regra do lote: parte ausente é "não mudou". O segredo é
+  gravado cifrado e só a impressão sai daqui.
+- **Credencial nova zera as verificações ``cftv`` do equipamento**: o "senha
+  recusada" de antes falava da credencial velha.
 """
 
 from __future__ import annotations
@@ -36,8 +48,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.orm import selectinload
 
-from middleware_monitor.core.models import Equipamento, VerificacaoDeEquipamento
+from middleware_monitor.core.crypto import SecretBox, open_box
+from middleware_monitor.core.models import (
+    CredencialDeEquipamento,
+    Equipamento,
+    LeituraDeCftv,
+    VerificacaoDeEquipamento,
+)
 from middleware_monitor.domain.equipamentos import estados
+from middleware_monitor.domain.equipamentos.modulos import modulo_da_verificacao
+from middleware_monitor.settings import get_settings
 
 TIPOS: tuple[str, ...] = (
     "gravador",
@@ -54,7 +74,22 @@ TIPOS: tuple[str, ...] = (
     "impressora",
     "outro",
 )
-TIPOS_DE_VERIFICACAO: tuple[str, ...] = ("icmp", "tcp", "http")
+TIPOS_DE_VERIFICACAO: tuple[str, ...] = ("icmp", "tcp", "http", "cftv")
+ADAPTADORES_DE_CFTV: tuple[str, ...] = ("intelbras", "hikvision", "unifi")
+# ADR 0037 do NOC: um de cada por equipamento.
+TIPOS_DE_CREDENCIAL: tuple[str, ...] = (
+    "HTTP",
+    "API",
+    "ONVIF",
+    "SNMP_V2C",
+    "SNMP_V3",
+    "SSH",
+    "WINRM",
+    "REDFISH",
+)
+MAXIMO_DE_CREDENCIAIS = len(TIPOS_DE_CREDENCIAL)
+LIMITE_DO_USUARIO = 128
+LIMITE_DO_SEGREDO = 1024
 
 MAXIMO_DE_EQUIPAMENTOS = 5000
 MAXIMO_DE_VERIFICACOES = 10
@@ -77,8 +112,10 @@ CAMPOS_DO_PARA = frozenset(
         "paiRef",
         "tentativasParaCair",
         "verificacoes",
+        "credenciais",
     }
 )
+CAMPOS_DA_CREDENCIAL = frozenset({"tipo", "usuario", "segredo"})
 CAMPOS_DA_VERIFICACAO = frozenset({"id", "ref", "tipo", "parametros", "intervaloS"})
 # O que o ``de`` compara — exatamente a ``vista``.
 CAMPOS_DO_DE = (
@@ -126,7 +163,9 @@ def parametros_de(vf: VerificacaoDeEquipamento) -> dict[str, Any]:
 def _todos(db: DBSession) -> list[Equipamento]:
     return list(
         db.scalars(
-            select(Equipamento).options(selectinload(Equipamento.verificacoes)).order_by(Equipamento.id)
+            select(Equipamento)
+            .options(selectinload(Equipamento.verificacoes), selectinload(Equipamento.credenciais))
+            .order_by(Equipamento.id)
         ).all()
     )
 
@@ -164,13 +203,37 @@ def vista(db: DBSession) -> list[dict[str, Any]]:
     return [_vista_de(eq) for eq in _todos(db)]
 
 
+def impressao(segredo: str) -> str:
+    """Os 12 primeiros hexadecimais do sha256 do segredo — é por ela que o NOC sabe
+    que a credencial chegou, sem o segredo sair daqui (CONTRATO §13.9)."""
+    return hashlib.sha256(segredo.encode("utf-8")).hexdigest()[:12]
+
+
+def _leituras_de_cftv(db: DBSession) -> dict[str, dict[str, Any]]:
+    saida = {}
+    for linha in db.scalars(select(LeituraDeCftv)).all():
+        try:
+            valor = json.loads(linha.leitura or "{}")
+        except ValueError:
+            continue
+        if isinstance(valor, dict):
+            saida[linha.equipamento_id] = valor
+    return saida
+
+
 def retrato(db: DBSession) -> list[dict[str, Any]]:
-    """A parte ``equipamentos`` do lote: a vista, mais estado e última leitura."""
+    """A parte ``equipamentos`` do lote: a vista, mais estado e última leitura,
+    as credenciais **sem o segredo** e a última leitura de CFTV."""
     saida = []
+    leituras = _leituras_de_cftv(db)
     for eq in _todos(db):
         item = _vista_de(eq)
         item["estado"] = eq.estado
         item["estadoDesde"] = _hora(eq.estado_desde)
+        item["credenciais"] = [
+            {"tipo": c.tipo, "usuario": c.usuario, "impressao": c.impressao} for c in eq.credenciais
+        ]
+        item["cftv"] = leituras.get(eq.id)
         for dados, vf in zip(item["verificacoes"], eq.verificacoes, strict=True):
             dados.update(
                 {
@@ -187,10 +250,14 @@ def retrato(db: DBSession) -> list[dict[str, Any]]:
 
 def sha256_do_retrato(itens: list[dict[str, Any]]) -> str:
     """Hash do retrato sem a última leitura: latência que oscila não é mudança.
-    Mudança de estado, de cadastro ou de ``estadoDesde`` é."""
+    Mudança de estado, de cadastro ou de ``estadoDesde`` é. Do ``cftv`` saem a hora
+    e o ``lidoEm`` (``cftv.estavel``)."""
+    from middleware_monitor.domain.equipamentos import cftv
+
     estavel = [
         {
             **eq,
+            "cftv": cftv.estavel(eq.get("cftv")),
             "verificacoes": [
                 {k: v for k, v in vf.items() if k not in VOLATEIS_DA_VERIFICACAO}
                 for vf in eq.get("verificacoes", [])
@@ -304,6 +371,7 @@ def normalizar_parametros(tipo: str, parametros: Any) -> dict[str, Any]:
         "icmp": set(),
         "tcp": {"porta"},
         "http": {"esquema", "porta", "caminho", "statusEsperado", "verificarCertificado"},
+        "cftv": {"adaptador", "esquema", "porta"},
     }[tipo]
     extras = sorted(set(parametros) - permitidos)
     if extras:
@@ -314,6 +382,16 @@ def normalizar_parametros(tipo: str, parametros: Any) -> dict[str, Any]:
         if "porta" not in parametros:
             raise ValueError("tcp precisa de parametros.porta.")
         return {"porta": _porta(parametros["porta"], "tcp")}
+    if tipo == "cftv":
+        adaptador = parametros.get("adaptador")
+        if adaptador not in ADAPTADORES_DE_CFTV:
+            raise ValueError(f"cftv: adaptador é {', '.join(ADAPTADORES_DE_CFTV)}.")
+        esquema = parametros.get("esquema") or ("https" if adaptador == "unifi" else "http")
+        if esquema not in ("http", "https"):
+            raise ValueError("cftv: esquema é http ou https.")
+        porta = parametros.get("porta")
+        porta = (443 if esquema == "https" else 80) if porta is None else _porta(porta, "cftv")
+        return {"adaptador": adaptador, "esquema": esquema, "porta": porta}
     esquema = parametros.get("esquema") or "http"
     if esquema not in ("http", "https"):
         raise ValueError("http: esquema é http ou https.")
@@ -339,7 +417,13 @@ def normalizar_parametros(tipo: str, parametros: Any) -> dict[str, Any]:
     }
 
 
-def _verificacoes(item: dict[str, Any], i: int, dele: set[str], de_outros: set[str]) -> list[dict[str, Any]]:
+def _verificacoes(
+    item: dict[str, Any],
+    i: int,
+    dele: dict[str, dict[str, Any]],
+    de_outros: set[str],
+    aceitos: set[str] | None,
+) -> list[dict[str, Any]]:
     lista = item.get("verificacoes")
     lista = [] if lista is None else lista
     if not isinstance(lista, list):
@@ -392,15 +476,67 @@ def _verificacoes(item: dict[str, Any], i: int, dele: set[str], de_outros: set[s
             parametros = normalizar_parametros(tipo, v.get("parametros"))
         except ValueError as exc:
             raise ForaDeForma(str(exc), indice=i, verificacao=j) from exc
+        if tipo == "cftv":
+            if item.get("tipo") != "gravador":
+                raise ForaDeForma("verificação cftv só em equipamento gravador.", indice=i, verificacao=j)
+            if any(s["tipo"] == "cftv" for s in saida):
+                raise ForaDeForma("uma verificação cftv por equipamento.", indice=i, verificacao=j)
+        modulo = modulo_da_verificacao(tipo, parametros)
+        antes = dele.get(vid) if vid else None
+        mesma_medida = antes is not None and antes["tipo"] == tipo and antes["parametros"] == parametros
+        if aceitos is not None and modulo not in aceitos and not mesma_medida:
+            raise ForaDeForma(f"módulo {modulo} não aceito neste agente.", indice=i, verificacao=j)
         saida.append({"id": vid, "ref": ref, "tipo": tipo, "parametros": parametros, "intervaloS": intervalo})
     return saida
 
 
-def validar_para(para: list[Any], atual: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """O ``para`` normalizado, ou ``ForaDeForma`` com o índice e o motivo."""
+def _credenciais(item: dict[str, Any], i: int) -> list[dict[str, str]] | None:
+    """``None`` = manter as guardadas; lista = trocar por esta."""
+    lista = item.get("credenciais")
+    if lista is None:
+        return None
+    if not isinstance(lista, list) or len(lista) > MAXIMO_DE_CREDENCIAIS:
+        raise ForaDeForma(f"credenciais é uma lista de até {MAXIMO_DE_CREDENCIAIS} itens.", indice=i)
+    saida: list[dict[str, str]] = []
+    for c in lista:
+        if not isinstance(c, dict) or set(c) - CAMPOS_DA_CREDENCIAL:
+            raise ForaDeForma("cada credencial é { tipo, usuario, segredo }.", indice=i)
+        tipo = c.get("tipo")
+        if tipo not in TIPOS_DE_CREDENCIAL:
+            raise ForaDeForma(
+                f"tipo de credencial {str(tipo)[:20]!r} fora da lista ({', '.join(TIPOS_DE_CREDENCIAL)}).",
+                indice=i,
+            )
+        if any(s["tipo"] == tipo for s in saida):
+            raise ForaDeForma(f"credencial {tipo} repetida.", indice=i)
+        usuario = c.get("usuario")
+        usuario = "" if usuario is None else usuario
+        if not isinstance(usuario, str) or len(usuario) > LIMITE_DO_USUARIO:
+            raise ForaDeForma(f"credencial {tipo}: usuario é texto de até {LIMITE_DO_USUARIO}.", indice=i)
+        segredo = c.get("segredo")
+        # A mensagem nunca repete o segredo: ela volta ao NOC e vai para o log.
+        if not isinstance(segredo, str) or not segredo or len(segredo) > LIMITE_DO_SEGREDO:
+            raise ForaDeForma(
+                f"credencial {tipo}: segredo é texto de 1 a {LIMITE_DO_SEGREDO} caracteres.", indice=i
+            )
+        saida.append({"tipo": tipo, "usuario": usuario, "segredo": segredo})
+    if saida and _box() is None:
+        raise ForaDeForma(
+            "esta instalação não tem APP_SECRET_KEY utilizável: a credencial não pode ser guardada cifrada.",
+            indice=i,
+        )
+    return saida
+
+
+def validar_para(
+    para: list[Any], atual: list[dict[str, Any]], *, aceitos: set[str] | None = None
+) -> list[dict[str, Any]]:
+    """O ``para`` normalizado, ou ``ForaDeForma`` com o índice e o motivo.
+
+    ``aceitos`` são os módulos aceitos neste agente; ``None`` não confere (uso interno)."""
     if len(para) > MAXIMO_DE_EQUIPAMENTOS:
         raise ForaDeForma(f"no máximo {MAXIMO_DE_EQUIPAMENTOS} equipamentos por agente.")
-    verificacoes_de = {eq["id"]: {v["id"] for v in eq["verificacoes"]} for eq in atual}
+    verificacoes_de = {eq["id"]: {v["id"]: v for v in eq["verificacoes"]} for eq in atual}
     todas = set().union(*verificacoes_de.values()) if verificacoes_de else set()
     saida: list[dict[str, Any]] = []
     refs: dict[str, int] = {}
@@ -452,8 +588,9 @@ def validar_para(para: list[Any], atual: list[dict[str, Any]]) -> list[dict[str,
                 "paiRef": pai,
                 "tentativasParaCair": tentativas,
                 "verificacoes": _verificacoes(
-                    item, i, verificacoes_de.get(eid, set()) if eid else set(), todas
+                    item, i, verificacoes_de.get(eid, {}) if eid else {}, todas, aceitos
                 ),
+                "credenciais": _credenciais(item, i),
             }
         )
     # O pai: existe na lista, não é o próprio e não fecha ciclo.
@@ -485,7 +622,72 @@ class Gravacao:
     ids_por_ref: dict[str, str] = field(default_factory=dict)
 
 
-def gravar(db: DBSession, validado: list[dict[str, Any]], agora: datetime) -> Gravacao:
+def _box() -> SecretBox | None:
+    return open_box(get_settings().secret_key)
+
+
+def _trocar_credenciais(eq: Equipamento, novas: list[dict[str, str]], agora: datetime) -> None:
+    box = _box()
+    antes = {(c.tipo, c.usuario, c.impressao) for c in eq.credenciais}
+    depois = {(c["tipo"], c["usuario"], impressao(c["segredo"])) for c in novas}
+    if antes == depois:
+        return
+    if novas and box is None:  # validar_para já recusou; aqui é a última trava
+        raise ValueError("sem APP_SECRET_KEY: credencial não é gravada em claro")
+    eq.credenciais = [
+        CredencialDeEquipamento(
+            tipo=c["tipo"],
+            usuario=c["usuario"],
+            segredo=box.encrypt_field(c["segredo"]) if box else "",
+            impressao=impressao(c["segredo"]),
+        )
+        for c in novas
+    ]
+    # O resultado de antes falava da credencial velha ("senha recusada").
+    for vf in eq.verificacoes:
+        if vf.tipo == "cftv" and vf.estado != estados.PAUSADA:
+            _zerar(vf, agora)
+
+
+def credencial_de(eq: Equipamento, tipo: str) -> tuple[str, str, str] | None:
+    """``(usuario, segredo em claro, impressao)`` da credencial daquele tipo, ou ``None``.
+    **Único** caminho de leitura do segredo; chave de cifra trocada levanta ``ValueError``."""
+    for c in eq.credenciais:
+        if c.tipo == tipo:
+            box = _box()
+            if box is None:
+                raise ValueError("sem APP_SECRET_KEY para abrir a credencial")
+            return c.usuario, box.decrypt_field(c.segredo), c.impressao
+    return None
+
+
+def aplicar_modulos(db: DBSession, aceitos: set[str], agora: datetime) -> int:
+    """Pausa as verificações de módulo não aceito e retoma (de ``desconhecido``) as
+    do módulo aceito. Sem amostra e sem evento: é configuração, não fato. Não faz
+    commit. Devolve quantos equipamentos mudaram."""
+    mudaram = 0
+    for eq in _todos(db):
+        mexeu = False
+        for vf in eq.verificacoes:
+            aceito = modulo_da_verificacao(vf.tipo, parametros_de(vf)) in aceitos
+            if not aceito and vf.estado != estados.PAUSADA:
+                _zerar(vf, agora)
+                vf.estado = estados.PAUSADA
+                mexeu = True
+            elif aceito and vf.estado == estados.PAUSADA:
+                _zerar(vf, agora)
+                mexeu = True
+        if mexeu:
+            mudaram += 1
+            derivado = estados.estado_do_equipamento(eq.verificacoes)
+            if derivado != eq.estado:
+                eq.estado, eq.estado_desde = derivado, agora
+    return mudaram
+
+
+def gravar(
+    db: DBSession, validado: list[dict[str, Any]], agora: datetime, *, aceitos: set[str] | None = None
+) -> Gravacao:
     """Troca a lista inteira pela ``validado``. Não faz commit — quem chama decide.
 
     ``validado`` já passou por ``validar_para`` contra a lista atual (na mesma
@@ -544,11 +746,19 @@ def gravar(db: DBSession, validado: list[dict[str, Any]], agora: datetime) -> Gr
             )
             novas.append(vf)
         eq.verificacoes = novas  # a que saiu da lista é apagada (delete-orphan)
+        if item.get("credenciais") is not None:
+            _trocar_credenciais(eq, item["credenciais"], agora)
 
         # Verificação removida ou zerada muda o estado derivado — sem evento.
         derivado = estados.estado_do_equipamento(novas)
         if derivado != eq.estado:
             eq.estado, eq.estado_desde = derivado, agora
+        # Sem verificação cftv, a leitura de CFTV guardada não fala de mais nada.
+        if not any(vf.tipo == "cftv" for vf in novas) and (leitura := db.get(LeituraDeCftv, eid)):
+            db.delete(leitura)
+    if aceitos is not None:
+        db.flush()
+        aplicar_modulos(db, aceitos, agora)
     return g
 
 

@@ -29,6 +29,10 @@ As regras que não se re-derivam lendo o código:
   A planilha inteira se edita — inclusive IP, usuário e senha SIP —, e a que o NOC viu
   (``de``) é conferida contra a atual: diferente, nada é gravado — o NOC nunca
   sobrescreve mudança feita na loja. A senha não volta em recusa nem em resultado.
+- **O pedido guardado não leva segredo.** ``definir_equipamentos`` traz a credencial
+  de monitoria em claro (pelo canal mTLS); o que fica em ``noc_tarefas.pedido`` é a
+  cópia com ``segredo`` trocado por ``***``. O segredo só existe cifrado, na
+  tabela da credencial.
 """
 
 from __future__ import annotations
@@ -73,7 +77,9 @@ _CAMPO_DE_REDE = re.compile(
     r"|rede|network|pppoe|lldp)(_|$)|^p\d{1,5}$",
     re.IGNORECASE,
 )
-_CHAVE_SENSIVEL = re.compile(r"senha|password|passwd|secret|token|credencial|authorization|chave", re.I)
+_CHAVE_SENSIVEL = re.compile(
+    r"senha|password|passwd|secret|segredo|token|credencia|authorization|chave", re.I
+)
 
 # Escrita só começa com pelo menos isto de lease pela frente.
 MARGEM_DA_ESCRITA_S = 60
@@ -150,6 +156,16 @@ def _descrever(exc: BaseException) -> str:
     elif not texto and isinstance(exc, httpx.ConnectError):
         texto = "não foi possível conectar ao aparelho"
     return f"{type(exc).__name__}: {texto}" if texto else type(exc).__name__
+
+
+def _pedido_para_guardar(valor: Any) -> Any:
+    """O pedido como fica no banco: todo ``segredo`` vira ``***`` (credencial de
+    monitoria do ``definir_equipamentos``). O resto fica como veio."""
+    if isinstance(valor, dict):
+        return {k: ("***" if k == "segredo" else _pedido_para_guardar(v)) for k, v in valor.items()}
+    if isinstance(valor, list):
+        return [_pedido_para_guardar(v) for v in valor]
+    return valor
 
 
 def _sem_segredos(valor: Any) -> Any:
@@ -909,8 +925,9 @@ async def _verificar_equipamento(p: dict[str, Any], _ctx: Contexto) -> Resultado
     pedido do NOC anteciparia (ou apagaria) uma queda que o job está contando."""
     from middleware_monitor.core.models import Equipamento
     from middleware_monitor.domain.config.repository import load_config
-    from middleware_monitor.domain.equipamentos import sondas
+    from middleware_monitor.domain.equipamentos import estados, modulos, sondas
     from middleware_monitor.domain.equipamentos.lista import parametros_de
+    from middleware_monitor.jobs.monitor_equipamentos import abrir_credencial
 
     eid = p.get("equipamento")
     with session_factory() as db:
@@ -921,12 +938,35 @@ async def _verificar_equipamento(p: dict[str, Any], _ctx: Contexto) -> Resultado
                 f"O equipamento {str(eid)[:64]!r} não está cadastrado neste agente.",
             )
         timeout_ms = load_config(db).ping_timeout_ms
+        aceitos = modulos.aceitos(db)
         host, estado_atual = eq.host, eq.estado
-        alvos = [(vf.id, vf.tipo, parametros_de(vf)) for vf in eq.verificacoes]
+        alvos = []
+        for vf in eq.verificacoes:
+            parametros = parametros_de(vf)
+            modulo = modulos.modulo_da_verificacao(vf.tipo, parametros)
+            pausada = vf.estado == estados.PAUSADA or modulo not in aceitos
+            credencial, falha = abrir_credencial(eq, parametros) if vf.tipo == "cftv" else (None, None)
+            if pausada:
+                falha = f"pausada: módulo {modulo} não aceito neste agente"
+            alvos.append((vf.id, vf.tipo, parametros, credencial, falha))
 
-    async def uma(vid: str, tipo: str, parametros: dict[str, Any]) -> dict[str, Any]:
-        r = await sondas.executar(tipo, host, parametros, timeout_ping_ms=timeout_ms)
-        return {
+    async def uma(
+        vid: str, tipo: str, parametros: dict[str, Any], credencial: Any, falha: str | None
+    ) -> dict[str, Any]:
+        if falha is not None:
+            em = _hora_sem_fuso(_agora())
+            return {"id": vid, "tipo": tipo, "ok": False, "valor": None, "erro": falha, "em": em}
+        # Pedido de uma pessoa: tenta mesmo com a espera de "senha recusada" do job.
+        r = await sondas.executar(
+            tipo,
+            host,
+            parametros,
+            timeout_ping_ms=timeout_ms,
+            verificacao=vid,
+            credencial=credencial,
+            respeitar_espera=False,
+        )
+        saida = {
             "id": vid,
             "tipo": tipo,
             "ok": r.ok,
@@ -934,6 +974,9 @@ async def _verificar_equipamento(p: dict[str, Any], _ctx: Contexto) -> Resultado
             "erro": None if r.ok else r.erro,
             "em": _hora_sem_fuso(_agora()),
         }
+        if tipo == "cftv":
+            saida["cftv"] = r.dados
+        return saida
 
     verificacoes = await asyncio.gather(*(uma(*a) for a in alvos))
     return Resultado(
@@ -947,7 +990,7 @@ async def _definir_equipamentos(p: dict[str, Any], ctx: Contexto) -> Resultado: 
     ``de`` é a lista inteira que o NOC viu; é conferida como conjunto por ``id``,
     antes do backup e de novo na transação que grava. ``para`` é a lista inteira
     desejada: ``id`` null nasce aqui, ``id`` de ``de`` ausente em ``para`` sai."""
-    from middleware_monitor.domain.equipamentos import lista
+    from middleware_monitor.domain.equipamentos import lista, modulos
 
     de, para = p.get("de"), p.get("para")
     if not isinstance(de, list) or not isinstance(para, list):
@@ -957,6 +1000,7 @@ async def _definir_equipamentos(p: dict[str, Any], ctx: Contexto) -> Resultado: 
 
     def conferir_e_validar(db: Any) -> tuple[list[dict[str, Any]] | None, Resultado | None]:
         atual = lista.vista(db)
+        aceitos = modulos.aceitos(db)
         try:
             if not lista.confere(de, atual):
                 return None, _recusa_da_edicao(
@@ -967,7 +1011,7 @@ async def _definir_equipamentos(p: dict[str, Any], ctx: Contexto) -> Resultado: 
         except lista.ForaDeForma as exc:
             return None, _recusa_da_edicao("VALOR_INVALIDO", exc.motivo)
         try:
-            return lista.validar_para(para, atual), None
+            return lista.validar_para(para, atual, aceitos=aceitos), None
         except lista.ForaDeForma as exc:
             return None, _recusa_da_edicao("VALOR_INVALIDO", exc.motivo, **exc.como_dict())
 
@@ -988,7 +1032,7 @@ async def _definir_equipamentos(p: dict[str, Any], ctx: Contexto) -> Resultado: 
         if recusa is not None:
             return recusa
         assert validado is not None
-        gravacao = lista.gravar(db, validado, _agora())
+        gravacao = lista.gravar(db, validado, _agora(), aceitos=modulos.aceitos(db))
         db.commit()
 
     with session_factory() as db:
@@ -1035,6 +1079,85 @@ async def _definir_equipamentos(p: dict[str, Any], ctx: Contexto) -> Resultado: 
     )
 
 
+def _forma_dos_modulos(valor: Any, nome: str) -> tuple[dict[str, bool] | None, Resultado | None]:
+    """``[{ nome, aceito }]`` → ``{nome: aceito}``. Chave a mais (a forma do manifesto
+    tem ``versao``, ``homologado``…) é ignorada; nome repetido é recusado."""
+    if not isinstance(valor, list):
+        return None, _recusa_da_edicao("VALOR_INVALIDO", f"{nome} é a lista inteira de módulos.")
+    saida: dict[str, bool] = {}
+    for i, m in enumerate(valor):
+        if not (isinstance(m, dict) and isinstance(m.get("nome"), str) and isinstance(m.get("aceito"), bool)):
+            return None, _recusa_da_edicao(
+                "VALOR_INVALIDO", f"{nome}[{i}] é {{ nome, aceito }} com aceito true ou false.", indice=i
+            )
+        if m["nome"] in saida:
+            return None, _recusa_da_edicao("VALOR_INVALIDO", f"{nome}: {m['nome']!r} repetido.", indice=i)
+        saida[m["nome"]] = m["aceito"]
+    return saida, None
+
+
+async def _definir_modulos(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PLR0911 - uma saída por recusa
+    """Liga e desliga módulos deste agente (CONTRATO §13.8). Grava AQUI, nunca em
+    equipamento; vale a última mudança (a tela local ou este verbo).
+
+    ``de`` é a lista inteira como o manifesto mostrou, conferida por ``(nome, aceito)``;
+    ``para`` traz o ``aceito`` desejado — módulo ausente do ``para`` fica como está."""
+    from middleware_monitor.domain.equipamentos import modulos
+
+    de, recusa = _forma_dos_modulos(p.get("de"), "de")
+    if recusa is not None:
+        return recusa
+    para, recusa = _forma_dos_modulos(p.get("para"), "para")
+    if recusa is not None:
+        return recusa
+    assert de is not None and para is not None
+    for i, nome in enumerate(para):
+        if nome not in modulos.POR_NOME:
+            return _recusa_da_edicao(
+                "VALOR_INVALIDO", f"módulo {nome[:64]!r} desconhecido neste agente.", indice=i
+            )
+
+    def conferir(db: Any) -> Resultado | None:
+        atual = modulos.listar(db)
+        if {m["nome"]: m["aceito"] for m in atual} != de:
+            return _recusa_da_edicao(
+                "LISTA_MUDOU",
+                "Os módulos mudaram desde o manifesto que o NOC viu; nada foi gravado.",
+                atual=atual,
+            )
+        return None
+
+    with session_factory() as db:
+        recusa = conferir(db)
+    if recusa is not None:
+        return recusa
+    if (sem := _sem_prazo(ctx)) is not None:
+        return sem
+    backup, erro = await _backup()
+    if backup is None:
+        return Resultado(ok=False, resultado={"modulos": []}, erro=erro)
+
+    with session_factory() as db:
+        recusa = conferir(db)
+        if recusa is not None:
+            return recusa
+        modulos.definir(db, para, por=ctx.operador)
+        db.commit()
+    with session_factory() as db:
+        relidos = modulos.listar(db)
+    certo = all(m["aceito"] == para[m["nome"]] for m in relidos if m["nome"] in para)
+    log.info(
+        "noc_modulos_definidos",
+        aceitos=[m["nome"] for m in relidos if m["aceito"]],
+        operador=ctx.operador,
+    )
+    return Resultado(
+        ok=certo,
+        resultado={"backup": backup, "modulos": relidos},
+        erro=None if certo else "A releitura não bate com o pedido; confira os módulos no agente.",
+    )
+
+
 ACOES: dict[str, Acao] = {
     "ping": Acao(LEITURA, _ping, obrigatorios=frozenset({"ramal"})),
     "status_do_ramal": Acao(LEITURA, _status_do_ramal, obrigatorios=frozenset({"ramal"})),
@@ -1065,6 +1188,8 @@ ACOES: dict[str, Acao] = {
     # verificar é leitura avulsa; definir grava a lista AQUI, com backup antes.
     "verificar_equipamento": Acao(LEITURA, _verificar_equipamento, obrigatorios=frozenset({"equipamento"})),
     "definir_equipamentos": Acao(ESCRITA, _definir_equipamentos, obrigatorios=frozenset({"de", "para"})),
+    # Módulos aceitos (CONTRATO §13.8): configuração deste agente, com backup antes.
+    "definir_modulos": Acao(ESCRITA, _definir_modulos, obrigatorios=frozenset({"de", "para"})),
 }
 
 
@@ -1173,7 +1298,9 @@ async def processar(tarefa: dict[str, Any], *, canal: str, credencial: str) -> P
             row = NocTarefa(id=tarefa_id, recebida_em=_agora())
             db.add(row)
         row.tipo, row.raio, row.idempotencia = tipo[:64], raio[:32], chave
-        row.pedido = json.dumps(pedido if isinstance(pedido, dict) else {}, ensure_ascii=False)
+        row.pedido = json.dumps(
+            _pedido_para_guardar(pedido) if isinstance(pedido, dict) else {}, ensure_ascii=False
+        )
         row.pedida_por = (pedida_por or "")[:128] or None
         row.ok = row.resultado = row.bruto = row.erro = row.concluida_em = row.entregue_em = None
         row.nao_suportado = False
