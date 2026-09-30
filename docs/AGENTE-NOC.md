@@ -579,59 +579,110 @@ Três ordens dele valem para todos os itens abaixo:
   ele mandar. Sem push.
 - **Nada muda na telefonia.** `Device`, `ExtensionLine`, o configurador e o coletor MQTT ficam como estão.
 
-O contrato está em `noc-workconnect/docs/CONTRATO-DO-AGENTE.md` §13 (rascunho).
+O contrato está em `noc-workconnect/docs/CONTRATO-DO-AGENTE.md` §13, **fechado em 30/09** para o Plano 0 (itens 18
+a 21). Onde o texto do §13 e o que está abaixo divergirem, vale o que está abaixo — é o que o código faz.
 
 ### 18 — Não existe cadastro de equipamento: a identidade é o ramal
 
-`src/middleware_monitor/core/models.py` (`Device`) · **Plano 0** · pendente
+`src/middleware_monitor/domain/equipamentos/` · `core/models.py` · migration `0015_equipamentos` · **Plano 0** ·
+✅ **feito (30/09, branch `feat/expansao-equipamentos` → `expansao`, só local)**
 
 `Device.name` é único e é o ramal que veio do PBX. Câmera, switch e servidor não têm ramal, e não vêm do USCall.
 
-- Domínio novo `domain/equipamentos`, com tabela própria: `id` (`eq_<16 hex>`, emitido aqui), tipo, nome,
-  endereço, MAC, fabricante, modelo, `pai_id`, estado e desde quando. E a tabela das verificações de cada um.
+- **Quatro tabelas novas**, nada do que existe muda: `equipamentos`, `equipamento_verificacoes`,
+  `equipamento_amostras` e `equipamento_eventos`. A migration é **repetível**: cada tabela e índice só é criado se
+  ainda não existe (banco restaurado de um snapshot que já as tinha não quebra o boot).
+- **Equipamento:** `id` (`eq_<16 hex>`, emitido aqui, não muda), `ref` (o id do NOC, texto), `tipo` ∈ `gravador ·
+  camera · switch · roteador · firewall · ponto_de_acesso · link · nobreak · servidor · hipervisor ·
+  controle_de_acesso · impressora · outro`, `nome`, `host` (IP ou nome), `mac?`, `fabricante?`, `modelo?`, `paiId?`,
+  `tentativasParaCair` (1 a 10, padrão 3), `estado` ∈ `no_ar · degradado · fora · desconhecido`, `estadoDesde`.
+- **Verificação:** `id` (`vf_<12 hex>`), `ref`, `tipo` ∈ `icmp · tcp · http`, `parametros`, `intervaloS` (30 a
+  86.400, padrão 60), `estado` ∈ `ok · falha · desconhecido`, `estadoDesde`, `ultimoValor`, `ultimaEm`, `ultimoErro`.
+  `parametros`: `{}` no icmp; `{ porta }` no tcp; `{ esquema, porta, caminho, statusEsperado, verificarCertificado }`
+  no http, guardados **com os padrões preenchidos** (`http`, 80/443 pelo esquema, `/`, 200, `false`).
+- **Limites:** 5.000 equipamentos por agente, 10 verificações por equipamento.
 - **A lista chega do NOC** pelo verbo `definir_equipamentos` (item 21) e fica guardada aqui, para a monitoria
   continuar com o NOC fora do ar.
-- A tela local mostra a lista e o estado. Editar localmente fica para depois.
-- Migration nova do Alembic, só com tabelas novas.
+- **Pendente:** a tela local que mostra a lista e o estado. Editar localmente fica para depois.
 
 ### 19 — A sonda só sabe pingar, e só pinga ramal
 
-`src/middleware_monitor/integrations/network/` · `src/middleware_monitor/jobs/monitor_devices.py` · **Plano 0** · pendente
+`integrations/network/servicos.py` · `domain/equipamentos/sondas.py` e `estados.py` · `jobs/monitor_equipamentos.py`
+· **Plano 0** · ✅ **feito (30/09)**
 
-A `PingProbe` pinga qualquer IP, mas o job que a usa só lê `Device`.
-
-- `TcpProbe` (a porta abre?) e `HttpProbe` (a página responde com o status esperado?) ao lado da `PingProbe`,
-  no mesmo `base.py` e `factory.py`.
-- Job novo `monitor_equipamentos`, no molde do `monitor_devices`: semáforo de concorrência, tempo limite,
-  resultado gravado por verificação. Registrado pelo `core/scheduler.py`.
-- **A queda só é declarada depois de falhas seguidas** (padrão 3), e a volta na primeira resposta. É o agente
-  quem declara, e a transição vira evento com `id` local.
-- Estados: `no_ar`, `degradado` (pinga, e outra verificação falha), `fora`, `desconhecido`.
-- O job de telefonia **não é tocado**, nem o reaplicar automático que mora nele.
+- **`TcpProbe` e `HttpProbe`** ao lado da `PingProbe` (`base.py` e `factory.py`), **sem dependência nova**: `asyncio`
+  da biblioteca padrão e o `httpx` que o projeto já usa.
+  - **tcp:** abre a conexão e fecha, sem mandar um byte; 3 s de tempo limite.
+  - **http:** um `GET` sem corpo, sem seguir redirecionamento, sem proxy do sistema (`trust_env=False`), 5 s.
+    `ok` só com o `statusEsperado`; **2xx (menos 204) sem nenhum byte de corpo é falha** ("resposta vazia").
+  - **icmp:** a `PingProbe` de sempre; nome de host é resolvido antes (a sonda de ping só aceita IP).
+  - Sonda que quebra vira falha com o motivo, nunca job morto.
+- **Job `monitor_equipamentos`**, registrado pelo `jobs/__init__.py`: acorda a cada 10 s e roda **só as verificações
+  que venceram** (`ultimaEm + intervaloS`), com o semáforo e o tempo limite de ping da configuração do ping da frota.
+  Cada execução grava uma amostra. O job de telefonia e o reaplicar automático **não foram tocados**.
+- **A máquina de estados** (`estados.py`):
+  - verificação cai para `falha` só depois de `tentativasParaCair` falhas **seguidas**, e volta a `ok` na primeira
+    resposta; verificação nova começa `desconhecido` e segue a mesma regra;
+  - equipamento: as principais são as `icmp` (sem `icmp`, todas). `fora` = todas as principais em falha;
+    `degradado` = alguma principal responde e outra verificação falha; `no_ar` = alguma principal responde e nenhuma
+    falha; o resto é `desconhecido`;
+  - **evento só na transição do equipamento**: `equipamento.caiu` (→ `fora`), `equipamento.voltou` (`fora` →
+    `no_ar`/`degradado`), `equipamento.degradou` (→ `degradado`), `equipamento.normalizou` (`degradado` →
+    `no_ar`). `desconhecido → no_ar` não gera evento (é o primeiro ciclo); `desconhecido → fora` gera `caiu` (o
+    equipamento cadastrado nunca respondeu). O evento leva a verificação que causou a transição e um `detalhe`.
+- **Retenção:** amostras com a mesma regra do ping dos ramais (`device_ping_retention_days`); eventos, 1 ano.
 
 ### 20 — O lote e o manifesto não falam de equipamento
 
-`src/middleware_monitor/domain/noc/telemetria.py` · `manifesto.py` · **Plano 0** · pendente
+`domain/noc/telemetria.py` · `manifesto.py` · `estado.py` · `jobs/noc_agent.py` · **Plano 0** · ✅ **feito (30/09)**
 
-- Três partes novas no lote: `equipamentos[]` (retrato, **só quando o hash muda** — item 15),
-  `amostrasDeVerificacao[]` e `eventosDeEquipamento[]` (por cursor, como `amostras` e `eventos`).
-- `VERSAO_DO_CONTRATO` continua `1`: o NOC lê chave a chave.
-- O manifesto ganha `modulos`, a lista fechada do que este agente monitora. Começa com `disponibilidade`.
-  **Nada volátil entra**: o sha256 do manifesto viaja em todo heartbeat.
-- A hora do evento vai crua, como sempre. O NOC guarda a crua como identidade e a corrigida para a tela.
+- **Três partes novas no lote**, `versaoDoContrato` continua `1`:
+  - `equipamentos[]` — retrato completo, com `ref` em cada equipamento e verificação. **Só viaja quando muda**: o
+    agente guarda o sha256 do último retrato **aceito com 202** (`noc.equipamentos_sha256`) e só inclui a parte
+    quando o hash é outro. O hash **ignora** `ultimoValor`, `ultimaEm` e `ultimoErro` (latência que oscila não é
+    mudança); estado, `estadoDesde` e cadastro entram. Vai também no primeiro lote depois de enrolar, no primeiro
+    depois de o NOC voltar de uma falha, e **de segurança a cada 15 min**. Parte ausente = não mudou; `[]` = nenhum.
+  - `amostrasDeVerificacao[]` — por cursor (`noc.cursor_amostras_equipamento`), até 5.000 por lote; ao enrolar,
+    começa uma hora para trás.
+  - `eventosDeEquipamento[]` — por cursor (`noc.cursor_eventos_equipamento`), até 2.000 por lote; ao enrolar,
+    começa 24 h para trás. A hora vai crua (UTC sem fuso): é a identidade do evento no NOC.
+  - Os cursores só andam com 202, como os das partes que já existiam; bater no limite faz o ciclo mandar outro lote.
+- **O manifesto ganha** `"modulos": [{ "nome": "disponibilidade", "versao": 1, "homologado": true }]`, sem nada
+  volátil (o hash do manifesto muda uma vez, na atualização).
+- **Não entrou aqui:** o "só quando muda" das partes antigas (`dispositivos`, `perfis`, `ambientes`…) — continua sendo
+  o item 15. O mecanismo de `equipamentos` é o que o item 15 descreve, e serve de molde para ele.
 
 ### 21 — Dois verbos novos no executor
 
-`src/middleware_monitor/domain/noc/executor.py` (`ACOES`) · **Plano 0** · pendente
+`domain/noc/executor.py` (`ACOES`) · `domain/equipamentos/lista.py` · **Plano 0** · ✅ **feito (30/09)**
 
 | Verbo | Raio | Pedido |
 |---|---|---|
-| `verificar_equipamento` | leitura | `{ equipamento }` — roda agora as verificações e devolve cada resultado |
-| `definir_equipamentos` | escrita | `{ de, para }` — grava a lista aqui, nunca no equipamento |
+| `verificar_equipamento` | `LEITURA` | `{ equipamento: "eq_…" }` |
+| `definir_equipamentos` | `ESCRITA_REVERSIVEL` | `{ de: [...], para: [...] }` |
 
-- `definir_equipamentos` segue a edição central do item 13: confere o `de` antes do backup e de novo na
-  transação; lista que mudou é recusada com `LISTA_MUDOU`. Backup antes, como toda escrita.
-- O `id` dos equipamentos novos nasce aqui e volta no resultado.
+- **`verificar_equipamento`** roda agora todas as verificações e devolve `{ equipamento, estado, verificacoes: [{
+  id, tipo, ok, valor, erro, em }] }` (`estado` é o guardado; `em` em UTC sem fuso). **Leitura avulsa:** não mexe em
+  estado nem em contador do job, e não grava amostra nem evento. Equipamento que não existe →
+  `EQUIPAMENTO_NAO_ENCONTRADO`.
+- **`definir_equipamentos`** grava a lista **aqui, nunca no equipamento**, no molde da edição central (item 13):
+  - `de` é a lista **inteira** como o NOC viu (a forma do retrato sem estado: `id, ref, tipo, nome, host, mac,
+    fabricante, modelo, paiId, tentativasParaCair, verificacoes[{ id, ref, tipo, parametros, intervaloS }]`),
+    conferida **como conjunto por `id`, campo a campo** (ordem não importa; ausente e `null` são iguais; `True` não é
+    `1`; campo a mais, como `estado`, é ignorado). Qualquer diferença, inclusive de quantidade → `LISTA_MUDOU` com a
+    lista atual em `atual`, e nada gravado. Conferido antes do backup e **de novo na transação que grava**.
+  - `para` é a lista inteira desejada: `id: null` nasce aqui; `id` existente mantém a identidade; `id` de `de`
+    ausente em `para` é removido. O pai vai por **`paiRef`** (o `ref` do pai, que pode nascer no mesmo pedido);
+    `paiId` em `para` é recusado. Verificações do mesmo jeito (`id: null` = nova).
+  - **Validação → `VALOR_INVALIDO`** com `indice` (posição no `para`, a partir de 0), `verificacao` (posição da
+    verificação, quando é dela) e `motivo`: tipo fora da lista, host vazio ou que não é IP/nome, porta fora de
+    1–65535, intervalo < 30, mais de 10 verificações, `paiRef` que não existe ou que fecha ciclo, `ref` repetido,
+    `id` que não existe, verificação de outro equipamento, campo desconhecido.
+  - **Trocar o que se mede zera o estado:** host novo zera o equipamento e as verificações; `tipo` ou `parametros`
+    novos zeram a verificação. Editar não gera evento.
+  - **Backup antes** (falhou → `ok: false`, nada gravado); grava; **relê**. Resultado: `{ backup, equipamentos: [{
+    ref, id, verificacoes: [{ ref, id }] }], criados, removidos, alterados }`. O próximo lote leva o retrato novo.
+- Os dois estão em `executor.ACOES` e, por isso, em `acoes` do manifesto.
 
 ### 22 — Rede por SNMP
 
@@ -688,7 +739,7 @@ Do mais simples ao mais difícil: **Proxmox** pela API (credencial só de leitur
 | **Atualização** | a versão desejada do NOC instalada sozinha, na janela ou na hora, com volta automática (16) — 2026-09-25 |
 | **Túnel** | acesso web a equipamento da LAN e a USCall cadastrado, com a conexão saindo daqui (14) — 2026-09-25 |
 | **Telemetria leve** | retrato só quando muda, sem retrato repetido na fila, chave estável na retentativa (15) |
-| **Expansão · Plano 0** | cadastro de equipamento (18) · sondas de porta e página, job de disponibilidade (19) · partes novas do lote e `modulos` (20) · dois verbos (21) — linha paralela, só local |
+| **Expansão · Plano 0** ✅ | cadastro de equipamento (18) · sondas de porta e página, job de disponibilidade (19) · partes novas do lote e `modulos` (20) · dois verbos (21) — 2026-09-30, linha paralela, só local |
 | **Expansão · Planos 1 a 3** | CFTV por adaptador (23) · rede por SNMP (22) · servidores (24) |
 
 ---

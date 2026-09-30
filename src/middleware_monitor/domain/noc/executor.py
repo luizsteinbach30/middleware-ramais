@@ -895,6 +895,146 @@ async def _abrir_acesso_web(p: dict[str, Any], ctx: Contexto) -> Resultado:
     return Resultado(ok=True, resultado={"aberto": True, "reaberto": not nova, "destino": destino.rotulo})
 
 
+# --- Equipamentos (expansão do NOC, Plano 0 — itens 18 a 21, CONTRATO §13.6) ---------------
+
+
+def _hora_sem_fuso(dt: datetime) -> str:
+    """UTC sem fuso, como as horas do lote (CONTRATO §8)."""
+    return dt.replace(tzinfo=None).isoformat(timespec="seconds")
+
+
+async def _verificar_equipamento(p: dict[str, Any], _ctx: Contexto) -> Resultado:
+    """Roda agora as verificações de um equipamento. Leitura avulsa: **não** mexe no
+    estado nem nos contadores do job, e não grava amostra nem evento — senão um
+    pedido do NOC anteciparia (ou apagaria) uma queda que o job está contando."""
+    from middleware_monitor.core.models import Equipamento
+    from middleware_monitor.domain.config.repository import load_config
+    from middleware_monitor.domain.equipamentos import sondas
+    from middleware_monitor.domain.equipamentos.lista import parametros_de
+
+    eid = p.get("equipamento")
+    with session_factory() as db:
+        eq = db.get(Equipamento, eid) if isinstance(eid, str) and len(eid) <= 24 else None
+        if eq is None:
+            return _recusa_da_edicao(
+                "EQUIPAMENTO_NAO_ENCONTRADO",
+                f"O equipamento {str(eid)[:64]!r} não está cadastrado neste agente.",
+            )
+        timeout_ms = load_config(db).ping_timeout_ms
+        host, estado_atual = eq.host, eq.estado
+        alvos = [(vf.id, vf.tipo, parametros_de(vf)) for vf in eq.verificacoes]
+
+    async def uma(vid: str, tipo: str, parametros: dict[str, Any]) -> dict[str, Any]:
+        r = await sondas.executar(tipo, host, parametros, timeout_ping_ms=timeout_ms)
+        return {
+            "id": vid,
+            "tipo": tipo,
+            "ok": r.ok,
+            "valor": r.valor if r.ok else None,
+            "erro": None if r.ok else r.erro,
+            "em": _hora_sem_fuso(_agora()),
+        }
+
+    verificacoes = await asyncio.gather(*(uma(*a) for a in alvos))
+    return Resultado(
+        ok=True, resultado={"equipamento": eid, "estado": estado_atual, "verificacoes": list(verificacoes)}
+    )
+
+
+async def _definir_equipamentos(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa: PLR0911 - uma saída por recusa
+    """Grava a lista de equipamentos **no agente**, nunca no equipamento (edição central, §10).
+
+    ``de`` é a lista inteira que o NOC viu; é conferida como conjunto por ``id``,
+    antes do backup e de novo na transação que grava. ``para`` é a lista inteira
+    desejada: ``id`` null nasce aqui, ``id`` de ``de`` ausente em ``para`` sai."""
+    from middleware_monitor.domain.equipamentos import lista
+
+    de, para = p.get("de"), p.get("para")
+    if not isinstance(de, list) or not isinstance(para, list):
+        return _recusa_da_edicao("VALOR_INVALIDO", "de e para são listas com a lista inteira.")
+    if len(de) > lista.MAXIMO_DE_EQUIPAMENTOS:
+        return _recusa_da_edicao("VALOR_INVALIDO", f"de: no máximo {lista.MAXIMO_DE_EQUIPAMENTOS} itens.")
+
+    def conferir_e_validar(db: Any) -> tuple[list[dict[str, Any]] | None, Resultado | None]:
+        atual = lista.vista(db)
+        try:
+            if not lista.confere(de, atual):
+                return None, _recusa_da_edicao(
+                    "LISTA_MUDOU",
+                    "A lista de equipamentos mudou desde o retrato que o NOC viu; nada foi gravado.",
+                    atual=atual,
+                )
+        except lista.ForaDeForma as exc:
+            return None, _recusa_da_edicao("VALOR_INVALIDO", exc.motivo)
+        try:
+            return lista.validar_para(para, atual), None
+        except lista.ForaDeForma as exc:
+            return None, _recusa_da_edicao("VALOR_INVALIDO", exc.motivo, **exc.como_dict())
+
+    with session_factory() as db:
+        _validado, recusa = conferir_e_validar(db)
+    if recusa is not None:
+        return recusa
+
+    if (sem := _sem_prazo(ctx)) is not None:
+        return sem
+    backup, erro = await _backup()
+    if backup is None:
+        return Resultado(ok=False, resultado={"equipamentos": []}, erro=erro)
+
+    with session_factory() as db:
+        # De novo, já com o backup feito: a lista pode ter mudado nesse meio-tempo.
+        validado, recusa = conferir_e_validar(db)
+        if recusa is not None:
+            return recusa
+        assert validado is not None
+        gravacao = lista.gravar(db, validado, _agora())
+        db.commit()
+
+    with session_factory() as db:
+        relida = lista.vista(db)
+    por_ref = {eq["ref"]: eq for eq in relida}
+    certo = len(relida) == len(validado) and all(
+        item["ref"] in por_ref
+        and por_ref[item["ref"]]["id"] == gravacao.ids_por_ref[item["ref"]]
+        and [v["ref"] for v in por_ref[item["ref"]]["verificacoes"]]
+        == [v["ref"] for v in item["verificacoes"]]
+        for item in validado
+    )
+    antes = lista.por_id(de)
+    depois = lista.por_id(relida)
+    alterados = sum(1 for eid, texto in depois.items() if eid in antes and antes[eid] != texto)
+    log.info(
+        "noc_equipamentos_definidos",
+        criados=gravacao.criados,
+        removidos=gravacao.removidos,
+        alterados=alterados,
+        total=len(relida),
+        operador=ctx.operador,
+    )
+    return Resultado(
+        ok=certo,
+        resultado={
+            "backup": backup,
+            "equipamentos": [
+                {
+                    "ref": item["ref"],
+                    "id": por_ref[item["ref"]]["id"] if item["ref"] in por_ref else None,
+                    "verificacoes": [
+                        {"ref": v["ref"], "id": v["id"]}
+                        for v in (por_ref[item["ref"]]["verificacoes"] if item["ref"] in por_ref else [])
+                    ],
+                }
+                for item in validado
+            ],
+            "criados": gravacao.criados,
+            "removidos": gravacao.removidos,
+            "alterados": alterados,
+        },
+        erro=None if certo else "A releitura não bate com o pedido; confira a lista no agente.",
+    )
+
+
 ACOES: dict[str, Acao] = {
     "ping": Acao(LEITURA, _ping, obrigatorios=frozenset({"ramal"})),
     "status_do_ramal": Acao(LEITURA, _status_do_ramal, obrigatorios=frozenset({"ramal"})),
@@ -921,6 +1061,10 @@ ACOES: dict[str, Acao] = {
         obrigatorios=frozenset({"sessao", "tipoDeDestino"}),
         opcionais=frozenset({"destino", "porta", "esquema", "uscall"}),
     ),
+    # Expansão do NOC, Plano 0. Nenhum dos dois toca em configuração de equipamento:
+    # verificar é leitura avulsa; definir grava a lista AQUI, com backup antes.
+    "verificar_equipamento": Acao(LEITURA, _verificar_equipamento, obrigatorios=frozenset({"equipamento"})),
+    "definir_equipamentos": Acao(ESCRITA, _definir_equipamentos, obrigatorios=frozenset({"de", "para"})),
 }
 
 
