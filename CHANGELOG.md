@@ -2,6 +2,17 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [2.16.2] — 2026-09-30
+
+### Fixed
+
+- **O NOC acha o ramal pelo nome visível da planilha**: quando a coluna "ramal" guarda o usuário SIP com o
+  prefixo do servidor (`assaisp01-27611`) e o NOC pede o número (`27611`), as tarefas de escrita
+  (normalizar, reaplicar) e o IP do ping procuram primeiro o ramal exato e, sem ele, a linha cujo **nome
+  visível** é o número. Antes, o ping e o registro achavam o ramal pelo inventário e o normalizar respondia
+  "não está cadastrado em nenhum ambiente". Continua valendo uma linha só: nome visível repetido em dois
+  ambientes é recusado, como o ramal repetido.
+
 ## [2.16.1] — 2026-09-27
 
 ### Security

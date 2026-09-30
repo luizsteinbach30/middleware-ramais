@@ -335,6 +335,55 @@ async def test_escrita_mira_uma_linha_so(db, aparelho) -> None:
     assert aparelho.chamadas == []
 
 
+async def test_ramal_achado_pelo_nome_visivel_da_planilha(db, aparelho) -> None:
+    """CHM-2026-00177: a planilha guarda ``assaisp01-27611`` e o nome visível ``27611``.
+
+    O NOC pede ``27611``.
+    """
+    env = repo.create_environment(db, nome="Loja 276", modelo_telefone="HTEK UC902G")
+    repo.update_environment(db, env, config_padrao={"validar_conectividade": False})
+    repo.save_lines(
+        db,
+        env,
+        [
+            repo.new_line(ip="10.64.107.201", numero_ramal="assaisp01-27611", nome_visivel="27611"),
+            repo.new_line(ip="10.64.107.202", numero_ramal="assaisp01-27612", nome_visivel="27612"),
+        ],
+    )
+    db.commit()
+
+    pronta = await _processar(_tarefa(tipo="normalize", raio="ESCRITA_REVERSIVEL", pedido={"ramal": "27611"}))
+    assert pronta.corpo["ok"] is True, pronta.corpo
+    assert len(aparelho.chamadas) == 1
+    # O número exato continua valendo, e ganha do nome visível.
+    assert (
+        await _processar(
+            _tarefa("b", tipo="normalize", raio="ESCRITA_REVERSIVEL", pedido={"ramal": "assaisp01-27612"})
+        )
+    ).corpo["ok"] is True
+    # Nome visível que não existe: continua "não está cadastrado".
+    ausente = await _processar(
+        _tarefa("c", tipo="normalize", raio="ESCRITA_REVERSIVEL", pedido={"ramal": "27699"})
+    )
+    assert ausente.corpo["ok"] is False and "não está cadastrado" in ausente.corpo["erro"]
+
+
+async def test_nome_visivel_repetido_em_dois_ambientes_continua_ambiguo(db, aparelho) -> None:
+    env = repo.create_environment(db, nome="Loja 276", modelo_telefone="HTEK UC902G")
+    repo.save_lines(
+        db, env, [repo.new_line(ip="10.64.107.201", numero_ramal="assaisp01-27611", nome_visivel="27611")]
+    )
+    env2 = repo.create_environment(db, nome="Loja 8", modelo_telefone="HTEK UC902G")
+    repo.save_lines(
+        db, env2, [repo.new_line(ip="10.0.0.99", numero_ramal="outro-27611", nome_visivel="27611")]
+    )
+    db.commit()
+
+    pronta = await _processar(_tarefa(tipo="normalize", raio="ESCRITA_REVERSIVEL", pedido={"ramal": "27611"}))
+    assert pronta.corpo["ok"] is False and "2 linhas" in pronta.corpo["erro"]
+    assert aparelho.chamadas == []
+
+
 async def test_aparelho_que_nao_responde_vira_erro_legivel(db, monkeypatch) -> None:
     """Medido no lab (2026-09-15): o timeout do httpx chega com mensagem vazia."""
 
