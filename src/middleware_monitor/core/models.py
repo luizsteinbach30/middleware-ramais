@@ -589,12 +589,107 @@ class NocTarefa(Base):
     __table_args__ = (Index("ix_noc_tarefas_entregue", "concluida_em", "entregue_em"),)
 
 
+# --- Expansão do NOC, Plano 0: equipamentos e disponibilidade (AGENTE-NOC 18 a 21) ----------
+#
+# Tabelas só novas: ``Device`` continua sendo o ramal. Os ids são emitidos AQUI
+# (``eq_<16 hex>``, ``vf_<12 hex>``) e não mudam; ``ref`` é o id do NOC, texto.
+# A lista chega do NOC pelo verbo ``definir_equipamentos`` e fica guardada, para
+# a monitoria continuar com o NOC fora do ar.
+
+
+class Equipamento(Base):
+    __tablename__ = "equipamentos"
+
+    id: Mapped[str] = mapped_column(String(24), primary_key=True)
+    ref: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(32), nullable=False)
+    nome: Mapped[str] = mapped_column(String(128), nullable=False)
+    host: Mapped[str] = mapped_column(String(255), nullable=False)
+    mac: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    fabricante: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    modelo: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Sem chave estrangeira de propósito: a lista inteira é trocada numa
+    # transação só, e o pai pode nascer no mesmo pedido que o filho.
+    pai_id: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    tentativas_para_cair: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    # no_ar | degradado | fora | desconhecido
+    estado: Mapped[str] = mapped_column(String(16), nullable=False, default="desconhecido")
+    estado_desde: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    verificacoes: Mapped[list[VerificacaoDeEquipamento]] = relationship(
+        back_populates="equipamento",
+        cascade="all, delete-orphan",
+        order_by="VerificacaoDeEquipamento.posicao",
+    )
+
+
+class VerificacaoDeEquipamento(Base):
+    __tablename__ = "equipamento_verificacoes"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    equipamento_id: Mapped[str] = mapped_column(
+        ForeignKey("equipamentos.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    ref: Mapped[str] = mapped_column(String(64), nullable=False)
+    posicao: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # icmp | tcp | http
+    tipo: Mapped[str] = mapped_column(String(8), nullable=False)
+    # JSON, já normalizado (com os padrões preenchidos).
+    parametros: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    intervalo_s: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    # ok | falha | desconhecido
+    estado: Mapped[str] = mapped_column(String(16), nullable=False, default="desconhecido")
+    estado_desde: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    falhas_seguidas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ultimo_valor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ultima_em: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ultimo_erro: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    equipamento: Mapped[Equipamento] = relationship(back_populates="verificacoes")
+
+
+class AmostraDeVerificacao(Base):
+    """Uma execução de verificação. Anda para o NOC por cursor (o ``id``).
+
+    Sem chave estrangeira: amostra de verificação removida ainda não entregue
+    continua indo — o NOC decide o que fazer com ela.
+    """
+
+    __tablename__ = "equipamento_amostras"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    verificacao_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    em: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    valor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class EventoDeEquipamento(Base):
+    """Transição de estado do equipamento (caiu, voltou, degradou, normalizou)."""
+
+    __tablename__ = "equipamento_eventos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    equipamento_id: Mapped[str] = mapped_column(String(24), nullable=False)
+    verificacao_id: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    tipo: Mapped[str] = mapped_column(String(32), nullable=False)
+    de: Mapped[str] = mapped_column(String(16), nullable=False)
+    para: Mapped[str] = mapped_column(String(16), nullable=False)
+    em: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    detalhe: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 __all__: list[str] = [
+    "AmostraDeVerificacao",
     "AppConfig",
     "Collection",
     "Device",
     "DeviceActionEvent",
     "DevicePing",
+    "Equipamento",
+    "EventoDeEquipamento",
     "ExtensionApplyRun",
     "ExtensionApplyRunLine",
     "ExtensionCall",
@@ -612,4 +707,5 @@ __all__: list[str] = [
     "SystemLog",
     "UpdateHistory",
     "User",
+    "VerificacaoDeEquipamento",
 ]

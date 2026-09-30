@@ -37,6 +37,11 @@ from middleware_monitor.version import __version__
 
 VERSAO_DO_CONTRATO = 1
 
+# O que este agente sabe monitorar além dos ramais (CONTRATO §13.1). Lista
+# fechada: o NOC só oferece na tela o que está aqui. ``homologado: false`` é o
+# adaptador escrito só pela documentação do fabricante, antes da prova no lab.
+MODULOS: tuple[dict[str, Any], ...] = ({"nome": "disponibilidade", "versao": 1, "homologado": True},)
+
 log = get_logger("noc.manifesto")
 
 
@@ -77,6 +82,7 @@ def montar(db: DBSession) -> dict[str, Any]:
         "sistema": sistema(),
         "executorRemoto": True,
         "acoes": sorted(executor.ACOES),
+        "modulos": [dict(m) for m in MODULOS],
         "ultimoBackupEm": ultimo_backup_em(),
         "modelos": [
             {"modelo": modelo, "quantidade": int(qtd), "acoesDoAdapter": _capacidades_do_modelo(modelo)}
