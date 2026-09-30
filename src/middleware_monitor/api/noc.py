@@ -68,8 +68,15 @@ def obter(_user: User = Depends(get_current_user), db: DBSession = Depends(get_s
 def ver_manifesto(
     _user: User = Depends(get_current_user), db: DBSession = Depends(get_session)
 ) -> dict[str, object]:
-    """O que este agente conta ao NOC — para quem instala conferir antes de enrolar."""
-    return manifesto.montar(db)
+    """O que este agente conta ao NOC — para quem instala conferir antes de enrolar.
+
+    ``raio_das_acoes`` **não viaja** no manifesto: é só para a tela dizer, de cada
+    ação declarada em ``acoes``, se é leitura ou escrita (a lista de permissão do
+    executor é a fonte das duas coisas)."""
+    return {
+        **manifesto.montar(db),
+        "raio_das_acoes": {nome: acao.raio for nome, acao in executor.ACOES.items()},
+    }
 
 
 @router.put("/url", dependencies=[Depends(require_csrf), Depends(require_admin)])

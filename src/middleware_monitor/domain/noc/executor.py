@@ -920,16 +920,23 @@ def _hora_sem_fuso(dt: datetime) -> str:
 
 
 async def _verificar_equipamento(p: dict[str, Any], _ctx: Contexto) -> Resultado:
+    return await verificar_equipamento_agora(p.get("equipamento"))
+
+
+async def verificar_equipamento_agora(eid: Any) -> Resultado:
     """Roda agora as verificações de um equipamento. Leitura avulsa: **não** mexe no
     estado nem nos contadores do job, e não grava amostra nem evento — senão um
-    pedido do NOC anteciparia (ou apagaria) uma queda que o job está contando."""
+    pedido do NOC anteciparia (ou apagaria) uma queda que o job está contando.
+
+    É o verbo ``verificar_equipamento`` do NOC e também o botão "Verificar agora"
+    da tela local ``/equipamentos/<id>`` — uma função só, para as duas darem o
+    mesmo resultado."""
     from middleware_monitor.core.models import Equipamento
     from middleware_monitor.domain.config.repository import load_config
     from middleware_monitor.domain.equipamentos import estados, modulos, sondas
     from middleware_monitor.domain.equipamentos.lista import parametros_de
     from middleware_monitor.jobs.monitor_equipamentos import abrir_credencial
 
-    eid = p.get("equipamento")
     with session_factory() as db:
         eq = db.get(Equipamento, eid) if isinstance(eid, str) and len(eid) <= 24 else None
         if eq is None:
