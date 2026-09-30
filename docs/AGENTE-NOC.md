@@ -603,7 +603,36 @@ a 21). Onde o texto do §13 e o que está abaixo divergirem, vale o que está ab
 - **Limites:** 5.000 equipamentos por agente, 10 verificações por equipamento.
 - **A lista chega do NOC** pelo verbo `definir_equipamentos` (item 21) e fica guardada aqui, para a monitoria
   continuar com o NOC fora do ar.
-- **Pendente:** a tela local que mostra a lista e o estado. Editar localmente fica para depois.
+- **Telas locais — ✅ feito (30/09, branch `feat/expansao-menu-arvore` → `expansao`, só local), só leitura.** O
+  cadastro nasce no NOC, e as telas dizem isso com o endereço do NOC ao qual o agente está enrolado. Editar
+  localmente continua fora.
+  - **`/equipamentos`** (filtro de frente pela URL, `?frente=cftv|rede|servidores|outros`): nome, tipo, endereço,
+    estado (no ar · com problema · fora · desconhecido, nas cores de estado do middleware), desde quando,
+    verificações resumidas e a última leitura. A divisão em frentes é a do NOC
+    (`domain/equipamentos/frentes.py`): gravador/câmera → CFTV; switch/roteador/firewall/ponto de acesso/link/nobreak
+    → Rede; servidor/hipervisor → Servidores; o resto → Outros.
+  - **`/equipamentos/<id>`**: verificações (tipo, parâmetros, estado, último valor, último erro, intervalo; `pausada`
+    dizendo qual módulo está desligado), a leitura do gravador (grade de canais com vídeo/gravando, discos com
+    barra de uso, hora do gravador e desvio, dias guardados), credenciais (tipo, usuário e "senha definida" —
+    **nunca o segredo nem a impressão**), os 30 eventos mais recentes e **"Verificar agora"** (só admin, com CSRF).
+  - **"Verificar agora" é a mesma função do verbo `verificar_equipamento`** (`executor.verificar_equipamento_agora`):
+    leitura avulsa, não mexe no estado, não grava amostra nem evento; a verificação pausada volta `pausada: módulo …`
+    sem rodar.
+  - **API local** (mesma sessão e CSRF das outras): `GET /api/equipamentos[?frente=]`, `GET /api/equipamentos/{id}`,
+    `POST /api/equipamentos/{id}/verificar` (admin) e `GET /api/menu`.
+- **Menu lateral em árvore** (`partials/sidebar.html`, `components/menu.js`): Visão geral · **Telefonia** (USCall,
+  Devices, Configurador → Ambientes/Relatórios, MQTT → Painel ao vivo/Chamadas/Mensagens) · **Equipamentos** (Todos,
+  CFTV, Rede, Servidores, Outros) · Sistema (Configuração, Módulos, NOC, Atualizações, Backup, Logs). As URLs das
+  páginas não mudaram.
+  - Telefonia aparece com o módulo `telefonia` aceito — desligado, **só o ramo some**: as páginas continuam abrindo
+    pela URL e a coleta segue. Equipamentos aparece com `disponibilidade` aceito, com equipamento cadastrado ou com
+    alguma frente visível; cada frente, com equipamento dela ou módulo dela aceito (`cftv.*`; `rede.*` e
+    `servidores.*` quando existirem).
+  - O servidor já manda o menu certo no render (sem piscar); o JS relê `GET /api/menu` ao carregar, a cada minuto e
+    na hora em que um módulo é trocado na tela, sem recarregar a página.
+  - Ramos abertos ficam por usuário em `localStorage` (`mm.menu.<usuário>`); o ramo da página atual sempre abre.
+    No trilho recolhido (Ctrl+B) ficam só os ícones, grupo a grupo.
+  - **Sistema → Módulos** (`/system/modulos`) é a mesma seção de Sistema → NOC (`components/modulos.js`).
 
 ### 19 — A sonda só sabe pingar, e só pinga ramal
 
@@ -792,7 +821,8 @@ Do mais simples ao mais difícil: **Proxmox** pela API (credencial só de leitur
 - **Tela local** (`/system/noc`, seção **Módulos**): uma chave por módulo com nome amigável, versão, "não
   homologado" quando for o caso e quem ligou/desligou e quando. Só admin troca (`PUT /api/noc/modulos/{nome}` com
   `{ aceito }` e CSRF; `GET /api/noc/modulos` para qualquer usuário, com `pode_editar`). Grava
-  `aceitoPor = "local:<usuário>"`. A repaginação do menu por módulo fica para a entrega do menu.
+  `aceitoPor = "local:<usuário>"`. O menu em árvore segue os módulos (item 18) e também tem a entrada **Sistema →
+  Módulos** (`/system/modulos`), com a mesma seção.
 
 ### 26 — A credencial de monitoria e o `cftv` no retrato
 

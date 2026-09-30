@@ -13,13 +13,14 @@ from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.api.deps import get_session
 from middleware_monitor.core import resources
+from middleware_monitor.core.models import Equipamento, User
 from middleware_monitor.core.models import Session as SessionModel
-from middleware_monitor.core.models import User
 from middleware_monitor.core.security import (
     CSRF_COOKIE,
     SESSION_COOKIE,
     issue_csrf_token,
 )
+from middleware_monitor.domain.equipamentos import frentes
 from middleware_monitor.settings import get_settings
 from middleware_monitor.version import __version__
 
@@ -95,6 +96,7 @@ def _render(
     *,
     user: User | None,
     extra: dict | None = None,
+    db: DBSession | None = None,
 ) -> HTMLResponse:
     csrf = _ensure_csrf(request)
     ctx = {
@@ -102,6 +104,9 @@ def _render(
         "csrf_token": csrf,
         "version": __version__,
         "page": name.rsplit(".", 1)[0],
+        # O menu em árvore já nasce com os ramos certos (sem piscar); o JS relê
+        # de /api/menu quando um módulo muda.
+        "menu": frentes.menu(db) if (user is not None and db is not None) else None,
     }
     if extra:
         ctx.update(extra)
@@ -154,7 +159,7 @@ def dashboard_page(
         return RedirectResponse("/login", status_code=302)
     if user.must_change_password:
         return RedirectResponse("/account?force=1", status_code=302)
-    return _render(get_templates(), request, "dashboard.html", user=user)
+    return _render(get_templates(), request, "dashboard.html", user=user, db=db)
 
 
 def _page(name: str, route: str) -> None:
@@ -169,7 +174,7 @@ def _page(name: str, route: str) -> None:
             return RedirectResponse("/login", status_code=302)
         if user.must_change_password and route != "/account":
             return RedirectResponse("/account?force=1", status_code=302)
-        return _render(get_templates(), request, name, user=user)
+        return _render(get_templates(), request, name, user=user, db=db)
 
     _handler.__name__ = f"page_{name.replace('.', '_')}"
 
@@ -185,6 +190,7 @@ _page("config.html", "/config")
 _page("system_updates.html", "/system/updates")
 _page("system_backup.html", "/system/backup")
 _page("system_noc.html", "/system/noc")
+_page("system_modulos.html", "/system/modulos")
 _page("account.html", "/account")
 
 
@@ -210,6 +216,7 @@ def ec_environment_detail_page(
     return _render(
         get_templates(), request, "extension_configurator/detail.html",
         user=user,
+        db=db,
         extra={"page": "ec_environment_detail", "ambiente_id": ambiente_id},
     )
 
@@ -230,6 +237,7 @@ def ec_environment_config_page(
     return _render(
         get_templates(), request, "extension_configurator/config.html",
         user=user,
+        db=db,
         extra={"page": "ec_environment_config", "ambiente_id": ambiente_id},
     )
 
@@ -250,5 +258,51 @@ def ec_run_detail_page(
     return _render(
         get_templates(), request, "extension_configurator/run_detail.html",
         user=user,
+        db=db,
         extra={"page": "ec_run_detail", "run_id": run_id},
+    )
+
+
+# --- Equipamentos (expansão do NOC, item 18): só leitura; o cadastro nasce no NOC ---
+
+
+@router.get("/equipamentos", response_class=HTMLResponse)
+def equipamentos_page(
+    request: Request,
+    cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+    db: DBSession = Depends(get_session),
+) -> Response:
+    user = _maybe_user(request, db, cookie)
+    if user is None:
+        return RedirectResponse("/login", status_code=302)
+    if user.must_change_password:
+        return RedirectResponse("/account?force=1", status_code=302)
+    frente = request.query_params.get("frente")
+    return _render(
+        get_templates(), request, "equipamentos.html",
+        user=user,
+        db=db,
+        extra={"frente": frente if frente in frentes.FRENTES else None},
+    )
+
+
+@router.get("/equipamentos/{equipamento_id}", response_class=HTMLResponse)
+def equipamento_detalhe_page(
+    request: Request,
+    equipamento_id: str,
+    cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
+    db: DBSession = Depends(get_session),
+) -> Response:
+    user = _maybe_user(request, db, cookie)
+    if user is None:
+        return RedirectResponse("/login", status_code=302)
+    if user.must_change_password:
+        return RedirectResponse("/account?force=1", status_code=302)
+    eq = db.get(Equipamento, equipamento_id) if len(equipamento_id) <= 24 else None
+    return _render(
+        get_templates(), request, "equipamento_detalhe.html",
+        user=user,
+        db=db,
+        # A frente abre o ramo certo do menu; o id vai para o JS, que lê a API.
+        extra={"equipamento_id": equipamento_id, "frente": frentes.frente_do_tipo(eq.tipo) if eq else None},
     )

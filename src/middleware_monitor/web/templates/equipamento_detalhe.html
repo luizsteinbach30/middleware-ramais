@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Equipamento — Middleware Monitor{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4 flex items-center gap-4">
+    <a id="eq-voltar" href="/equipamentos{% if frente %}?frente={{ frente }}{% endif %}" title="Voltar para a lista"
+       class="shrink-0 w-8 h-8 grid place-items-center rounded-lg text-gray-400 hover:text-gray-100 hover:bg-gray-800 ring-1 ring-gray-700"><span data-icon="arrow-left"></span></a>
+    <div class="flex-1 min-w-0">
+      <h1 id="eq-nome" class="text-lg font-semibold text-gray-100 truncate">—</h1>
+      <p id="eq-sub" class="text-xs text-gray-400 mt-0.5 truncate">—</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="eq-verificar" class="hidden inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-2.5 py-1.5 text-xs disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Roda as verificações agora, só leitura: o estado e o histórico não mudam"><span data-icon="refresh"></span><span>Verificar agora</span></button>
+    </div>
+  </div>
+</div>
+<div id="eq-pagina" class="px-6 py-6 space-y-6 max-w-6xl" data-equipamento="{{ equipamento_id }}">
+  <div id="eq-origem" class="flex items-start gap-2 rounded-xl px-4 py-3 bg-blue-500/10 ring-1 ring-blue-500/30 text-xs text-blue-200">
+    <span data-icon="eye" class="mt-0.5"></span><span id="eq-origem-texto">—</span>
+  </div>
+
+  <div id="eq-nao-achou" class="hidden bg-gray-800 ring-1 ring-gray-700 rounded-xl p-8 text-center text-sm text-gray-400">
+    Este equipamento não está cadastrado neste agente. <a href="/equipamentos" class="text-blue-300 hover:underline">Ver a lista</a>.
+  </div>
+
+  <div id="eq-conteudo" class="space-y-6 hidden">
+    <!-- Situação e cadastro -->
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl p-5 space-y-4">
+      <div class="flex items-center gap-3 flex-wrap">
+        <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Situação</div>
+        <span id="eq-estado">—</span>
+        <span id="eq-desde" class="text-xs text-gray-400"></span>
+      </div>
+      <dl id="eq-cadastro" class="grid sm:grid-cols-2 md:grid-cols-4 gap-4 text-sm"></dl>
+    </div>
+
+    <!-- Resultado do "Verificar agora" (leitura avulsa, não muda o estado) -->
+    <div id="eq-agora" class="hidden bg-gray-800 ring-1 ring-blue-500/40 rounded-xl overflow-hidden">
+      <div class="px-5 py-3 border-b border-gray-700/60 flex items-center justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-semibold text-gray-100">Verificado agora</h3>
+          <p class="text-xs text-gray-500 mt-0.5">Leitura avulsa: não muda o estado nem o histórico — quem decide a queda é a monitoria contínua.</p>
+        </div>
+        <button id="eq-agora-fechar" class="text-gray-500 hover:text-gray-200" title="Fechar"><span data-icon="x"></span></button>
+      </div>
+      <div id="eq-agora-corpo" class="p-5 space-y-5"></div>
+    </div>
+
+    <!-- Verificações -->
+    <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+      <div class="px-5 py-3 border-b border-gray-700/60">
+        <h3 class="text-sm font-semibold text-gray-100">Verificações</h3>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-900/60 text-gray-400 text-xs uppercase tracking-wider">
+            <tr>
+              <th class="text-left px-4 py-2.5 font-semibold">Tipo</th>
+              <th class="text-left px-4 py-2.5 font-semibold">Parâmetros</th>
+              <th class="text-left px-4 py-2.5 font-semibold">Estado</th>
+              <th class="text-right px-4 py-2.5 font-semibold">Último valor</th>
+              <th class="text-left px-4 py-2.5 font-semibold">Último erro</th>
+              <th class="text-left px-4 py-2.5 font-semibold">Intervalo</th>
+              <th class="text-left px-4 py-2.5 font-semibold">Última leitura</th>
+            </tr>
+          </thead>
+          <tbody id="eq-verificacoes" class="divide-y divide-gray-800"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Leitura do gravador -->
+    <div id="eq-cftv-card" class="hidden bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+      <div class="px-5 py-3 border-b border-gray-700/60 flex items-baseline justify-between gap-3 flex-wrap">
+        <h3 class="text-sm font-semibold text-gray-100">Leitura do gravador</h3>
+        <span id="eq-cftv-lido" class="text-xs text-gray-500"></span>
+      </div>
+      <div id="eq-cftv" class="p-5 space-y-5"></div>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-6">
+      <!-- Credenciais: nunca o segredo nem a impressão -->
+      <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-700/60">
+          <h3 class="text-sm font-semibold text-gray-100">Credenciais</h3>
+          <p class="text-xs text-gray-500 mt-0.5">Guardadas cifradas nesta máquina. A senha não aparece aqui e não sai daqui.</p>
+        </div>
+        <ul id="eq-credenciais" class="divide-y divide-gray-700/60"></ul>
+      </div>
+      <!-- Eventos -->
+      <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-700/60">
+          <h3 class="text-sm font-semibold text-gray-100">Eventos recentes</h3>
+        </div>
+        <ul id="eq-eventos" class="divide-y divide-gray-700/60 max-h-96 overflow-auto"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/equipamento_detalhe.js"></script>
+{% endblock %}

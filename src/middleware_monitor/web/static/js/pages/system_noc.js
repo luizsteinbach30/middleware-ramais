@@ -1,5 +1,6 @@
 import { api } from '/static/js/api.js';
 import { injectIcons } from '/static/js/components/icons.js';
+import { montarModulos } from '/static/js/components/modulos.js';
 import { toast } from '/static/js/components/toast.js';
 import { fmtTs } from '/static/js/util/datetime.js';
 
@@ -42,6 +43,27 @@ function descreveRelogio(offset) {
 }
 
 let estadoAtual = null;
+
+const modulos = montarModulos({ lista: $('noc-modulos-lista'), soAdmin: $('noc-modulos-so-admin') });
+
+// Rótulo de cada ação do executor. A LISTA vem do manifesto; ação sem rótulo
+// aqui aparece pelo nome técnico — nunca some.
+const ROTULOS_DAS_ACOES = {
+  ping: 'Pingar o aparelho de um ramal',
+  status_do_ramal: 'Estado de um ramal no USCall',
+  coletar_agora: 'Coletar do USCall agora',
+  inventario: 'Inventário deste agente',
+  capacidades: 'Mandar o manifesto de novo',
+  logs: 'Ler os logs',
+  normalize: 'Normalizar o aparelho de um ramal',
+  reaplicar_config_do_ambiente: 'Reaplicar a configuração de um ambiente',
+  editar_planilha_do_ambiente: 'Editar a planilha de um ambiente',
+  editar_config_do_ambiente: 'Editar a config padrão de um ambiente',
+  abrir_acesso_web: 'Abrir acesso pelo túnel (web, RDP, SSH)',
+  verificar_equipamento: 'Verificar um equipamento agora',
+  definir_equipamentos: 'Definir a lista de equipamentos',
+  definir_modulos: 'Ligar e desligar módulos',
+};
 
 function render(e) {
   estadoAtual = e;
@@ -92,7 +114,23 @@ function render(e) {
   injectIcons();
 }
 
+function renderAcoes(m) {
+  const acoes = m.acoes || [];
+  const raio = m.raio_das_acoes || {};
+  const escrita = acoes.filter((a) => raio[a] && raio[a] !== 'LEITURA').length;
+  $('noc-acoes-resumo').textContent = acoes.length
+    ? `${acoes.length} ${acoes.length === 1 ? 'ação' : 'ações'} · ${acoes.length - escrita} de leitura, ${escrita} de escrita`
+    : '';
+  $('noc-acoes').innerHTML = acoes.length
+    ? acoes.map((a) => {
+      const tipo = raio[a] === 'LEITURA' ? badge('blue', 'leitura') : badge('yellow', 'escrita');
+      return `<li class="flex items-center justify-between gap-3"><span class="min-w-0"><span class="text-gray-200">${esc(ROTULOS_DAS_ACOES[a] || a)}</span> <span class="font-mono text-[11px] text-gray-500">${esc(a)}</span></span>${tipo}</li>`;
+    }).join('')
+    : '<li class="text-xs text-gray-500">Este agente não declara nenhuma ação: o NOC não pode pedir nada a ele.</li>';
+}
+
 function renderManifesto(m) {
+  renderAcoes(m);
   const modelos = m.modelos || [];
   $('noc-modelos').innerHTML = modelos.length
     ? modelos.map((x) => `<li class="flex items-center justify-between gap-3"><span class="font-mono text-xs text-gray-200">${esc(x.modelo)}</span><span class="text-xs text-gray-400 tabular-nums">${x.quantidade} ${x.quantidade === 1 ? 'linha' : 'linhas'}</span></li>`).join('')
@@ -107,67 +145,11 @@ function renderManifesto(m) {
     : '<li class="text-xs text-gray-500">Nenhum servidor USCall habilitado.</li>';
 }
 
-// Módulos (CONTRATO §13.8): uma chave por módulo. Quem liga e quando vem do
-// servidor ("local:<usuário>" daqui, "noc:<email>" pelo NOC).
-function quemEQuando(m) {
-  if (!m.aceitoPor) return m.aceito ? 'ligado por padrão' : 'desligado por padrão';
-  const quem = m.aceitoPor.startsWith('local:') ? `${m.aceitoPor.slice(6)} (aqui)`
-    : m.aceitoPor.startsWith('noc:') ? `${m.aceitoPor.slice(4)} (pelo NOC)` : m.aceitoPor;
-  return `${m.aceito ? 'ligado' : 'desligado'} por ${quem}${m.aceitoEm ? ` · ${fmtTs(m.aceitoEm)}` : ''}`;
-}
-
-function renderModulos(r) {
-  const podeEditar = !!r.pode_editar;
-  $('noc-modulos-so-admin').classList.toggle('hidden', podeEditar);
-  $('noc-modulos-lista').innerHTML = (r.modulos || []).map((m) => `
-    <li class="px-5 py-3 flex items-center justify-between gap-4">
-      <div class="min-w-0">
-        <div class="flex items-center gap-2 flex-wrap">
-          <span class="text-sm text-gray-100">${esc(m.rotulo)}</span>
-          <span class="font-mono text-[11px] text-gray-500">${esc(m.nome)} · v${esc(m.versao)}</span>
-          ${m.homologado ? '' : badge('yellow', 'não homologado')}
-        </div>
-        <div class="text-xs text-gray-500 mt-0.5">${esc(m.descricao)}</div>
-        <div class="text-[11px] text-gray-500 mt-0.5">${esc(quemEQuando(m))}</div>
-      </div>
-      <label class="inline-flex items-center gap-2 text-xs text-gray-300 ${podeEditar ? 'cursor-pointer' : 'opacity-60'}">
-        <input type="checkbox" data-modulo="${esc(m.nome)}" ${m.aceito ? 'checked' : ''} ${podeEditar ? '' : 'disabled'}
-               class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500"/>
-        ${m.aceito ? 'Ligado' : 'Desligado'}
-      </label>
-    </li>`).join('');
-}
-
-$('noc-modulos-lista').addEventListener('change', async (ev) => {
-  const caixa = ev.target.closest('input[data-modulo]');
-  if (!caixa) return;
-  const nome = caixa.dataset.modulo;
-  const aceito = caixa.checked;
-  // Telefonia é só sinal para o menu: desligar não para coleta, MQTT nem configurador.
-  const efeito = nome === 'telefonia'
-    ? 'Isso só esconde a telefonia do menu. A coleta, o MQTT e o configurador continuam rodando.'
-    : 'As verificações dele ficam guardadas e param de rodar até alguém ligar de novo.';
-  if (!aceito && !confirm(`Desligar o módulo ${nome}?\n\n${efeito}`)) {
-    caixa.checked = true;
-    return;
-  }
-  caixa.disabled = true;
-  try {
-    renderModulos(await api(`/api/noc/modulos/${encodeURIComponent(nome)}`, { method: 'PUT', body: { aceito } }));
-    toast.success(aceito ? `Módulo ${nome} ligado.` : `Módulo ${nome} desligado.`);
-  } catch (err) {
-    caixa.checked = !aceito;
-    caixa.disabled = false;
-    toast.error(err.message);
-  }
-});
-
 async function carregar() {
   try {
-    const [e, m, mods] = await Promise.all([api('/api/noc'), api('/api/noc/manifesto'), api('/api/noc/modulos')]);
+    const [e, m] = await Promise.all([api('/api/noc'), api('/api/noc/manifesto'), modulos.carregar()]);
     render(e);
     renderManifesto(m);
-    renderModulos(mods);
   } catch (err) {
     toast.error(`Não deu para carregar: ${err.message}`);
   }

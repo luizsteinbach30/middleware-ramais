@@ -110,10 +110,17 @@
     <div class="px-5 py-3 border-b border-gray-700/60">
       <h3 class="text-sm font-semibold text-gray-100">O que este agente conta ao NOC</h3>
       <p class="text-xs text-gray-500 mt-1 max-w-2xl">
-        Versão, modelos cadastrados nos ambientes e servidores USCall. <strong class="text-gray-300">Nenhuma senha,
-        token ou credencial de aparelho</strong> sai daqui. Nesta versão o agente ainda não executa nenhuma ação a
-        pedido do NOC — por isso a lista de ações declaradas está vazia.
+        Versão, módulos, modelos cadastrados nos ambientes, servidores USCall e as ações que o NOC pode pedir a
+        este agente. <strong class="text-gray-300">Nenhuma senha, token ou credencial de aparelho</strong> sai daqui.
       </p>
+    </div>
+    <!-- As ações vêm do manifesto (a lista de permissão do executor): nada de texto fixo aqui. -->
+    <div class="p-5 border-b border-gray-700/60">
+      <div class="flex items-baseline justify-between gap-3 mb-2 flex-wrap">
+        <div class="text-[11px] uppercase tracking-wider text-gray-500 font-semibold">Ações que o NOC pode pedir</div>
+        <div id="noc-acoes-resumo" class="text-xs text-gray-500"></div>
+      </div>
+      <ul id="noc-acoes" class="grid md:grid-cols-2 gap-x-6 gap-y-1.5 text-sm"></ul>
     </div>
     <div class="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-700/60">
       <div class="p-5">
@@ -138,6 +145,7 @@
         guardadas e <strong class="text-gray-300">pausadas</strong>. Toda monitoria é <strong class="text-gray-300">só
         leitura</strong> — nenhum módulo muda configuração de equipamento.
         <span id="noc-modulos-so-admin" class="hidden">Só administrador troca.</span>
+        Também em <a href="/system/modulos" class="text-blue-300 hover:underline">Sistema → Módulos</a>.
       </p>
     </div>
     <ul id="noc-modulos-lista" class="divide-y divide-gray-700/60"></ul>
