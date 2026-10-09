@@ -875,6 +875,49 @@ Do mais simples ao mais difícil: **Proxmox** pela API (credencial só de leitur
 - **`verificar_equipamento`** devolve, na verificação `cftv`, também `cftv` (a leitura, na forma do retrato); a
   pausada volta `ok: false` com `"pausada: módulo … não aceito neste agente"` sem rodar.
 
+### 27 — Serviços do ambiente: telefone, DVR e câmeras (NOC 1.4.0)
+
+`domain/extension_configurator/servicos.py` · `domain/equipamentos/planilha_cftv.py` · migration
+`0017_ambiente_servicos` · **CONTRATO §13.11** · capacidade `equipamentos.ambiente` · ✅ **feito (09/10)**, versão
+proposta **2.17.0**
+
+O ambiente deixa de ser só "um modelo de telefone": ele diz quais serviços estão ligados e cada serviço só aparece
+quando ligado. Gravadores e câmeras são os equipamentos de sempre (item 18), agora com o ambiente a que pertencem.
+
+- **Migration `0017_ambiente_servicos`**, repetível: `extension_environments.servicos` (JSON, padrão
+  `["telefone"]` — os ambientes que já existem não mudam), `equipamentos.ambiente_id` (com índice), `canais` e
+  `canal`. **Sem FK no `ambiente_id`**, de propósito: no SQLite a FK só entra recriando a tabela, e recriar
+  `equipamentos` com `foreign_keys=ON` apaga em cascata verificações e credenciais. Apagar o ambiente zera o campo
+  na aplicação. **`modelo_telefone` continua NOT NULL**: ambiente sem telefone grava `""` (mesmo motivo — mudar a
+  nulidade é recriar a tabela).
+- **Serviços** (`telefone`, `dvr`, `camera`; ordem fixa, pelo menos um):
+  - desligar `telefone` com ramal cadastrado é **recusado** (409 na tela); ligar num ambiente sem modelo pede o
+    modelo. Sem telefone, os pedidos do NOC por ambiente (planilha, config padrão, reaplicar) voltam
+    `VALOR_INVALIDO`, e a planilha local de ramais responde 409;
+  - desligar `dvr`/`camera` **não apaga nada**: as verificações dos gravadores/câmeras do ambiente ficam `pausada`
+    (como módulo não aceito, item 25) e voltam de `desconhecido` ao religar.
+- **Retrato** (`ambientes[]`): cada ambiente leva `servicos` (lista na ordem `telefone`, `dvr`, `camera`). Sem
+  telefone, `modelo: null` e `secoes: []`. O manifesto não conta modelo `""` em `modelos[]`.
+- **Manifesto:** `capacidades: ["equipamentos.ambiente"]` (lista de texto, no topo do corpo). O NOC só manda os
+  campos novos a quem declara.
+- **Equipamento** (vista, retrato e `de`): três chaves novas em todo item — `ambiente` (id do ambiente daqui, ou
+  `null`), `canais` (gravador: quantos canais tem; `null`) e `canal` (câmera: o canal do gravador-pai; `null`).
+- **`definir_equipamentos.para[]`** aceita as três, opcionais:
+  - **ausente = mantém** (nulo, se o item é novo) — NOC antigo edita sem apagar o ambiente;
+  - `ambiente` de um ambiente que não existe aqui → `VALOR_INVALIDO` com o índice;
+  - `canais` só em `gravador`, `canal` só em `camera`, inteiros de 1 a 256 (ou `null`).
+- **O `de` só compara essas chaves no item que as traz.** Item do `de` sem `ambiente`/`canais`/`canal` confere o
+  resto campo a campo, como antes — sem laço de `LISTA_MUDOU` entre versões. O "alterados" do resultado segue a
+  mesma regra.
+- **A tela do ambiente** tem os chips Telefone · DVR · Câmeras e uma aba por serviço ligado. DVR e Câmeras são o
+  mesmo componente de planilha (`PUT /api/extension-configurator/environments/{id}/equipamentos`, admin + CSRF),
+  gravando pela mesma `validar_para`/`gravar` do NOC — só os gravadores e câmeras **daquele** ambiente; o resto da
+  lista passa intacto. Colunas DVR: nome, IP, porta HTTP (vai na verificação `cftv`), porta RTSP (verificação `tcp`
+  de ref `rtsp`; vazia = sem), adaptador (só os módulos `cftv.*` aceitos), modelo, usuário, senha (credencial
+  `HTTP`, cifrada; **nunca volta** — em branco mantém), nº de canais. Câmeras: nome, IP, DVR do ambiente
+  (`paiRef`), canal, fabricante, modelo. Ref local `mw_<hex>`. Verificação que o NOC pôs a mais fica como está.
+  **Nada aqui escreve no DVR nem na câmera.**
+
 ## Resumo por fase
 
 | Fase | O que este repositório entrega |
@@ -892,6 +935,7 @@ Do mais simples ao mais difícil: **Proxmox** pela API (credencial só de leitur
 | **Expansão · Plano 0** ✅ | cadastro de equipamento (18) · sondas de porta e página, job de disponibilidade (19) · partes novas do lote e `modulos` (20) · dois verbos (21) — 2026-09-30, linha paralela, só local |
 | **Expansão · Plano 1** ✅ | CFTV por adaptador, com simuladores (23) · módulos aceitos e `telefonia` como sinal (25) · credencial de monitoria e `cftv` no retrato (26) — 2026-09-30, linha paralela, só local |
 | **Expansão · Planos 2 e 3** | rede por SNMP (22) · servidores (24) |
+| **NOC 1.4.0** ✅ | serviços do ambiente, DVR e câmeras por ambiente, `equipamentos.ambiente` (27) — 2026-10-09, versão proposta 2.17.0 |
 
 ---
 

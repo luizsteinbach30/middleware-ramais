@@ -2,6 +2,18 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
+## [Não lançado] — proposta 2.17.0
+
+### Added
+
+- **Serviços do ambiente** (NOC 1.4.0, AGENTE-NOC item 27): o ambiente liga Telefone, DVR e Câmeras. Cada serviço
+  ligado vira uma aba na tela do ambiente; DVR e Câmeras usam a mesma planilha dos ramais e gravam na lista de
+  equipamentos do agente (só o cadastro — nada é escrito no DVR nem na câmera). Desligar DVR/Câmeras esconde a aba
+  e pausa as verificações; o telefone só desliga sem ramal. Lista de ambientes com ícone e contagem por serviço.
+- **Contrato `equipamentos.ambiente`** (CONTRATO §13.11): `ambientes[].servicos` no retrato; `ambiente`, `canais`
+  e `canal` em cada equipamento e no `para` do `definir_equipamentos` (ausente = mantém; o `de` só compara a chave
+  quando vem); a capacidade no manifesto. Migration `0017_ambiente_servicos`.
+
 ## [2.16.1] — 2026-09-27
 
 ### Security
