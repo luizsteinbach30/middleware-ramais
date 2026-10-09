@@ -84,3 +84,23 @@ na hora.
 - Eventos `cftv.*` na hora em que o cenário muda: `canal_sem_video`, `canal_voltou`, `disco_com_defeito`,
   `disco_normalizou`, `parou_de_gravar`, `voltou_a_gravar`, `hora_errada` (mais de 120 s), `hora_certa`.
 - No UniFi não existe "disco cheio": o console grava por cima do mais antigo.
+
+## 6. DVR falso do acesso pelo navegador (NOC, ADR 0043)
+
+O simulador Intelbras também faz o papel de DVR para o laboratório do acesso ao DVR do NOC
+(`noc-workconnect/scripts/laboratorio-cftv`):
+
+```sh
+python tools/simuladores/intelbras.py --host 0.0.0.0 --porta 80 --pagina legado-4 \
+  --rtsp-porta 554 --rtsp-destino 127.0.0.1:8554
+```
+
+- `GET /plugin.data`, `GET /` e `GET /plugin/webplugin.exe` respondem **sem senha**, como nos DVRs de verdade. A
+  variante da página vem de `--pagina` ou de `estado.pagina`: `legado-4` (pede `WebActiveX.Plugin.4.1.511.0`),
+  `legado-5`, `moderno` (sem plugin) ou `desconhecido` (plugin fora do catálogo do NOC). O instalador é um
+  executável mínimo, sem assinatura.
+- **Bloqueio**: depois de `bloqueioAposFalhas` senhas erradas (5), por `bloqueioS` segundos — HTTP e RTSP no mesmo
+  contador. `falhas` e `tentativasRtsp` aparecem em `/_sim/estado`: é por eles que se prova que o NOC tenta uma vez.
+- **RTSP** (`rtsp.py`): digest no DESCRIBE e os caminhos Intelbras/Hikvision traduzidos para um servidor de vídeo
+  (mediamtx): `/cam/realmonitor?channel=N&subtype=S` → `/chNsS`, `/cam/playback?channel=N&…` → `/pbN`,
+  `/Streaming/Channels/N01|N02` e `/Streaming/tracks/N01`. Caminho desconhecido é 404.
