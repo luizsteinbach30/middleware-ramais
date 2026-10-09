@@ -8,6 +8,10 @@ perfil que cada ambiente diz que a linha deve ter.
 Etapa I3 do NOC (itens 11 e 12): o retrato dos ambientes com ``id`` e a config
 padrão por lista branca, e o estado do coletor MQTT — ver ``retrato.py``.
 
+Expansão do NOC, Plano 0 (item 20, CONTRATO §13.3): ``equipamentos`` (retrato que
+**só viaja quando muda** — parte ausente é "não mudou", lista vazia é "nenhum"),
+``amostrasDeVerificacao`` e ``eventosDeEquipamento`` (por cursor).
+
 **Por cursor, não por "o que mudou desde o último envio".** Cada fonte tem um
 cursor (o último id entregue) que só avança quando o NOC responde 202. NOC fora
 do ar não perde nada — o cursor espera — e reenviar não duplica, porque o lote
@@ -33,15 +37,18 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.orm import selectinload
 
 from middleware_monitor.core.models import (
+    AmostraDeVerificacao,
     Collection,
     Device,
     DevicePing,
+    EventoDeEquipamento,
     ExtensionApplyRun,
     ExtensionLine,
     ExtensionStatusEvent,
     MqttConnectionEvent,
     UscallServer,
 )
+from middleware_monitor.domain.equipamentos import lista as equipamentos
 from middleware_monitor.domain.noc import estado, retrato
 
 # Continua 1: tudo o que a I3 acrescentou é campo novo num JSON que o NOC lê
@@ -50,6 +57,11 @@ VERSAO_DO_CONTRATO = 1
 LIMITE_AMOSTRAS = 5000
 LIMITE_EVENTOS = 2000
 LIMITE_APLICACOES = 50
+LIMITE_AMOSTRAS_DE_VERIFICACAO = 5000
+LIMITE_EVENTOS_DE_EQUIPAMENTO = 2000
+# Retrato de equipamentos que não mudou vai de novo depois disto, de segurança
+# (e leva a última leitura de cada verificação, que o hash ignora).
+RETRATO_DE_SEGURANCA = timedelta(minutes=15)
 # Ao enrolar, a série começa uma hora para trás — não com todo o histórico
 # guardado (30 dias de ping de uma loja grande são milhões de linhas).
 JANELA_INICIAL_AMOSTRAS = timedelta(hours=1)
@@ -101,6 +113,14 @@ def cursores(db: DBSession) -> dict[str, int]:
     if atual.get("conexoes") is None:
         atual["conexoes"] = _max_id_antes(
             db, MqttConnectionEvent.id, MqttConnectionEvent.timestamp, agora - JANELA_INICIAL_CONEXOES
+        )
+    if atual.get("amostrasEquipamento") is None:
+        atual["amostrasEquipamento"] = _max_id_antes(
+            db, AmostraDeVerificacao.id, AmostraDeVerificacao.em, agora - JANELA_INICIAL_AMOSTRAS
+        )
+    if atual.get("eventosEquipamento") is None:
+        atual["eventosEquipamento"] = _max_id_antes(
+            db, EventoDeEquipamento.id, EventoDeEquipamento.em, agora - JANELA_INICIAL_CONEXOES
         )
     return {k: int(v or 0) for k, v in atual.items()}
 
@@ -249,6 +269,14 @@ def montar_lote(
     conexoes, novos["conexoes"], mais_conexoes = retrato.conexoes_mqtt(db, cur["conexoes"])
     mais = mais or mais_conexoes
 
+    amostras_eq, novos["amostrasEquipamento"], mais_amostras_eq = _amostras_de_verificacao(
+        db, cur.get("amostrasEquipamento", 0)
+    )
+    eventos_eq, novos["eventosEquipamento"], mais_eventos_eq = _eventos_de_equipamento(
+        db, cur.get("eventosEquipamento", 0)
+    )
+    mais = mais or mais_amostras_eq or mais_eventos_eq
+
     lote = {
         "versaoDoContrato": VERSAO_DO_CONTRATO,
         "lote": uuid.uuid4().hex,
@@ -264,5 +292,69 @@ def montar_lote(
         "coletor": retrato.coletor(db, coletor_ao_vivo),
         "conexoesMqtt": conexoes,
         "mensagensPorHora": retrato.mensagens_por_hora(db),
+        # Expansão do NOC, Plano 0 — por cursor.
+        "amostrasDeVerificacao": amostras_eq,
+        "eventosDeEquipamento": eventos_eq,
     }
+    retrato_eq = equipamentos.retrato(db)
+    if equipamentos_devem_ir(db, retrato_eq):
+        lote["equipamentos"] = retrato_eq
     return lote, novos, mais
+
+
+def equipamentos_devem_ir(db: DBSession, retrato_eq: list[dict[str, Any]]) -> bool:
+    """O retrato dos equipamentos só viaja quando muda (ADR 0026). Vai também no
+    primeiro lote depois de enrolar (o hash é apagado), no primeiro depois de o NOC
+    voltar, e de segurança a cada ``RETRATO_DE_SEGURANCA``."""
+    entregue, em = estado.retrato_de_equipamentos_entregue(db)
+    if entregue is None or em is None or entregue != equipamentos.sha256_do_retrato(retrato_eq):
+        return True
+    if estado.carregar(db).telemetria_detalhe:
+        return True
+    return _agora() - em >= RETRATO_DE_SEGURANCA
+
+
+def _amostras_de_verificacao(db: DBSession, cursor: int) -> tuple[list[dict[str, Any]], int, bool]:
+    linhas = db.scalars(
+        select(AmostraDeVerificacao)
+        .where(AmostraDeVerificacao.id > cursor)
+        .order_by(AmostraDeVerificacao.id)
+        .limit(LIMITE_AMOSTRAS_DE_VERIFICACAO)
+    ).all()
+    itens = [
+        {
+            "id": a.id,
+            "verificacao": a.verificacao_id,
+            "em": _hora(a.em),
+            "ok": bool(a.ok),
+            "valor": a.valor if a.ok else None,
+        }
+        for a in linhas
+    ]
+    novo = int(linhas[-1].id) if linhas else cursor
+    return itens, novo, len(linhas) == LIMITE_AMOSTRAS_DE_VERIFICACAO
+
+
+def _eventos_de_equipamento(db: DBSession, cursor: int) -> tuple[list[dict[str, Any]], int, bool]:
+    linhas = db.scalars(
+        select(EventoDeEquipamento)
+        .where(EventoDeEquipamento.id > cursor)
+        .order_by(EventoDeEquipamento.id)
+        .limit(LIMITE_EVENTOS_DE_EQUIPAMENTO)
+    ).all()
+    itens = [
+        {
+            "id": e.id,
+            "equipamento": e.equipamento_id,
+            "verificacao": e.verificacao_id,
+            "tipo": e.tipo,
+            "de": e.de,
+            "para": e.para,
+            # A hora crua do agente: é a identidade do evento no NOC (§13.5).
+            "em": _hora(e.em),
+            "detalhe": e.detalhe,
+        }
+        for e in linhas
+    ]
+    novo = int(linhas[-1].id) if linhas else cursor
+    return itens, novo, len(linhas) == LIMITE_EVENTOS_DE_EQUIPAMENTO

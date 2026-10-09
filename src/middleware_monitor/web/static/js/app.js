@@ -2,6 +2,7 @@
 import { injectIcons } from '/static/js/components/icons.js';
 import { api } from '/static/js/api.js';
 import { toast } from '/static/js/components/toast.js';
+import { atualizarMenu, ligarMenu } from '/static/js/components/menu.js';
 
 // Sidebar recolhível: o estado inicial é aplicado no <html> por um script
 // inline no base.html (antes do paint); aqui só ficam o toggle e o atalho.
@@ -44,6 +45,7 @@ function bindSidebar() {
 function bind() {
   injectIcons();
   bindSidebar();
+  ligarMenu();
   document.querySelectorAll('[data-action="logout"]').forEach((b) =>
     b.addEventListener('click', async () => {
       try { await api('/api/auth/logout', { method: 'POST' }); } catch (_e) {}
@@ -70,6 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
   bind();
   pollReady();
   setInterval(pollReady, 30000);
+  // Módulos e equipamentos também mudam pelo NOC: o menu relê sozinho.
+  atualizarMenu();
+  setInterval(atualizarMenu, 60000);
 });
 
 window.toast = toast;

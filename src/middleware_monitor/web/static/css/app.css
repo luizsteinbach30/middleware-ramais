@@ -41,3 +41,40 @@ html.sidebar-collapsed #app-sidebar .sb-brand { flex: none; }
 html.sidebar-collapsed #app-sidebar #brand-logo { max-height: 2rem; }
 /* A seta aponta para o outro lado quando recolhido (o ícone é "recolher <|") */
 html.sidebar-collapsed #sb-toggle-icon { transform: scaleX(-1); }
+
+/* ---------------------------------------------------------------------------
+   Menu em árvore (expansão do NOC)
+   Ramo = cabeçalho com seta + filhos. Abrir/fechar anima a altura pelo truque
+   do grid (0fr → 1fr), sem medir nada em JS. A animação NÃO depende de
+   prefers-reduced-motion (o Windows do dono tem animações desligadas e a
+   interface ficava robótica). A classe mm-sem-animacao só vale no primeiro
+   paint, para os ramos que já nascem abertos não "deslizarem" ao carregar.
+   --------------------------------------------------------------------------- */
+#app-sidebar [hidden] { display: none !important; }
+.mm-ramo-filhos {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows .2s ease, opacity .2s ease;
+}
+.mm-ramo.aberto > .mm-ramo-filhos { grid-template-rows: 1fr; opacity: 1; }
+.mm-ramo-dentro { overflow: hidden; min-height: 0; }
+.mm-seta { transition: transform .2s ease; }
+.mm-ramo.aberto > .mm-ramo-cab .mm-seta { transform: rotate(90deg); }
+.mm-ramo + .mm-ramo:not(.mm-sub) { margin-top: .25rem; }
+.mm-sem-animacao .mm-ramo-filhos,
+.mm-sem-animacao .mm-seta { transition: none; }
+
+/* No trilho recolhido não cabe árvore: some o cabeçalho dos ramos e ficam
+   todos os ícones, um grupo depois do outro, separados por uma linha. */
+html.sidebar-collapsed #app-sidebar .mm-ramo-cab { display: none; }
+html.sidebar-collapsed #app-sidebar .mm-ramo-filhos { grid-template-rows: 1fr; opacity: 1; }
+html.sidebar-collapsed #app-sidebar .mm-ramo-dentro { padding-left: 0; }
+html.sidebar-collapsed #app-sidebar .mm-ramo:not(.mm-sub) + .mm-ramo:not(.mm-sub) {
+  border-top: 1px solid #1f2937;
+  padding-top: .25rem;
+}
+
+/* Barra de uso de disco do gravador */
+.mm-barra { height: .375rem; border-radius: 9999px; background: #374151; overflow: hidden; }
+.mm-barra > span { display: block; height: 100%; border-radius: 9999px; transition: width .3s ease; }

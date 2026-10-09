@@ -34,6 +34,9 @@ from middleware_monitor.api import (
     devices as api_devices,
 )
 from middleware_monitor.api import (
+    equipamentos as api_equipamentos,
+)
+from middleware_monitor.api import (
     extension_configurator as api_extension_configurator,
 )
 from middleware_monitor.api import (
@@ -236,6 +239,7 @@ def create_app() -> FastAPI:
         api_mqtt.router,
         api_backup.router,
         api_noc.router,
+        api_equipamentos.router,
     ):
         app.include_router(r)
 

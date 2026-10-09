@@ -41,6 +41,9 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
     )
     from middleware_monitor.jobs.collect_extensions import run_collect_extensions
     from middleware_monitor.jobs.monitor_devices import run_monitor_devices
+    from middleware_monitor.jobs.monitor_equipamentos import JOB_ID as EQUIPAMENTOS_JOB_ID
+    from middleware_monitor.jobs.monitor_equipamentos import TICK_S as EQUIPAMENTOS_TICK_S
+    from middleware_monitor.jobs.monitor_equipamentos import run_monitor_equipamentos
     from middleware_monitor.jobs.noc_agent import apply_noc_schedule
     from middleware_monitor.jobs.rebuild_calls import run_daily_stats, run_rebuild_calls
     from middleware_monitor.jobs.retention import run_retention
@@ -64,6 +67,14 @@ def register_all(scheduler: AsyncIOScheduler) -> None:
         run_monitor_devices,
         job_id="monitor_devices",
         seconds=interval_seconds,
+    )
+    # Disponibilidade dos equipamentos (expansao do NOC, Plano 0): cada
+    # verificacao tem o proprio intervalo (30 s no minimo); o job acorda a cada
+    # poucos segundos e roda so as que venceram. Sem equipamento, nao faz nada.
+    add_interval_job(
+        run_monitor_equipamentos,
+        job_id=EQUIPAMENTOS_JOB_ID,
+        seconds=EQUIPAMENTOS_TICK_S,
     )
     # Chamadas: a reconstrucao e barata (426 ms para 11 mil transicoes medidas)
     # e roda perto do tempo real, para a tela de chamadas nao ficar minutos

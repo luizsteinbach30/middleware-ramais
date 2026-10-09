@@ -1,5 +1,6 @@
 import { api } from '/static/js/api.js';
 import { injectIcons } from '/static/js/components/icons.js';
+import { montarModulos } from '/static/js/components/modulos.js';
 import { toast } from '/static/js/components/toast.js';
 import { fmtTs } from '/static/js/util/datetime.js';
 
@@ -42,6 +43,27 @@ function descreveRelogio(offset) {
 }
 
 let estadoAtual = null;
+
+const modulos = montarModulos({ lista: $('noc-modulos-lista'), soAdmin: $('noc-modulos-so-admin') });
+
+// Rótulo de cada ação do executor. A LISTA vem do manifesto; ação sem rótulo
+// aqui aparece pelo nome técnico — nunca some.
+const ROTULOS_DAS_ACOES = {
+  ping: 'Pingar o aparelho de um ramal',
+  status_do_ramal: 'Estado de um ramal no USCall',
+  coletar_agora: 'Coletar do USCall agora',
+  inventario: 'Inventário deste agente',
+  capacidades: 'Mandar o manifesto de novo',
+  logs: 'Ler os logs',
+  normalize: 'Normalizar o aparelho de um ramal',
+  reaplicar_config_do_ambiente: 'Reaplicar a configuração de um ambiente',
+  editar_planilha_do_ambiente: 'Editar a planilha de um ambiente',
+  editar_config_do_ambiente: 'Editar a config padrão de um ambiente',
+  abrir_acesso_web: 'Abrir acesso pelo túnel (web, RDP, SSH)',
+  verificar_equipamento: 'Verificar um equipamento agora',
+  definir_equipamentos: 'Definir a lista de equipamentos',
+  definir_modulos: 'Ligar e desligar módulos',
+};
 
 function render(e) {
   estadoAtual = e;
@@ -92,7 +114,23 @@ function render(e) {
   injectIcons();
 }
 
+function renderAcoes(m) {
+  const acoes = m.acoes || [];
+  const raio = m.raio_das_acoes || {};
+  const escrita = acoes.filter((a) => raio[a] && raio[a] !== 'LEITURA').length;
+  $('noc-acoes-resumo').textContent = acoes.length
+    ? `${acoes.length} ${acoes.length === 1 ? 'ação' : 'ações'} · ${acoes.length - escrita} de leitura, ${escrita} de escrita`
+    : '';
+  $('noc-acoes').innerHTML = acoes.length
+    ? acoes.map((a) => {
+      const tipo = raio[a] === 'LEITURA' ? badge('blue', 'leitura') : badge('yellow', 'escrita');
+      return `<li class="flex items-center justify-between gap-3"><span class="min-w-0"><span class="text-gray-200">${esc(ROTULOS_DAS_ACOES[a] || a)}</span> <span class="font-mono text-[11px] text-gray-500">${esc(a)}</span></span>${tipo}</li>`;
+    }).join('')
+    : '<li class="text-xs text-gray-500">Este agente não declara nenhuma ação: o NOC não pode pedir nada a ele.</li>';
+}
+
 function renderManifesto(m) {
+  renderAcoes(m);
   const modelos = m.modelos || [];
   $('noc-modelos').innerHTML = modelos.length
     ? modelos.map((x) => `<li class="flex items-center justify-between gap-3"><span class="font-mono text-xs text-gray-200">${esc(x.modelo)}</span><span class="text-xs text-gray-400 tabular-nums">${x.quantidade} ${x.quantidade === 1 ? 'linha' : 'linhas'}</span></li>`).join('')
@@ -109,7 +147,7 @@ function renderManifesto(m) {
 
 async function carregar() {
   try {
-    const [e, m] = await Promise.all([api('/api/noc'), api('/api/noc/manifesto')]);
+    const [e, m] = await Promise.all([api('/api/noc'), api('/api/noc/manifesto'), modulos.carregar()]);
     render(e);
     renderManifesto(m);
   } catch (err) {

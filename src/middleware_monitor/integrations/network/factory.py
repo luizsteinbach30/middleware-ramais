@@ -7,7 +7,9 @@ import platform
 from middleware_monitor.integrations.network.base import (
     ArpProbe,
     Fingerprinter,
+    HttpProbe,
     PingProbe,
+    TcpProbe,
 )
 
 
@@ -37,3 +39,14 @@ def make_fingerprinter() -> Fingerprinter:
         return W()
     from middleware_monitor.integrations.network.linux import HttpFingerprinter as L
     return L()
+
+
+def make_tcp_probe() -> TcpProbe:
+    # Biblioteca padrão, igual nos dois sistemas.
+    from middleware_monitor.integrations.network.servicos import SondaTcp
+    return SondaTcp()
+
+
+def make_http_probe() -> HttpProbe:
+    from middleware_monitor.integrations.network.servicos import SondaHttp
+    return SondaHttp()

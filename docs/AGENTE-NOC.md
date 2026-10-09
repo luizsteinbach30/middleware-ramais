@@ -566,6 +566,315 @@ no navegador, já logado. O `guacd` fica no NOC; a conexão TCP até o servidor 
 
 ---
 
+## As pendências da expansão do NOC (2026-09-29) — linha paralela, só local
+
+O dono quer o NOC operando CFTV, servidores, switches e o resto, além da telefonia (NOC: ADR 0033, ADR 0034 e
+`PLANO-DA-EXPANSAO.md`). **Acesso já existe** — o túnel dos itens 14 e 17 chega a qualquer endereço da rede. O que
+falta aqui é **monitoria**.
+
+Três ordens dele valem para todos os itens abaixo:
+
+- **Monitoria é só leitura.** Nenhum item escreve em gravador, switch ou servidor.
+- **Linha paralela, só local.** O trabalho vai para a branch `expansao`, não para a `main`, e não vira release até
+  ele mandar. Sem push.
+- **Nada muda na telefonia.** `Device`, `ExtensionLine`, o configurador e o coletor MQTT ficam como estão.
+
+O contrato está em `noc-workconnect/docs/CONTRATO-DO-AGENTE.md` §13, **fechado em 30/09** para o Plano 0 (itens 18
+a 21). Onde o texto do §13 e o que está abaixo divergirem, vale o que está abaixo — é o que o código faz.
+
+### 18 — Não existe cadastro de equipamento: a identidade é o ramal
+
+`src/middleware_monitor/domain/equipamentos/` · `core/models.py` · migration `0015_equipamentos` · **Plano 0** ·
+✅ **feito (30/09, branch `feat/expansao-equipamentos` → `expansao`, só local)**
+
+`Device.name` é único e é o ramal que veio do PBX. Câmera, switch e servidor não têm ramal, e não vêm do USCall.
+
+- **Quatro tabelas novas**, nada do que existe muda: `equipamentos`, `equipamento_verificacoes`,
+  `equipamento_amostras` e `equipamento_eventos`. A migration é **repetível**: cada tabela e índice só é criado se
+  ainda não existe (banco restaurado de um snapshot que já as tinha não quebra o boot).
+- **Equipamento:** `id` (`eq_<16 hex>`, emitido aqui, não muda), `ref` (o id do NOC, texto), `tipo` ∈ `gravador ·
+  camera · switch · roteador · firewall · ponto_de_acesso · link · nobreak · servidor · hipervisor ·
+  controle_de_acesso · impressora · outro`, `nome`, `host` (IP ou nome), `mac?`, `fabricante?`, `modelo?`, `paiId?`,
+  `tentativasParaCair` (1 a 10, padrão 3), `estado` ∈ `no_ar · degradado · fora · desconhecido`, `estadoDesde`.
+- **Verificação:** `id` (`vf_<12 hex>`), `ref`, `tipo` ∈ `icmp · tcp · http`, `parametros`, `intervaloS` (30 a
+  86.400, padrão 60), `estado` ∈ `ok · falha · desconhecido`, `estadoDesde`, `ultimoValor`, `ultimaEm`, `ultimoErro`.
+  `parametros`: `{}` no icmp; `{ porta }` no tcp; `{ esquema, porta, caminho, statusEsperado, verificarCertificado }`
+  no http, guardados **com os padrões preenchidos** (`http`, 80/443 pelo esquema, `/`, 200, `false`).
+- **Limites:** 5.000 equipamentos por agente, 10 verificações por equipamento.
+- **A lista chega do NOC** pelo verbo `definir_equipamentos` (item 21) e fica guardada aqui, para a monitoria
+  continuar com o NOC fora do ar.
+- **Telas locais — ✅ feito (30/09, branch `feat/expansao-menu-arvore` → `expansao`, só local), só leitura.** O
+  cadastro nasce no NOC, e as telas dizem isso com o endereço do NOC ao qual o agente está enrolado. Editar
+  localmente continua fora.
+  - **`/equipamentos`** (filtro de frente pela URL, `?frente=cftv|rede|servidores|outros`): nome, tipo, endereço,
+    estado (no ar · com problema · fora · desconhecido, nas cores de estado do middleware), desde quando,
+    verificações resumidas e a última leitura. A divisão em frentes é a do NOC
+    (`domain/equipamentos/frentes.py`): gravador/câmera → CFTV; switch/roteador/firewall/ponto de acesso/link/nobreak
+    → Rede; servidor/hipervisor → Servidores; o resto → Outros.
+  - **`/equipamentos/<id>`**: verificações (tipo, parâmetros, estado, último valor, último erro, intervalo; `pausada`
+    dizendo qual módulo está desligado), a leitura do gravador (grade de canais com vídeo/gravando, discos com
+    barra de uso, hora do gravador e desvio, dias guardados), credenciais (tipo, usuário e "senha definida" —
+    **nunca o segredo nem a impressão**), os 30 eventos mais recentes e **"Verificar agora"** (só admin, com CSRF).
+  - **"Verificar agora" é a mesma função do verbo `verificar_equipamento`** (`executor.verificar_equipamento_agora`):
+    leitura avulsa, não mexe no estado, não grava amostra nem evento; a verificação pausada volta `pausada: módulo …`
+    sem rodar.
+  - **API local** (mesma sessão e CSRF das outras): `GET /api/equipamentos[?frente=]`, `GET /api/equipamentos/{id}`,
+    `POST /api/equipamentos/{id}/verificar` (admin) e `GET /api/menu`.
+- **Menu lateral em árvore** (`partials/sidebar.html`, `components/menu.js`): Visão geral · **Telefonia** (USCall,
+  Devices, Configurador → Ambientes/Relatórios, MQTT → Painel ao vivo/Chamadas/Mensagens) · **Equipamentos** (Todos,
+  CFTV, Rede, Servidores, Outros) · Sistema (Configuração, Módulos, NOC, Atualizações, Backup, Logs). As URLs das
+  páginas não mudaram.
+  - Telefonia aparece com o módulo `telefonia` aceito — desligado, **só o ramo some**: as páginas continuam abrindo
+    pela URL e a coleta segue. Equipamentos aparece com `disponibilidade` aceito, com equipamento cadastrado ou com
+    alguma frente visível; cada frente, com equipamento dela ou módulo dela aceito (`cftv.*`; `rede.*` e
+    `servidores.*` quando existirem).
+  - O servidor já manda o menu certo no render (sem piscar); o JS relê `GET /api/menu` ao carregar, a cada minuto e
+    na hora em que um módulo é trocado na tela, sem recarregar a página.
+  - Ramos abertos ficam por usuário em `localStorage` (`mm.menu.<usuário>`); o ramo da página atual sempre abre.
+    No trilho recolhido (Ctrl+B) ficam só os ícones, grupo a grupo.
+  - **Sistema → Módulos** (`/system/modulos`) é a mesma seção de Sistema → NOC (`components/modulos.js`).
+
+### 19 — A sonda só sabe pingar, e só pinga ramal
+
+`integrations/network/servicos.py` · `domain/equipamentos/sondas.py` e `estados.py` · `jobs/monitor_equipamentos.py`
+· **Plano 0** · ✅ **feito (30/09)**
+
+- **`TcpProbe` e `HttpProbe`** ao lado da `PingProbe` (`base.py` e `factory.py`), **sem dependência nova**: `asyncio`
+  da biblioteca padrão e o `httpx` que o projeto já usa.
+  - **tcp:** abre a conexão e fecha, sem mandar um byte; 3 s de tempo limite.
+  - **http:** um `GET` sem corpo, sem seguir redirecionamento, sem proxy do sistema (`trust_env=False`), 5 s.
+    `ok` só com o `statusEsperado`; **2xx (menos 204) sem nenhum byte de corpo é falha** ("resposta vazia").
+  - **icmp:** a `PingProbe` de sempre; nome de host é resolvido antes (a sonda de ping só aceita IP).
+  - Sonda que quebra vira falha com o motivo, nunca job morto.
+- **Job `monitor_equipamentos`**, registrado pelo `jobs/__init__.py`: acorda a cada 10 s e roda **só as verificações
+  que venceram** (`ultimaEm + intervaloS`), com o semáforo e o tempo limite de ping da configuração do ping da frota.
+  Cada execução grava uma amostra. O job de telefonia e o reaplicar automático **não foram tocados**.
+- **A máquina de estados** (`estados.py`):
+  - verificação cai para `falha` só depois de `tentativasParaCair` falhas **seguidas**, e volta a `ok` na primeira
+    resposta; verificação nova começa `desconhecido` e segue a mesma regra;
+  - equipamento: as principais são as `icmp` (sem `icmp`, todas). `fora` = todas as principais em falha;
+    `degradado` = alguma principal responde e outra verificação falha; `no_ar` = alguma principal responde e nenhuma
+    falha; o resto é `desconhecido`;
+  - **evento só na transição do equipamento**: `equipamento.caiu` (→ `fora`), `equipamento.voltou` (`fora` →
+    `no_ar`/`degradado`), `equipamento.degradou` (→ `degradado`), `equipamento.normalizou` (`degradado` →
+    `no_ar`). `desconhecido → no_ar` não gera evento (é o primeiro ciclo); `desconhecido → fora` gera `caiu` (o
+    equipamento cadastrado nunca respondeu). O evento leva a verificação que causou a transição e um `detalhe`.
+- **Retenção:** amostras com a mesma regra do ping dos ramais (`device_ping_retention_days`); eventos, 1 ano.
+
+### 20 — O lote e o manifesto não falam de equipamento
+
+`domain/noc/telemetria.py` · `manifesto.py` · `estado.py` · `jobs/noc_agent.py` · **Plano 0** · ✅ **feito (30/09)**
+
+- **Três partes novas no lote**, `versaoDoContrato` continua `1`:
+  - `equipamentos[]` — retrato completo, com `ref` em cada equipamento e verificação. **Só viaja quando muda**: o
+    agente guarda o sha256 do último retrato **aceito com 202** (`noc.equipamentos_sha256`) e só inclui a parte
+    quando o hash é outro. O hash **ignora** `ultimoValor`, `ultimaEm` e `ultimoErro` (latência que oscila não é
+    mudança); estado, `estadoDesde` e cadastro entram. Vai também no primeiro lote depois de enrolar, no primeiro
+    depois de o NOC voltar de uma falha, e **de segurança a cada 15 min**. Parte ausente = não mudou; `[]` = nenhum.
+  - `amostrasDeVerificacao[]` — por cursor (`noc.cursor_amostras_equipamento`), até 5.000 por lote; ao enrolar,
+    começa uma hora para trás.
+  - `eventosDeEquipamento[]` — por cursor (`noc.cursor_eventos_equipamento`), até 2.000 por lote; ao enrolar,
+    começa 24 h para trás. A hora vai crua (UTC sem fuso): é a identidade do evento no NOC.
+  - Os cursores só andam com 202, como os das partes que já existiam; bater no limite faz o ciclo mandar outro lote.
+- **O manifesto ganha** `"modulos": [{ "nome": "disponibilidade", "versao": 1, "homologado": true }]`, sem nada
+  volátil (o hash do manifesto muda uma vez, na atualização). *No Plano 1 cada módulo passou a levar também
+  `aceito`, `aceitoEm` e `aceitoPor` — ver o item 25.*
+- **Não entrou aqui:** o "só quando muda" das partes antigas (`dispositivos`, `perfis`, `ambientes`…) — continua sendo
+  o item 15. O mecanismo de `equipamentos` é o que o item 15 descreve, e serve de molde para ele.
+
+### 21 — Dois verbos novos no executor
+
+`domain/noc/executor.py` (`ACOES`) · `domain/equipamentos/lista.py` · **Plano 0** · ✅ **feito (30/09)**
+
+| Verbo | Raio | Pedido |
+|---|---|---|
+| `verificar_equipamento` | `LEITURA` | `{ equipamento: "eq_…" }` |
+| `definir_equipamentos` | `ESCRITA_REVERSIVEL` | `{ de: [...], para: [...] }` |
+
+- **`verificar_equipamento`** roda agora todas as verificações e devolve `{ equipamento, estado, verificacoes: [{
+  id, tipo, ok, valor, erro, em }] }` (`estado` é o guardado; `em` em UTC sem fuso). **Leitura avulsa:** não mexe em
+  estado nem em contador do job, e não grava amostra nem evento. Equipamento que não existe →
+  `EQUIPAMENTO_NAO_ENCONTRADO`.
+- **`definir_equipamentos`** grava a lista **aqui, nunca no equipamento**, no molde da edição central (item 13):
+  - `de` é a lista **inteira** como o NOC viu (a forma do retrato sem estado: `id, ref, tipo, nome, host, mac,
+    fabricante, modelo, paiId, tentativasParaCair, verificacoes[{ id, ref, tipo, parametros, intervaloS }]`),
+    conferida **como conjunto por `id`, campo a campo** (ordem não importa; ausente e `null` são iguais; `True` não é
+    `1`; campo a mais, como `estado`, é ignorado). Qualquer diferença, inclusive de quantidade → `LISTA_MUDOU` com a
+    lista atual em `atual`, e nada gravado. Conferido antes do backup e **de novo na transação que grava**.
+  - `para` é a lista inteira desejada: `id: null` nasce aqui; `id` existente mantém a identidade; `id` de `de`
+    ausente em `para` é removido. O pai vai por **`paiRef`** (o `ref` do pai, que pode nascer no mesmo pedido);
+    `paiId` em `para` é recusado. Verificações do mesmo jeito (`id: null` = nova).
+  - **Validação → `VALOR_INVALIDO`** com `indice` (posição no `para`, a partir de 0), `verificacao` (posição da
+    verificação, quando é dela) e `motivo`: tipo fora da lista, host vazio ou que não é IP/nome, porta fora de
+    1–65535, intervalo < 30, mais de 10 verificações, `paiRef` que não existe ou que fecha ciclo, `ref` repetido,
+    `id` que não existe, verificação de outro equipamento, campo desconhecido.
+  - **Trocar o que se mede zera o estado:** host novo zera o equipamento e as verificações; `tipo` ou `parametros`
+    novos zeram a verificação. Editar não gera evento.
+  - **Backup antes** (falhou → `ok: false`, nada gravado); grava; **relê**. Resultado: `{ backup, equipamentos: [{
+    ref, id, verificacoes: [{ ref, id }] }], criados, removidos, alterados }`. O próximo lote leva o retrato novo.
+- Os dois estão em `executor.ACOES` e, por isso, em `acoes` do manifesto.
+
+### 22 — Rede por SNMP
+
+`src/middleware_monitor/integrations/snmp/` (novo) · **Plano 2** · pendente
+
+- Leitura por SNMP v2c e v3, com as tabelas padrão: identificação e tempo ligado, estado e contadores das portas,
+  nobreak.
+- **Validar a biblioteca antes de escolher**: tem de funcionar dentro do `.exe` do PyInstaller e da wheel do
+  `.run` (Python 3.11 exato, `cp311`).
+- Estado de porta só vira registro quando muda. Tráfego só das portas marcadas como monitoradas.
+- Credencial (comunidade, usuário v3) cifrada em repouso, como as do configurador. De onde ela vem é decisão do
+  dono (NOC, ADR 0033, decisão em aberto 5).
+- Sem descoberta varrendo a rede do cliente.
+
+### 23 — CFTV por adaptador de fabricante
+
+`src/middleware_monitor/integrations/cftv/` · `domain/equipamentos/cftv.py` · `tools/simuladores/` · **Plano 1** ·
+✅ **feito (30/09, branch `feat/expansao-modulos-cftv` → `expansao`, só local) — os três `homologado: false`**
+
+- **Contrato `CftvAdapter`** (`integrations/cftv/base.py`), no molde do `VendorAdapter` e do `registry.py` do
+  configurador, com uma diferença que é a regra do dono: **só `ler`**. Não há `send_config` nem `execute_action`;
+  todo pedido é `GET` (o UniFi faz também o `POST` de login, que é autenticação). Sem dependência nova: `httpx`
+  (`DigestAuth`) e `xml.etree`. Sem proxy do sistema e sem conferir certificado (gravador de loja, autoassinado).
+- **Três adaptadores**, escritos pela documentação pública:
+
+  | Adaptador | Módulo | Credencial | O que lê |
+  |---|---|---|---|
+  | `intelbras` (Intelbras e Dahua) | `cftv.intelbras` | `HTTP` | CGI digest: `magicBox getSystemInfo`/`getSoftwareVersion`, `ChannelTitle`, `eventManager getEventIndexes` (`VideoLoss`, `StorageLowSpace`), `RecordMode`, `storageDevice getDeviceAllInfo`, `global getCurrentTime` |
+  | `hikvision` | `cftv.hikvision` | `HTTP` | ISAPI digest/XML: `System/deviceInfo`, `InputProxy/channels/status` (ou `System/Video/inputs/channels` no DVR analógico, `resDesc = NO VIDEO`), `record/tracks`, `Storage/hdd`, `System/time` |
+  | `unifi` (UniFi Protect) | `cftv.unifi` | `API` | `POST /api/auth/login` (cookie `TOKEN` + `X-CSRF-Token`), `GET /proxy/protect/api/bootstrap` |
+
+- **Resposta vazia não é sucesso, e 200 não prova nada**: cada leitura obrigatória confere a forma (a chave
+  `deviceType`, a raiz do XML, o objeto `nvr`); o que não tem forma é `RespostaInvalida`. XML com DTD é recusado.
+- **O que ficou decidido sem equipamento na mão** (a conferir no WORKCONNECT LAB):
+  - Intelbras: `getEventIndexes` sem evento ativo responde **vazio** — só ali, 200 vazio é "nenhum canal";
+    `Error` deixa o vídeo `desconhecido`, nunca `ok`. Disco `cheio` = alarme `StorageLowSpace` ativo.
+  - `gravando` no Intelbras é o `RecordMode` (2 = parado) e no Hikvision a trilha `Enable` — **configuração de
+    gravar**, não a prova de arquivo sendo escrito (isso pediria busca, e busca na ISAPI é `POST`). No UniFi é o
+    `isRecording` de verdade.
+  - Hikvision: disco `ok`/`idle` = ok, `notexist` = ausente, `full` = cheio (a confirmar se o firmware informa),
+    o resto = defeito. Capacidade em MB.
+  - UniFi: a hora do console é o cabeçalho `Date` do bootstrap; o número do canal é a posição da câmera ordenada
+    pelo `id` (não muda quando renomeiam); câmera não adotada fica fora; não existe "disco cheio" (grava por cima).
+    **A sessão é reaproveitada** em memória: o console limita logins.
+  - Hora sem fuso (Intelbras) é lida como a hora local desta máquina, que está na mesma loja.
+  - `diasGuardados` sai `null` nos três: nenhum informa sem busca.
+- **Senha recusada segura a próxima tentativa por 30 min** com a mesma credencial (gravador bloqueia o usuário
+  depois de algumas senhas erradas, e a monitoria não pode trancar o dono fora da própria loja). Credencial nova
+  (outra impressão) tenta na hora; `verificar_equipamento` (pedido de uma pessoa) também.
+- **Simuladores** em `tools/simuladores/` (fora do pacote, não vão na wheel nem no `.exe`): um servidor
+  `http.server` por fabricante, com digest escrito à mão, cenário mudado ao vivo em `POST /_sim/estado` e registro
+  de cada pedido. `subir-<fabricante>.sh`/`.bat` nas portas 18081 (Intelbras), 18082 (Hikvision) e 18083 (UniFi),
+  usuário `admin`, senha `simulador123`. Passo a passo em `tools/simuladores/README.md`.
+- **Testes:** `tests/unit/test_cftv_adaptadores.py` (cada adaptador contra o simulador e contra respostas montadas
+  da documentação) e `tests/api/test_noc_cftv.py` (de ponta a ponta com o simulador).
+- **Firmware é dimensão de teste**: ao homologar, anotar a versão de cada gravador e guardar a resposta real.
+
+### 24 — Servidores e virtualização
+
+`src/middleware_monitor/integrations/servidores/` (novo) · **Plano 3** · pendente, e depende de decisão do dono
+
+Do mais simples ao mais difícil: **Proxmox** pela API (credencial só de leitura), **iDRAC/iLO** por Redfish,
+**Linux por SSH** com lista fechada de comandos de leitura, **Windows Server e Hyper-V** por WinRM.
+
+- O dono ainda decide entre coletar por aqui e integrar ferramenta que já existe.
+- SSH e WinRM trazem dependência nova: a mesma validação do item 22 (`.exe` e `.run`).
+- Nenhum agente é instalado dentro do servidor do cliente.
+
+---
+
+### 25 — Módulos aceitos: o que o agente sabe × o que ele pode usar
+
+`domain/equipamentos/modulos.py` · `domain/noc/manifesto.py` · `domain/noc/executor.py` (`definir_modulos`) ·
+`api/noc.py` (`/api/noc/modulos`) · tela `/system/noc` · **CONTRATO §13.8** · ✅ **feito (30/09)**
+
+- **Saber é da versão, aceitar é deste agente.** O catálogo (`CATALOGO`) traz `telefonia`, `disponibilidade`,
+  `cftv.intelbras`, `cftv.hikvision` e `cftv.unifi`; o aceite fica no KV `app_config`, chave `modulos.aceitos`
+  (JSON `{nome: {aceito, aceitoEm, aceitoPor}}`), e **não viaja no pacote portável** (`LOCAL_ONLY_KEYS`), como a
+  lista de equipamentos.
+- **Padrão:** `telefonia` e `disponibilidade` aceitos; os três de CFTV não. Sem registro, `aceitoEm`/`aceitoPor`
+  são `null`.
+- **`telefonia` é só sinal para as telas** (decisão de 30/09): aceito por padrão em todo agente, novo e existente.
+  **Desligar não para nada do que a telefonia faz hoje** — coleta do USCall, MQTT, configurador, jobs e as partes do
+  lote continuam iguais. O desligado só esconde a frente do menu (aqui e no NOC) e fica no manifesto. Um teste
+  (`test_desligar_telefonia_nao_para_nada_da_telefonia`) quebra se algum código de telefonia passar a consultar
+  os módulos.
+- **Manifesto:** `modulos: [{ nome, versao, homologado, aceito, aceitoEm, aceitoPor }]`, todos os da versão, na
+  ordem do catálogo. `aceitoEm` em UTC com `Z`; `aceitoPor` é `local:<usuário>` ou `noc:<email>`. Mudou o aceite →
+  corpo novo → sha256 novo → o NOC pede o manifesto no heartbeat seguinte. Regravar o mesmo valor não muda nada.
+- **Vale a última mudança**, venha da tela local ou do NOC.
+- **Verbo `definir_modulos`** (`ESCRITA_REVERSIVEL`, está em `acoes`): `{ de: [{nome, aceito}], para: [{nome,
+  aceito}] }`.
+  - `de` é a lista inteira como o manifesto mostrou (chaves a mais, como `versao`, são ignoradas), conferida por
+    `(nome, aceito)`: diferente → `LISTA_MUDOU` com `atual` (a lista na forma do manifesto), sem backup.
+  - `para`: módulo fora do catálogo → `VALOR_INVALIDO` com `indice`; `aceito` que não é booleano ou nome repetido
+    também. **Módulo ausente do `para` fica como está.**
+  - Backup antes, confere o `de` de novo na transação, grava, relê. Resultado: `{ backup, modulos: [ … na forma do
+    manifesto ] }`.
+- **Módulo desligado não roda.** As verificações dele ficam guardadas com `estado: "pausada"` (zeradas: sem
+  `ultimaEm`, `ultimoValor`, `ultimoErro`), sem amostra e sem evento, e não contam para o estado do equipamento.
+  Religado, voltam de `desconhecido` e rodam na rodada seguinte. O job confere o aceite também na hora de rodar.
+- **`definir_equipamentos` com verificação de módulo não aceito → `VALOR_INVALIDO`** (`"módulo cftv.hikvision não
+  aceito neste agente."`, com `indice` e `verificacao`) **quando a verificação nasce ou muda de medida**. A que já
+  existia e vem igual passa e continua pausada — senão desligar um módulo travaria qualquer edição da lista até o
+  NOC apagar as verificações dele.
+- **Tela local** (`/system/noc`, seção **Módulos**): uma chave por módulo com nome amigável, versão, "não
+  homologado" quando for o caso e quem ligou/desligou e quando. Só admin troca (`PUT /api/noc/modulos/{nome}` com
+  `{ aceito }` e CSRF; `GET /api/noc/modulos` para qualquer usuário, com `pode_editar`). Grava
+  `aceitoPor = "local:<usuário>"`. O menu em árvore segue os módulos (item 18) e também tem a entrada **Sistema →
+  Módulos** (`/system/modulos`), com a mesma seção.
+
+### 26 — A credencial de monitoria e o `cftv` no retrato
+
+`domain/equipamentos/lista.py` · `jobs/monitor_equipamentos.py` · migration `0016_cftv` · **CONTRATO §13.9** ·
+✅ **feito (30/09)**
+
+- **Migration `0016_cftv`**, repetível como a 0015: `equipamento_credenciais` (tipo, usuário, segredo cifrado,
+  impressão) e `equipamento_cftv` (a última leitura de cada gravador, para os eventos saírem por diferença).
+- **Verificação `cftv`** só em equipamento `gravador`, uma por equipamento: `parametros: { adaptador, esquema,
+  porta }` guardados com os padrões (`esquema` `http` — `https` no UniFi —, porta 80/443 pelo esquema).
+- **Credencial:** cada item do `para` pode levar `credenciais: [{ tipo, usuario, segredo }]`, com `tipo` ∈ `HTTP ·
+  API · ONVIF · SNMP_V2C · SNMP_V3 · SSH · WINRM · REDFISH` (ADR 0037 do NOC), um de cada. Intelbras e Hikvision
+  usam `HTTP`; UniFi usa `API`.
+  - **`credenciais` ausente (ou `null`) mantém as guardadas; `[]` apaga** — a regra do lote: parte ausente é "não
+    mudou". O `de` não leva credencial (se vier, é ignorada).
+  - O segredo é gravado **cifrado com a `SecretBox`** (`enc:v1:`). Instalação sem `APP_SECRET_KEY` utilizável
+    recusa a credencial (`VALOR_INVALIDO`) em vez de gravar em claro.
+  - **O segredo nunca sai:** o retrato leva `credenciais: [{ tipo, usuario, impressao }]` (12 primeiros hex do
+    sha256 do segredo); o pedido guardado em `noc_tarefas` tem `segredo` trocado por `***`; recusa, resultado e log
+    não o repetem. Um teste varre resultado, lote, pedido e resultado guardados, `system_logs` e a saída do
+    processo.
+  - **Credencial nova zera a verificação `cftv`** do equipamento (o "senha recusada" de antes falava da velha).
+- **O retrato** leva, em todo equipamento, `credenciais` (lista, vazia quando não há) e `cftv` (`null` sem leitura):
+  `{ lidoEm, canais: [{ numero, nome, video: ok|sem_video|desconhecido, gravando: true|false|null }], discos: [{
+  numero, estado: ok|defeito|cheio|ausente, totalGb, livreGb }], horaDoGravador, desvioS, diasGuardados }`, horas
+  em UTC sem fuso, GB decimais com uma casa. `desvioS` = hora do gravador − hora desta máquina.
+- **"Só quando muda"** ignora `lidoEm`, `horaDoGravador` e `desvioS` (entra só se cruzou 120 s) e mede `livreGb`
+  em faixas de 1% do total — senão um disco gravando mudaria o retrato a cada leitura.
+- **`ok`** quando leu e não achou problema. Problema: canal sem vídeo, canal que não grava, disco com defeito ou
+  cheio, gravador sem nenhum disco, hora a mais de 120 s. `ultimoErro` junta todos (`"canal 2 sem vídeo; disco 1
+  com defeito"`), ou diz por que não leu (`"senha recusada"`, `"sem credencial (HTTP)"`, `"HTTP 200 com a resposta
+  vazia em …"`). A queda para `falha` segue a máquina do item 19 (`tentativasParaCair`) e o equipamento fica
+  `degradado` se ainda responde à verificação principal.
+- **Eventos `cftv.*`**, pela trilha de `eventosDeEquipamento`, com `verificacao` = a verificação cftv, na **hora da
+  leitura** (não esperam as N falhas — é o fato do canal ou do disco), só na transição:
+
+  | Tipo | `de` → `para` | `detalhe` |
+  |---|---|---|
+  | `cftv.canal_sem_video` | vídeo anterior (`ok`/`desconhecido`) → `sem_video` | `canal 2 (CAM 2) sem vídeo` |
+  | `cftv.canal_voltou` | `sem_video` → `ok` | `canal 2 (CAM 2) voltou` |
+  | `cftv.parou_de_gravar` | `gravando`/`desconhecido` → `parado` | `canal 4 (CAM 4) parou de gravar` |
+  | `cftv.voltou_a_gravar` | `parado` → `gravando` | `canal 4 (CAM 4) voltou a gravar` |
+  | `cftv.disco_com_defeito` | estado anterior → `defeito` ou `cheio` | `disco 1 com defeito` / `disco 1 cheio` |
+  | `cftv.disco_normalizou` | `defeito`/`cheio` → o novo estado | `disco 1 ok` |
+  | `cftv.hora_errada` | `certa`/`desconhecida` → `errada` | `hora do gravador 600 s atrasada (-600 s)` |
+  | `cftv.hora_certa` | `errada` → `certa` | idem |
+
+  A primeira leitura só gera evento de problema (voltar sem ter ido não é notícia). Leitura que falhou não apaga a
+  anterior nem gera evento de canal/disco.
+- **`verificar_equipamento`** devolve, na verificação `cftv`, também `cftv` (a leitura, na forma do retrato); a
+  pausada volta `ok: false` com `"pausada: módulo … não aceito neste agente"` sem rodar.
+
 ## Resumo por fase
 
 | Fase | O que este repositório entrega |
@@ -580,6 +889,9 @@ no navegador, já logado. O `guacd` fica no NOC; a conexão TCP até o servidor 
 | **Atualização** | a versão desejada do NOC instalada sozinha, na janela ou na hora, com volta automática (16) — 2026-09-25 |
 | **Túnel** | acesso web a equipamento da LAN e a USCall cadastrado, com a conexão saindo daqui (14) — 2026-09-25 |
 | **Telemetria leve** | retrato só quando muda, sem retrato repetido na fila, chave estável na retentativa (15) |
+| **Expansão · Plano 0** ✅ | cadastro de equipamento (18) · sondas de porta e página, job de disponibilidade (19) · partes novas do lote e `modulos` (20) · dois verbos (21) — 2026-09-30, linha paralela, só local |
+| **Expansão · Plano 1** ✅ | CFTV por adaptador, com simuladores (23) · módulos aceitos e `telefonia` como sinal (25) · credencial de monitoria e `cftv` no retrato (26) — 2026-09-30, linha paralela, só local |
+| **Expansão · Planos 2 e 3** | rede por SNMP (22) · servidores (24) |
 
 ---
 

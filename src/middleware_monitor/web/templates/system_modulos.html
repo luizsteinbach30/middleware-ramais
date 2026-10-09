@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Módulos — Middleware Monitor{% endblock %}
+{% block body %}
+<div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
+  <div class="px-6 py-4">
+    <h1 class="text-lg font-semibold text-gray-100">Módulos</h1>
+    <p class="text-xs text-gray-400 mt-0.5">O que esta versão sabe monitorar e o que este agente aceita usar</p>
+  </div>
+</div>
+<div class="px-6 py-6 space-y-6 max-w-4xl">
+  <!-- A mesma seção de Sistema → NOC (components/modulos.js). O NOC também liga e
+       desliga pelo verbo definir_modulos; vale a última mudança. -->
+  <div class="bg-gray-800 ring-1 ring-gray-700 rounded-xl overflow-hidden">
+    <div class="px-5 py-3 border-b border-gray-700/60">
+      <p class="text-xs text-gray-500 max-w-2xl">
+        Módulo desligado não roda: as verificações dele ficam guardadas e <strong class="text-gray-300">pausadas</strong>.
+        Toda monitoria é <strong class="text-gray-300">só leitura</strong> — nenhum módulo muda configuração de equipamento.
+        O menu ao lado acompanha: <strong class="text-gray-300">Telefonia</strong> desligada só some do menu (as páginas
+        continuam abrindo pelo endereço e a coleta segue).
+        <span id="mod-so-admin" class="hidden">Só administrador troca.</span>
+        O NOC também liga e desliga módulos daqui; vale a última mudança.
+      </p>
+    </div>
+    <ul id="mod-lista" class="divide-y divide-gray-700/60"></ul>
+  </div>
+</div>
+<script type="module" src="/static/js/pages/system_modulos.js"></script>
+{% endblock %}
