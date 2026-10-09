@@ -2,7 +2,9 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
-## [Não lançado] — proposta 2.17.0
+## [Não lançado]
+
+## [2.17.0] — 2026-10-09
 
 ### Added
 
