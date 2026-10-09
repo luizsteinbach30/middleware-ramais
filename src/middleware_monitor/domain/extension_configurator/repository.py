@@ -20,12 +20,13 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.core.crypto import SecretBox, open_box
 from middleware_monitor.core.models import (
     Device,
+    Equipamento,
     ExtensionApplyRun,
     ExtensionApplyRunLine,
     ExtensionEnvironment,
@@ -34,6 +35,7 @@ from middleware_monitor.core.models import (
 )
 from middleware_monitor.settings import get_settings
 
+from . import servicos as servicos_mod
 from .defaults import CHAVES_SECRETAS, default_config_padrao
 
 __all__ = [
@@ -45,6 +47,7 @@ __all__ = [
     "create_reapply_event",
     "create_run",
     "create_run_line",
+    "definir_servicos",
     "delete_environment",
     "finish_reapply_event",
     "finish_run",
@@ -165,7 +168,15 @@ def campos_da_linha(line: ExtensionLine, campos: tuple[str, ...]) -> dict[str, A
 
 def create_environment(
     db: DBSession, *, nome: str, modelo_telefone: str,
+    servicos: list[str] | None = None,
 ) -> ExtensionEnvironment:
+    """``servicos`` ausente = só telefone (o ambiente de sempre). Sem telefone, o
+    modelo é gravado como "" — ``ServicosInvalidos`` se a lista não tem forma."""
+    lista_de_servicos = servicos_mod.normalizar(
+        list(servicos_mod.PADRAO) if servicos is None else servicos
+    )
+    if "telefone" not in lista_de_servicos:
+        modelo_telefone = ""
     base_id = generate_slug(nome)
     env_id = base_id
     i = 2
@@ -178,6 +189,7 @@ def create_environment(
         nome=nome,
         modelo_telefone=modelo_telefone,
         config_padrao=_cifrar_config(default_config_padrao()),
+        servicos=servicos_mod.serializar(lista_de_servicos),
         created_at=now,
         updated_at=now,
     )
@@ -198,7 +210,10 @@ def clone_environment(
     `create_environment`.
     """
     new_nome = (nome or "").strip() or f"Cópia de {src.nome}"
-    new_env = create_environment(db, nome=new_nome, modelo_telefone=src.modelo_telefone)
+    new_env = create_environment(
+        db, nome=new_nome, modelo_telefone=src.modelo_telefone,
+        servicos=servicos_mod.servicos_de(src),
+    )
     new_env.config_padrao = _cifrar_config(merged_config_padrao(src))
     new_env.updated_at = _now()
     db.flush()
@@ -231,10 +246,50 @@ def update_environment(
     return env
 
 
+class ServicoRecusado(ValueError):
+    pass
+
+
+def definir_servicos(
+    db: DBSession, env: ExtensionEnvironment, servicos: list[str], *,
+    modelo_telefone: str | None = None,
+) -> ExtensionEnvironment:
+    """Liga e desliga os serviços do ambiente. Não faz commit.
+
+    - desligar ``telefone`` com ramal cadastrado é recusado (``ServicoRecusado``);
+    - ligar ``telefone`` num ambiente sem modelo pede ``modelo_telefone``;
+    - desligar ``dvr``/``camera`` não apaga nada: pausa as verificações dos
+      gravadores/câmeras do ambiente; religar retoma (``lista.aplicar_modulos``).
+    """
+    from middleware_monitor.domain.equipamentos import lista
+
+    novos = servicos_mod.normalizar(servicos)
+    if "telefone" not in novos:
+        if env.lines:
+            raise ServicoRecusado(
+                f"o ambiente tem {len(env.lines)} ramal(is): apague os ramais antes de desligar o telefone."
+            )
+        env.modelo_telefone = ""
+    else:
+        if modelo_telefone is not None:
+            env.modelo_telefone = modelo_telefone
+        if not env.modelo_telefone:
+            raise ServicoRecusado("para ligar o telefone, escolha o modelo do telefone.")
+    env.servicos = servicos_mod.serializar(novos)
+    env.updated_at = _now()
+    db.flush()
+    lista.reaplicar_pausas(db, _now())
+    return env
+
+
 def delete_environment(db: DBSession, env_id: str) -> bool:
     env = db.get(ExtensionEnvironment, env_id)
     if env is None:
         return False
+    # Sem FK no ambiente do equipamento (migration 0017): o equipamento fica, sem ambiente.
+    db.execute(
+        update(Equipamento).where(Equipamento.ambiente_id == env_id).values(ambiente_id=None)
+    )
     db.delete(env)
     db.flush()
     return True

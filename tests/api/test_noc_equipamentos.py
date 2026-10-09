@@ -497,6 +497,7 @@ async def test_lote_leva_amostras_e_eventos_por_cursor_e_o_retrato_so_quando_mud
     assert set(nvr) == {
         "id", "ref", "tipo", "nome", "host", "mac", "fabricante", "modelo", "paiId",
         "tentativasParaCair", "estado", "estadoDesde", "verificacoes", "credenciais", "cftv",
+        "ambiente", "canais", "canal",
     }  # fmt: skip
     # Plano 1: sem credencial e sem leitura de CFTV, as duas partes vão vazias.
     assert (nvr["credenciais"], nvr["cftv"]) == ([], None)

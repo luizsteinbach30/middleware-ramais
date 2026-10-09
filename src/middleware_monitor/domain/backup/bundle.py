@@ -55,6 +55,10 @@ from middleware_monitor.core.models import (
 )
 from middleware_monitor.domain.backup.settings import LOCAL_ONLY_KEYS
 from middleware_monitor.domain.extension_configurator import repository as ec_repo
+from middleware_monitor.domain.extension_configurator.servicos import PADRAO as SERVICOS_PADRAO
+from middleware_monitor.domain.extension_configurator.servicos import normalizar as normalizar_servicos
+from middleware_monitor.domain.extension_configurator.servicos import serializar as serializar_servicos
+from middleware_monitor.domain.extension_configurator.servicos import servicos_de
 from middleware_monitor.domain.mqtt import repository as mqtt_repo
 from middleware_monitor.domain.uscall import repository as uscall_repo
 from middleware_monitor.settings import get_settings
@@ -295,6 +299,7 @@ def _build_environments(
             "id": env.id,
             "nome": env.nome,
             "modelo_telefone": env.modelo_telefone,
+            "servicos": servicos_de(env),
             "config_padrao": ec_repo.merged_config_padrao(env),
             "lines": [
                 ec_repo.campos_da_linha(ln, _LINE_FIELDS)
@@ -773,7 +778,14 @@ def _aplicar_ambiente(db: DBSession, item: dict[str, Any]) -> None:
     """
     nome = str(item.get("nome") or "").strip()
     modelo = str(item.get("modelo_telefone") or "").strip()
-    if not nome or not modelo:
+    # Pacote de antes da 2.17 não traz servicos: é o ambiente só de telefone.
+    try:
+        servicos = normalizar_servicos(item.get("servicos") or list(SERVICOS_PADRAO))
+    except ValueError:
+        servicos = list(SERVICOS_PADRAO)
+    if "telefone" not in servicos:
+        modelo = ""
+    if not nome or (not modelo and "telefone" in servicos):
         return
     env_id = str(item.get("id") or "").strip() or ec_repo.generate_slug(nome)
     env = db.get(ExtensionEnvironment, env_id)
@@ -781,6 +793,7 @@ def _aplicar_ambiente(db: DBSession, item: dict[str, Any]) -> None:
         agora = _now()
         env = ExtensionEnvironment(
             id=env_id, nome=nome, modelo_telefone=modelo,
+            servicos=serializar_servicos(servicos),
             config_padrao="{}", created_at=agora, updated_at=agora,
         )
         db.add(env)
@@ -788,6 +801,7 @@ def _aplicar_ambiente(db: DBSession, item: dict[str, Any]) -> None:
     else:
         env.nome = nome
         env.modelo_telefone = modelo
+        env.servicos = serializar_servicos(servicos)
     cfg = item.get("config_padrao")
     if isinstance(cfg, dict):
         ec_repo.update_environment(db, env, config_padrao=cfg)

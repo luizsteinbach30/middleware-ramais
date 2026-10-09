@@ -32,6 +32,18 @@ Plano 1 (CFTV, CONTRATO §13.8 e §13.9):
   gravado cifrado e só a impressão sai daqui.
 - **Credencial nova zera as verificações ``cftv`` do equipamento**: o "senha
   recusada" de antes falava da credencial velha.
+
+NOC 1.4.0 (CONTRATO §13.11, capacidade ``equipamentos.ambiente``):
+
+- **``ambiente`` é o id do ambiente do middleware**, ou ``null``; ``canais`` (só
+  gravador) e ``canal`` (só câmera) são inteiros de 1 a 256, ou ``null``. Ausentes
+  no item do ``para`` mantêm o de hoje (nulo, se o item é novo) — NOC antigo não
+  apaga.
+- **No ``de``, esses três só são conferidos no item que traz a chave**: o NOC que
+  ainda não projeta o campo continua conferindo o resto, campo a campo.
+- **Serviço desligado pausa.** Gravador num ambiente sem ``dvr`` e câmera num
+  ambiente sem ``camera`` ficam guardados, com as verificações ``pausada`` — como
+  módulo não aceito (``aplicar_modulos``).
 """
 
 from __future__ import annotations
@@ -52,6 +64,7 @@ from middleware_monitor.core.crypto import SecretBox, open_box
 from middleware_monitor.core.models import (
     CredencialDeEquipamento,
     Equipamento,
+    ExtensionEnvironment,
     LeituraDeCftv,
     VerificacaoDeEquipamento,
 )
@@ -113,6 +126,9 @@ CAMPOS_DO_PARA = frozenset(
         "tentativasParaCair",
         "verificacoes",
         "credenciais",
+        "ambiente",
+        "canais",
+        "canal",
     }
 )
 CAMPOS_DA_CREDENCIAL = frozenset({"tipo", "usuario", "segredo"})
@@ -130,6 +146,13 @@ CAMPOS_DO_DE = (
     "paiId",
     "tentativasParaCair",
 )
+# Comparados só quando o item do ``de`` traz a chave (NOC anterior ao 1.4.0 não traz).
+CAMPO_DO_AMBIENTE = "ambiente"
+CAMPOS_OPCIONAIS_DO_DE = (CAMPO_DO_AMBIENTE, "canais", "canal")
+MAXIMO_DE_CANAIS = 256
+# O serviço do ambiente que liga cada tipo de equipamento. Tipo fora daqui não
+# depende de serviço.
+SERVICO_DO_TIPO: dict[str, str] = {"gravador": "dvr", "camera": "camera"}
 CAMPOS_DA_VERIFICACAO_NO_DE = ("id", "ref", "tipo", "parametros", "intervaloS")
 # O que muda a cada leitura e não entra no hash de "só quando muda" do lote.
 VOLATEIS_DA_VERIFICACAO = frozenset({"ultimoValor", "ultimaEm", "ultimoErro"})
@@ -185,6 +208,9 @@ def _vista_de(eq: Equipamento) -> dict[str, Any]:
         "modelo": eq.modelo,
         "paiId": eq.pai_id,
         "tentativasParaCair": eq.tentativas_para_cair,
+        "ambiente": eq.ambiente_id,
+        "canais": eq.canais,
+        "canal": eq.canal,
         "verificacoes": [
             {
                 "id": vf.id,
@@ -305,6 +331,7 @@ def _canonico(item: dict[str, Any]) -> str:
         raise ForaDeForma("de: verificacoes é uma lista de objetos.")
     forma = {
         **{c: item.get(c) for c in CAMPOS_DO_DE},
+        **{c: item[c] for c in CAMPOS_OPCIONAIS_DO_DE if c in item},
         "verificacoes": sorted(
             (
                 {
@@ -330,9 +357,22 @@ def por_id(lista: list[dict[str, Any]]) -> dict[str, str]:
     return saida
 
 
+def como_no_de(de: list[Any], atual: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """``atual`` sem os campos opcionais que o item do ``de`` não traz — o que o NOC
+    não projeta não é conferido (nem contado como alterado)."""
+    faltam = {
+        i["id"]: {c for c in CAMPOS_OPCIONAIS_DO_DE if c not in i}
+        for i in de
+        if isinstance(i, dict) and isinstance(i.get("id"), str)
+    }
+    return [
+        {k: v for k, v in item.items() if k not in faltam.get(item.get("id"), ())} for item in atual
+    ]
+
+
 def confere(de: list[Any], atual: list[dict[str, Any]]) -> bool:
     """``de`` é a lista atual? Como conjunto por ``id``, campo a campo."""
-    return por_id(de) == por_id(atual)
+    return por_id(de) == por_id(como_no_de(de, atual))
 
 
 # --- A validação do ``para`` -------------------------------------------------------------
@@ -528,12 +568,44 @@ def _credenciais(item: dict[str, Any], i: int) -> list[dict[str, str]] | None:
     return saida
 
 
+def ids_de_ambientes(db: DBSession) -> set[str]:
+    return set(db.scalars(select(ExtensionEnvironment.id)).all())
+
+
+def _ambiente(item: dict[str, Any], i: int, ambientes: set[str] | None) -> str | None:
+    valor = item[CAMPO_DO_AMBIENTE]
+    if valor is None:
+        return None
+    if not isinstance(valor, str) or not valor:
+        raise ForaDeForma("ambiente é o id de um ambiente deste agente, ou null.", indice=i)
+    if ambientes is not None and valor not in ambientes:
+        raise ForaDeForma(f"o ambiente {valor[:64]!r} não existe neste agente.", indice=i)
+    return valor
+
+
+def _canais(item: dict[str, Any], campo: str, tipo_certo: str, i: int) -> int | None:
+    valor = item[campo]
+    if valor is None:
+        return None
+    if item.get("tipo") != tipo_certo:
+        raise ForaDeForma(f"{campo} só em equipamento {tipo_certo}.", indice=i)
+    if not _inteiro(valor) or not 1 <= valor <= MAXIMO_DE_CANAIS:
+        raise ForaDeForma(f"{campo} é um inteiro de 1 a {MAXIMO_DE_CANAIS}, ou null.", indice=i)
+    return int(valor)
+
+
 def validar_para(
-    para: list[Any], atual: list[dict[str, Any]], *, aceitos: set[str] | None = None
+    para: list[Any],
+    atual: list[dict[str, Any]],
+    *,
+    aceitos: set[str] | None = None,
+    ambientes: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """O ``para`` normalizado, ou ``ForaDeForma`` com o índice e o motivo.
 
-    ``aceitos`` são os módulos aceitos neste agente; ``None`` não confere (uso interno)."""
+    ``aceitos`` são os módulos aceitos neste agente; ``ambientes``, os ids dos
+    ambientes. ``None`` não confere (uso interno). O item normalizado só tem a
+    chave ``ambiente``/``canais``/``canal`` quando o pedido a trouxe (ausente = manter)."""
     if len(para) > MAXIMO_DE_EQUIPAMENTOS:
         raise ForaDeForma(f"no máximo {MAXIMO_DE_EQUIPAMENTOS} equipamentos por agente.")
     verificacoes_de = {eq["id"]: {v["id"]: v for v in eq["verificacoes"]} for eq in atual}
@@ -575,8 +647,16 @@ def validar_para(
         pai = item.get("paiRef")
         if pai is not None and (not isinstance(pai, str) or not pai):
             raise ForaDeForma("paiRef é o ref de outro equipamento, ou null.", indice=i)
+        normalizado: dict[str, Any] = {}
+        if CAMPO_DO_AMBIENTE in item:
+            normalizado[CAMPO_DO_AMBIENTE] = _ambiente(item, i, ambientes)
+        if "canais" in item:
+            normalizado["canais"] = _canais(item, "canais", "gravador", i)
+        if "canal" in item:
+            normalizado["canal"] = _canais(item, "canal", "camera", i)
         saida.append(
             {
+                **normalizado,
                 "id": eid,
                 "ref": ref,
                 "tipo": tipo,
@@ -661,15 +741,33 @@ def credencial_de(eq: Equipamento, tipo: str) -> tuple[str, str, str] | None:
     return None
 
 
+def servicos_por_ambiente(db: DBSession) -> dict[str, set[str]]:
+    from middleware_monitor.domain.extension_configurator.servicos import servicos_de
+
+    return {env.id: set(servicos_de(env)) for env in db.scalars(select(ExtensionEnvironment)).all()}
+
+
+def servico_ligado(eq: Equipamento, servicos: dict[str, set[str]]) -> bool:
+    """O serviço do ambiente que este equipamento precisa está ligado? Sem ambiente,
+    ou tipo que não depende de serviço: sim."""
+    servico = SERVICO_DO_TIPO.get(eq.tipo)
+    if servico is None or eq.ambiente_id is None or eq.ambiente_id not in servicos:
+        return True
+    return servico in servicos[eq.ambiente_id]
+
+
 def aplicar_modulos(db: DBSession, aceitos: set[str], agora: datetime) -> int:
-    """Pausa as verificações de módulo não aceito e retoma (de ``desconhecido``) as
-    do módulo aceito. Sem amostra e sem evento: é configuração, não fato. Não faz
-    commit. Devolve quantos equipamentos mudaram."""
+    """Pausa as verificações de módulo não aceito — e as de equipamento cujo serviço
+    está desligado no ambiente — e retoma (de ``desconhecido``) as demais. Sem
+    amostra e sem evento: é configuração, não fato. Não faz commit. Devolve quantos
+    equipamentos mudaram."""
     mudaram = 0
+    servicos = servicos_por_ambiente(db)
     for eq in _todos(db):
         mexeu = False
+        ligado = servico_ligado(eq, servicos)
         for vf in eq.verificacoes:
-            aceito = modulo_da_verificacao(vf.tipo, parametros_de(vf)) in aceitos
+            aceito = ligado and modulo_da_verificacao(vf.tipo, parametros_de(vf)) in aceitos
             if not aceito and vf.estado != estados.PAUSADA:
                 _zerar(vf, agora)
                 vf.estado = estados.PAUSADA
@@ -683,6 +781,14 @@ def aplicar_modulos(db: DBSession, aceitos: set[str], agora: datetime) -> int:
             if derivado != eq.estado:
                 eq.estado, eq.estado_desde = derivado, agora
     return mudaram
+
+
+def reaplicar_pausas(db: DBSession, agora: datetime) -> int:
+    """``aplicar_modulos`` com os módulos aceitos agora — para quem muda o serviço de
+    um ambiente (o configurador não consulta módulo: ``test_noc_modulos``)."""
+    from middleware_monitor.domain.equipamentos import modulos
+
+    return aplicar_modulos(db, modulos.aceitos(db), agora)
 
 
 def gravar(
@@ -720,6 +826,12 @@ def gravar(
         eq.mac, eq.fabricante, eq.modelo = item["mac"], item["fabricante"], item["modelo"]
         eq.pai_id = g.ids_por_ref[item["paiRef"]] if item["paiRef"] else None
         eq.tentativas_para_cair = item["tentativasParaCair"]
+        if CAMPO_DO_AMBIENTE in item:
+            eq.ambiente_id = item[CAMPO_DO_AMBIENTE]
+        if "canais" in item:
+            eq.canais = item["canais"]
+        if "canal" in item:
+            eq.canal = item["canal"]
         eq.atualizado_em = agora
 
         antigas = {vf.id: vf for vf in eq.verificacoes}

@@ -198,6 +198,9 @@ class ExtensionEnvironment(Base):
     nome: Mapped[str] = mapped_column(String(128), nullable=False)
     modelo_telefone: Mapped[str] = mapped_column(String(64), nullable=False)
     config_padrao: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    # JSON: os serviços ligados no ambiente (telefone, dvr, camera). Sem
+    # "telefone", ``modelo_telefone`` fica "" e nada de ramal aparece.
+    servicos: Mapped[str] = mapped_column(Text, nullable=False, default='["telefone"]')
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
@@ -611,6 +614,12 @@ class Equipamento(Base):
     # Sem chave estrangeira de propósito: a lista inteira é trocada numa
     # transação só, e o pai pode nascer no mesmo pedido que o filho.
     pai_id: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    # O ambiente do equipamento. Sem FK pelo mesmo motivo do pai (e do SQLite:
+    # ver a migration 0017); apagar o ambiente zera o campo na aplicação.
+    ambiente_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Gravador: quantos canais tem. Câmera: o canal do gravador-pai em que entra.
+    canais: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    canal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tentativas_para_cair: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
     # no_ar | degradado | fora | desconhecido
     estado: Mapped[str] = mapped_column(String(16), nullable=False, default="desconhecido")

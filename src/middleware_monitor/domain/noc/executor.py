@@ -611,6 +611,13 @@ def _ambiente_do_pedido(db: Any, p: dict[str, Any]) -> tuple[ExtensionEnvironmen
         return None, _recusa_da_edicao(
             "AMBIENTE_NAO_ENCONTRADO", f"O ambiente {str(amb)[:64]!r} não existe neste middleware."
         )
+    # Todos os pedidos por ambiente são de telefone (planilha, config, reaplicar).
+    from middleware_monitor.domain.extension_configurator.servicos import tem_telefone
+
+    if not tem_telefone(env):
+        return None, _recusa_da_edicao(
+            "VALOR_INVALIDO", f"O ambiente {env.nome!r} não tem o serviço telefone ligado."
+        )
     return env, None
 
 
@@ -1018,7 +1025,9 @@ async def _definir_equipamentos(p: dict[str, Any], ctx: Contexto) -> Resultado: 
         except lista.ForaDeForma as exc:
             return None, _recusa_da_edicao("VALOR_INVALIDO", exc.motivo)
         try:
-            return lista.validar_para(para, atual, aceitos=aceitos), None
+            return lista.validar_para(
+                para, atual, aceitos=aceitos, ambientes=lista.ids_de_ambientes(db)
+            ), None
         except lista.ForaDeForma as exc:
             return None, _recusa_da_edicao("VALOR_INVALIDO", exc.motivo, **exc.como_dict())
 
@@ -1053,7 +1062,7 @@ async def _definir_equipamentos(p: dict[str, Any], ctx: Contexto) -> Resultado: 
         for item in validado
     )
     antes = lista.por_id(de)
-    depois = lista.por_id(relida)
+    depois = lista.por_id(lista.como_no_de(de, relida))
     alterados = sum(1 for eid, texto in depois.items() if eid in antes and antes[eid] != texto)
     log.info(
         "noc_equipamentos_definidos",

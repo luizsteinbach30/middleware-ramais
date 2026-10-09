@@ -54,6 +54,11 @@ def sistema() -> str:
     return platform.system().lower() or "desconhecido"
 
 
+# ``equipamentos.ambiente``: ``ambientes[].servicos`` no retrato, ``ambiente`` no
+# equipamento e no ``para`` do ``definir_equipamentos``.
+CAPACIDADES: tuple[str, ...] = ("equipamentos.ambiente",)
+
+
 def _capacidades_do_modelo(modelo: str) -> list[str]:
     from middleware_monitor.domain.extension_configurator.actions import capabilities_for
 
@@ -85,9 +90,12 @@ def montar(db: DBSession) -> dict[str, Any]:
         "acoes": sorted(executor.ACOES),
         "modulos": modulos.listar(db),
         "ultimoBackupEm": ultimo_backup_em(),
+        # O que o NOC só usa se este agente declarar (CONTRATO §13.11).
+        "capacidades": list(CAPACIDADES),
         "modelos": [
             {"modelo": modelo, "quantidade": int(qtd), "acoesDoAdapter": _capacidades_do_modelo(modelo)}
             for modelo, qtd in linhas
+            if modelo  # "" = ambiente sem o serviço telefone
         ],
         "uscall": [
             {"nome": s.nome, "endereco": s.host, "alcancavel": uscall_saude.alcancavel(s.nome)}
