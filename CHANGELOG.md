@@ -16,6 +16,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   e `canal` em cada equipamento e no `para` do `definir_equipamentos` (ausente = mantém; o `de` só compara a chave
   quando vem); a capacidade no manifesto. Migration `0017_ambiente_servicos`.
 
+### Fixed
+
+- **A poda diária travava o processo** (00:30): `extension_status_events.message_id` aponta para `mqtt_messages` com
+  `ON DELETE SET NULL`, sem índice — cada mensagem MQTT apagada varria a tabela de eventos inteira, e com o job
+  síncrono no loop a interface e os outros jobs paravam junto (na homologação, mais de 30 min). Migration
+  `0018_indice_message_id` cria o índice; medido numa cópia do banco: a poda inteira passou a levar 2,0 s.
+
 ## [2.16.1] — 2026-09-27
 
 ### Security

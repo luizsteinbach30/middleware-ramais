@@ -485,8 +485,10 @@ class ExtensionStatusEvent(Base):
     event_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     received_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     call_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Indexada (0018): com ``foreign_keys=ON``, apagar uma mensagem MQTT faz o SQLite procurar quem aponta para ela.
+    # Sem o índice, cada mensagem apagada varria a tabela inteira — a poda das 00:30 travava o processo por horas.
     message_id: Mapped[int | None] = mapped_column(
-        ForeignKey("mqtt_messages.id", ondelete="SET NULL"), nullable=True,
+        ForeignKey("mqtt_messages.id", ondelete="SET NULL"), nullable=True, index=True,
     )
 
     __table_args__ = (
