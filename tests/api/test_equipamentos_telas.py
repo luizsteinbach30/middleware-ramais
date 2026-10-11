@@ -245,6 +245,19 @@ def test_lista_com_filtro_de_frente(client, db, cadastro) -> None:
     assert client.get("/api/equipamentos?frente=telefonia").status_code == 400
 
 
+def test_lista_do_cftv_diz_o_gravador_e_o_canal_da_camera(client, db, cadastro) -> None:
+    """A tela do CFTV agrupa as câmeras sob o gravador, na ordem do canal (2.17.1:
+    "a tela para listar as câmeras tá muito esquisita" — vinha tudo em ordem
+    alfabética, gravador e câmera misturados)."""
+    cam = _equipamento(db, "eq_camera00000001", "camera", "Caixa 01")
+    cam.pai_id, cam.canal = cadastro.id, 7
+    db.commit()
+    _login(client, db, admin=False)
+    itens = {e["id"]: e for e in client.get("/api/equipamentos?frente=cftv").json()["itens"]}
+    assert (itens[cam.id]["paiId"], itens[cam.id]["canal"]) == (cadastro.id, 7)
+    assert (itens[cadastro.id]["paiId"], itens[cadastro.id]["canal"]) == (None, None)
+
+
 def test_lista_e_detalhe_pedem_login(client, db, cadastro) -> None:
     assert client.get("/api/equipamentos").status_code == 401
     assert client.get(f"/api/equipamentos/{cadastro.id}").status_code == 401

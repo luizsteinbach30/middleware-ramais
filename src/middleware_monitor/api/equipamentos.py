@@ -81,6 +81,9 @@ def listar(
                 "host": eq.host,
                 "fabricante": eq.fabricante,
                 "modelo": eq.modelo,
+                # A tela do CFTV agrupa a câmera sob o gravador, na ordem do canal.
+                "paiId": eq.pai_id,
+                "canal": eq.canal,
                 "estado": eq.estado,
                 "estadoDesde": _z(eq.estado_desde),
                 "verificacoes": [{"tipo": vf.tipo, "estado": vf.estado} for vf in eq.verificacoes],
