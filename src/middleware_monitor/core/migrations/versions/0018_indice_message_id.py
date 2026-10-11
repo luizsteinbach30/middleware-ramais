@@ -1,10 +1,11 @@
 """índice em ``extension_status_events.message_id`` — a poda diária travava o processo
 
-``extension_status_events.message_id`` aponta para ``mqtt_messages.id`` com ``ON DELETE SET NULL``, e o middleware liga
-``foreign_keys=ON``. Sem índice nessa coluna, cada mensagem MQTT apagada pela poda (``run_retention``, 00:30) obrigava
-o SQLite a varrer a tabela de eventos de status inteira. Medido numa cópia do banco de homologação (09/10): 124.826
-mensagens a podar contra 117.938 eventos — sem o índice, mais de 5 minutos e não terminou (na máquina, o processo
-ficou mais de 30 minutos parado, interface e jobs junto); com o índice, a poda inteira em 2,0 s.
+``extension_status_events.message_id`` aponta para ``mqtt_messages.id`` com ``ON DELETE SET NULL``, e o
+middleware liga ``foreign_keys=ON``. Sem índice nessa coluna, cada mensagem MQTT apagada pela poda
+(``run_retention``, 00:30) obrigava o SQLite a varrer a tabela de eventos de status inteira. Medido numa cópia
+do banco de homologação (09/10): 124.826 mensagens a podar contra 117.938 eventos — sem o índice, mais de
+5 minutos e não terminou (na máquina, o processo ficou mais de 30 minutos parado, interface e jobs junto);
+com o índice, a poda inteira em 2,0 s.
 
 Só cria o índice; nenhum dado muda. Repetível (``IF NOT EXISTS``).
 
