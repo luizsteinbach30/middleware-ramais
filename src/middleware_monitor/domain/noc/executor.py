@@ -612,17 +612,19 @@ def _mesmo(a: Any, b: Any) -> bool:
     )
 
 
-def _ambiente_do_pedido(db: Any, p: dict[str, Any]) -> tuple[ExtensionEnvironment | None, Resultado | None]:
+def _ambiente_do_pedido(
+    db: Any, p: dict[str, Any], *, exige_telefone: bool = True
+) -> tuple[ExtensionEnvironment | None, Resultado | None]:
     amb = p.get("ambienteId")
     env = db.get(ExtensionEnvironment, amb) if isinstance(amb, str) and 0 < len(amb) <= 64 else None
     if env is None:
         return None, _recusa_da_edicao(
             "AMBIENTE_NAO_ENCONTRADO", f"O ambiente {str(amb)[:64]!r} não existe neste middleware."
         )
-    # Todos os pedidos por ambiente são de telefone (planilha, config, reaplicar).
+    # Os pedidos por ambiente são de telefone (planilha, config, reaplicar) — menos apagar.
     from middleware_monitor.domain.extension_configurator.servicos import tem_telefone
 
-    if not tem_telefone(env):
+    if exige_telefone and not tem_telefone(env):
         return None, _recusa_da_edicao(
             "VALOR_INVALIDO", f"O ambiente {env.nome!r} não tem o serviço telefone ligado."
         )
@@ -891,6 +893,188 @@ async def _editar_config(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa
             "linhasDesatualizadas": desatualizadas,
         },
         erro=None if certo else "A releitura não bate com o pedido; confira a config padrão local.",
+    )
+
+
+# --- Ambientes: criar e apagar pelo NOC (2.17.1, capacidade ``ambientes.gerir``) -------------
+#
+# Gravam o ambiente AQUI, nunca no aparelho: nascer não envia config, apagar não
+# reseta telefone. O nome é a chave que a pessoa enxerga, então não se repete
+# (sem diferença de maiúscula nem de espaço nas pontas).
+
+MAXIMO_DO_NOME_DO_AMBIENTE = 120
+
+
+def _mesmo_nome(a: str, b: str) -> bool:
+    return a.strip().casefold() == b.strip().casefold()
+
+
+def _ambiente_com_nome(db: Any, nome: str) -> ExtensionEnvironment | None:
+    # Poucos ambientes por agente: comparar aqui evita o lower() do SQLite, que só
+    # conhece ASCII ("Loja São" e "LOJA SÃO" seriam dois).
+    todos = db.scalars(select(ExtensionEnvironment))
+    return next((env for env in todos if _mesmo_nome(env.nome, nome)), None)
+
+
+def _forma_do_novo_ambiente(p: dict[str, Any]) -> tuple[dict[str, Any] | None, Resultado | None]:
+    """``nome``, ``servicos`` e ``modeloTelefone`` conferidos; o modelo é obrigatório com telefone."""
+    from middleware_monitor.domain.extension_configurator import servicos as servicos_mod
+    from middleware_monitor.domain.extension_configurator.defaults import PHONE_MODELS
+
+    nome = p.get("nome")
+    if not isinstance(nome, str) or not 1 <= len(nome.strip()) <= MAXIMO_DO_NOME_DO_AMBIENTE:
+        return None, _recusa_da_edicao(
+            "VALOR_INVALIDO", f"nome: texto de 1 a {MAXIMO_DO_NOME_DO_AMBIENTE} caracteres."
+        )
+    try:
+        servicos = servicos_mod.normalizar(p.get("servicos", list(servicos_mod.PADRAO)))
+    except servicos_mod.ServicosInvalidos as exc:
+        return None, _recusa_da_edicao("VALOR_INVALIDO", str(exc))
+    modelo = p.get("modeloTelefone")
+    if "telefone" in servicos:
+        # A mesma lista do seletor da tela local (GET /models): é dela que sai o adapter.
+        if not isinstance(modelo, str) or modelo.strip() not in PHONE_MODELS:
+            return None, _recusa_da_edicao(
+                "VALOR_INVALIDO",
+                "modeloTelefone: com o serviço telefone, use um dos modelos deste middleware.",
+                modelos=list(PHONE_MODELS),
+            )
+        modelo = modelo.strip()
+    elif modelo is not None and not isinstance(modelo, str):
+        return None, _recusa_da_edicao("VALOR_INVALIDO", "modeloTelefone: texto, ou ausente sem telefone.")
+    else:
+        # Sem telefone o repositório grava "" de qualquer jeito; dizer isso é melhor que ignorar calado.
+        modelo = ""
+    return {"nome": nome.strip(), "servicos": servicos, "modelo": modelo}, None
+
+
+async def _criar_ambiente(p: dict[str, Any], ctx: Contexto) -> Resultado:
+    from middleware_monitor.domain.extension_configurator import repository as repo
+    from middleware_monitor.domain.extension_configurator import servicos as servicos_mod
+
+    novo, recusa = _forma_do_novo_ambiente(p)
+    if novo is None:
+        return recusa  # type: ignore[return-value]
+
+    def repetido(db: Any) -> Resultado | None:
+        existente = _ambiente_com_nome(db, novo["nome"])
+        if existente is None:
+            return None
+        return _recusa_da_edicao(
+            "AMBIENTE_JA_EXISTE",
+            f"Já existe o ambiente {existente.nome!r} neste middleware; nada foi criado.",
+            ambienteId=existente.id,
+        )
+
+    with session_factory() as db:
+        if (rep := repetido(db)) is not None:
+            return rep
+    if (sem := _sem_prazo(ctx)) is not None:
+        return sem
+    backup, erro = await _backup()
+    if backup is None:
+        return Resultado(ok=False, resultado={"ambienteId": None}, erro=erro)
+
+    with session_factory() as db:
+        # De novo, já com o backup feito: a tela local pode ter criado o mesmo nome.
+        if (rep := repetido(db)) is not None:
+            return rep
+        env = repo.create_environment(
+            db, nome=novo["nome"], modelo_telefone=novo["modelo"], servicos=novo["servicos"]
+        )
+        env_id = env.id
+        db.commit()
+
+    with session_factory() as db:
+        criado = db.get(ExtensionEnvironment, env_id)
+        assert criado is not None
+        relido = {
+            "ambienteId": criado.id,
+            "nome": criado.nome,
+            "servicos": servicos_mod.servicos_de(criado),
+            "modeloTelefone": criado.modelo_telefone or None,
+        }
+    certo = relido["nome"] == novo["nome"] and relido["servicos"] == novo["servicos"]
+    log.info("noc_ambiente_criado", env_id=env_id, servicos=relido["servicos"], operador=ctx.operador)
+    return Resultado(
+        ok=certo,
+        resultado={**relido, "backup": backup},
+        erro=None if certo else "A releitura não bate com o pedido; confira o ambiente local.",
+    )
+
+
+def _forma_do_de_do_ambiente(de: Any) -> Resultado | None:
+    if not (
+        isinstance(de, dict)
+        and set(de) == {"nome", "linhas"}
+        and isinstance(de["nome"], str)
+        and isinstance(de["linhas"], int)
+        and not isinstance(de["linhas"], bool)
+        and de["linhas"] >= 0
+    ):
+        return _recusa_da_edicao("VALOR_INVALIDO", "de é { nome, linhas } — o ambiente como o NOC o viu.")
+    return None
+
+
+async def _apagar_ambiente(p: dict[str, Any], ctx: Contexto) -> Resultado:
+    """Apaga o ambiente que o NOC viu (``de``: nome e quantidade de ramais).
+
+    Vai junto o que o repositório já leva na tela local: os ramais (com o histórico
+    de reaplicação) e os relatórios de aplicação. Equipamento do ambiente fica, sem
+    ambiente. A tela local não tem trava de aplicação em andamento; aqui tem — quem
+    pede de longe não vê o telefone recebendo config."""
+    from middleware_monitor.domain.extension_configurator import repository as repo
+    from middleware_monitor.domain.extension_configurator import run_state
+
+    if (recusa := _forma_do_de_do_ambiente(p.get("de"))) is not None:
+        return recusa
+    de: dict[str, Any] = p["de"]
+
+    def conferir_ambiente(db: Any) -> tuple[ExtensionEnvironment | None, Resultado | None]:
+        env, recusa = _ambiente_do_pedido(db, p, exige_telefone=False)
+        if env is None:
+            return None, recusa
+        atual = {"nome": env.nome, "linhas": len(env.lines)}
+        if atual["nome"] != de["nome"] or atual["linhas"] != de["linhas"]:
+            return None, _recusa_da_edicao(
+                "DE_DIVERGENTE",
+                "O ambiente mudou no middleware desde o retrato que o NOC viu; nada foi apagado.",
+                atual=atual,
+            )
+        if run_state.em_andamento(env.id):
+            return None, _recusa_da_edicao(
+                "APLICACAO_EM_ANDAMENTO",
+                f"O ambiente {env.nome!r} está aplicando config nos telefones agora; peça de novo depois.",
+            )
+        return env, None
+
+    with session_factory() as db:
+        env, recusa = conferir_ambiente(db)
+        if env is None:
+            return recusa  # type: ignore[return-value]
+        env_id, nome = env.id, env.nome
+    if (sem := _sem_prazo(ctx)) is not None:
+        return sem
+    backup, erro = await _backup()
+    if backup is None:
+        return Resultado(ok=False, resultado={"ambienteId": env_id, "linhasApagadas": 0}, erro=erro)
+
+    with session_factory() as db:
+        # De novo, já com o backup feito: o ambiente pode ter mudado nesse meio-tempo.
+        env, recusa = conferir_ambiente(db)
+        if env is None:
+            return recusa  # type: ignore[return-value]
+        linhas = len(env.lines)
+        repo.delete_environment(db, env_id)
+        db.commit()
+
+    with session_factory() as db:
+        certo = db.get(ExtensionEnvironment, env_id) is None
+    log.info("noc_ambiente_apagado", env_id=env_id, linhas=linhas, operador=ctx.operador)
+    return Resultado(
+        ok=certo,
+        resultado={"ambienteId": env_id, "nome": nome, "linhasApagadas": linhas, "backup": backup},
+        erro=None if certo else "O ambiente continua no middleware depois de apagado; confira a tela local.",
     )
 
 
@@ -1214,6 +1398,15 @@ ACOES: dict[str, Acao] = {
     "definir_equipamentos": Acao(ESCRITA, _definir_equipamentos, obrigatorios=frozenset({"de", "para"})),
     # Módulos aceitos (CONTRATO §13.8): configuração deste agente, com backup antes.
     "definir_modulos": Acao(ESCRITA, _definir_modulos, obrigatorios=frozenset({"de", "para"})),
+    # 2.17.1 (capacidade ``ambientes.gerir``): o ambiente nasce e some no agente, nunca no
+    # aparelho — sem envio de config, com backup antes.
+    "criar_ambiente": Acao(
+        ESCRITA,
+        _criar_ambiente,
+        obrigatorios=frozenset({"nome"}),
+        opcionais=frozenset({"modeloTelefone", "servicos"}),
+    ),
+    "apagar_ambiente": Acao(ESCRITA, _apagar_ambiente, obrigatorios=frozenset({"ambienteId", "de"})),
 }
 
 

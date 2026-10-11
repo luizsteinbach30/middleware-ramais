@@ -56,6 +56,11 @@ def get(run_id: str) -> RunState | None:
     return _RUNS.get(run_id)
 
 
+def em_andamento(env_id: str) -> bool:
+    """Algum run deste ambiente ainda sem ``finished_at`` (o worker segue enviando)."""
+    return any(r.env_id == env_id and r.finished_at is None for r in _RUNS.values())
+
+
 def cancel(run_id: str) -> bool:
     run = _RUNS.get(run_id)
     if run is None or run.finished_at is not None:

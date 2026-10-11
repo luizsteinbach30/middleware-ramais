@@ -298,7 +298,7 @@ def test_manifesto_declara_a_capacidade_e_nao_conta_modelo_vazio(db) -> None:
     repo.create_environment(db, nome="CD", modelo_telefone="", servicos=["dvr"])
     db.commit()
     corpo = manifesto.montar(db)
-    assert corpo["capacidades"] == ["equipamentos.ambiente"]
+    assert corpo["capacidades"] == ["equipamentos.ambiente", "ambientes.gerir"]
     assert [m["modelo"] for m in corpo["modelos"]] == ["HTEK UC902G"]
 
 

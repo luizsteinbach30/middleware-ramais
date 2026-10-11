@@ -35,6 +35,41 @@ function chipsDeVerificacao(vs) {
   }).join('')}</div>`;
 }
 
+const SEM_CANAL = Number.MAX_SAFE_INTEGER;
+const porNome = (a, b) => String(a.nome || '').localeCompare(String(b.nome || ''), 'pt-BR');
+const porCanal = (a, b) => (
+  (Number.isInteger(a.canal) ? a.canal : SEM_CANAL) - (Number.isInteger(b.canal) ? b.canal : SEM_CANAL) || porNome(a, b)
+);
+
+// Cada gravador seguido das câmeras dele, na ordem do canal — como se procura uma
+// câmera no DVR. Em ordem alfabética pura, gravador e câmeras saíam misturados.
+// Câmera cujo gravador não está na lista (ou na busca) entra sozinha, pelo nome.
+function agrupadas(itens) {
+  const gravadores = new Set(itens.filter((e) => e.tipo === 'gravador').map((e) => e.id));
+  const filhas = new Map();
+  const soltas = [];
+  for (const e of itens) {
+    if (e.tipo !== 'gravador' && gravadores.has(e.paiId)) {
+      if (!filhas.has(e.paiId)) filhas.set(e.paiId, []);
+      filhas.get(e.paiId).push(e);
+    } else {
+      soltas.push(e);
+    }
+  }
+  const saida = [];
+  for (const e of soltas.sort(porNome)) {
+    saida.push({ e, sob: false });
+    for (const c of (filhas.get(e.id) || []).sort(porCanal)) saida.push({ e: c, sob: true });
+  }
+  return saida;
+}
+
+function chipDoCanal(canal) {
+  const texto = Number.isInteger(canal) ? String(canal).padStart(2, '0') : '—';
+  return `<span title="${Number.isInteger(canal) ? `Canal ${canal} do gravador` : 'Sem canal'}"
+    class="shrink-0 inline-flex items-center justify-center min-w-[2.25rem] px-1.5 py-0.5 rounded-md font-mono text-[11px] tabular-nums ring-1 ring-inset bg-gray-900/70 text-gray-400 ring-gray-700">${texto}</span>`;
+}
+
 function render(r) {
   ultimo = r;
   origem(r.noc);
@@ -56,11 +91,16 @@ function render(r) {
     $('eq-tbody').innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-xs text-gray-500">${vazio}</td></tr>`;
     return;
   }
-  $('eq-tbody').innerHTML = itens.map((e) => `
-    <tr class="hover:bg-gray-800/60">
+  $('eq-tbody').innerHTML = agrupadas(itens).map(({ e, sob }) => `
+    <tr class="hover:bg-gray-800/60${sob ? ' bg-gray-900/20' : ''}">
       <td class="px-4 py-2.5">
-        <a href="/equipamentos/${encodeURIComponent(e.id)}" class="text-gray-100 hover:text-blue-300 font-medium">${esc(e.nome)}</a>
-        ${e.fabricante || e.modelo ? `<div class="text-[11px] text-gray-500">${esc([e.fabricante, e.modelo].filter(Boolean).join(' · '))}</div>` : ''}
+        <div class="flex items-center gap-2 min-w-0${sob ? ' pl-4' : ''}">
+          ${sob ? chipDoCanal(e.canal) : ''}
+          <div class="min-w-0">
+            <a href="/equipamentos/${encodeURIComponent(e.id)}" class="text-gray-100 hover:text-blue-300 font-medium">${esc(e.nome)}</a>
+            ${e.fabricante || e.modelo ? `<div class="text-[11px] text-gray-500">${esc([e.fabricante, e.modelo].filter(Boolean).join(' · '))}</div>` : ''}
+          </div>
+        </div>
       </td>
       <td class="px-4 py-2.5 text-gray-300">${esc(TIPOS[e.tipo] || e.tipo)}</td>
       <td class="px-4 py-2.5 font-mono text-xs text-gray-300">${esc(e.host)}</td>

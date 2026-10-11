@@ -383,10 +383,17 @@
   .ec-tab:hover { color: #e5e7eb; }
   .ec-tab[aria-selected="true"] { color: #f3f4f6; border-bottom-color: #3b82f6; }
   .ec-tab .ec-tab-count { margin-left: 6px; font-size: 11px; color: #6b7280; font-variant-numeric: tabular-nums; }
-  .ec-cftv-estado-no_ar { color: #4ade80; }
-  .ec-cftv-estado-fora { color: #f87171; }
-  .ec-cftv-estado-degradado { color: #fbbf24; }
-  .ec-cftv-estado-pausada, .ec-cftv-estado-desconhecido { color: #9ca3af; }
+  .ec-vistas { display: inline-flex; padding: 2px; border-radius: 8px; background: rgba(17, 24, 39, 0.7); box-shadow: inset 0 0 0 1px #374151; margin-right: 6px; }
+  .ec-vistas.hidden { display: none; }
+  .ec-vista { height: 26px; padding: 0 11px; border-radius: 6px; font-size: 12px; font-weight: 500; color: #9ca3af; transition: all .15s; }
+  .ec-vista:hover { color: #e5e7eb; }
+  .ec-vista[aria-pressed="true"] { color: #f3f4f6; background: #374151; }
+  /* Estado das linhas de DVR/câmera na planilha: a cor do badge, sem o fundo. */
+  .ec-spreadsheet .jexcel > tbody > tr > td.ec-cftv-estado-no_ar { color: #4ade80; }
+  .ec-spreadsheet .jexcel > tbody > tr > td.ec-cftv-estado-fora { color: #f87171; }
+  .ec-spreadsheet .jexcel > tbody > tr > td.ec-cftv-estado-degradado { color: #fbbf24; }
+  .ec-spreadsheet .jexcel > tbody > tr > td.ec-cftv-estado-pausada,
+  .ec-spreadsheet .jexcel > tbody > tr > td.ec-cftv-estado-desconhecido { color: #9ca3af; }
 </style>
 
 <div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
@@ -408,7 +415,7 @@
       </div>
       <p id="ec-subtitle" class="text-xs text-gray-400 mt-0.5 truncate">—</p>
     </div>
-    <span id="ec-save-status" class="text-[11px] font-medium text-transparent transition-opacity min-w-[90px] text-right"></span>
+    <span id="ec-save-status" class="text-[11px] font-medium text-transparent transition-opacity sm:min-w-[90px] text-right"></span>
     <div id="ec-status-pills" class="flex items-center gap-2 text-xs"></div>
   </div>
 </div>
@@ -452,6 +459,11 @@
       <div class="ec-group">
         <span class="ec-group-label" id="ec-cftv-rotulo">DVR</span>
         <div class="ec-group-items">
+          <!-- Câmeras: lista agrupada por DVR (ler) ou planilha (editar). -->
+          <div id="ec-cftv-vistas" class="ec-vistas hidden" role="group" aria-label="Como mostrar as câmeras">
+            <button type="button" class="ec-vista" data-vista="lista" aria-pressed="true">Lista</button>
+            <button type="button" class="ec-vista" data-vista="planilha" aria-pressed="false">Planilha</button>
+          </div>
           <button id="ec-cftv-save" class="ec-btn ec-btn-primary" title="Gravar a planilha na lista de equipamentos deste agente">💾 Salvar</button>
           <button id="ec-cftv-add" class="ec-btn" title="Nova linha no fim da planilha">＋ Linha</button>
           <button id="ec-cftv-del" class="ec-btn ec-btn-warn" title="Remover a linha selecionada (vale ao salvar)">− Remover linha</button>
@@ -464,7 +476,8 @@
     <p id="ec-cftv-ajuda" class="mt-2 text-[11px] text-gray-500 max-w-4xl"></p>
   </div>
   <div class="px-6 py-4">
-    <div class="ec-spreadsheet-wrap">
+    <div id="ec-cftv-lista" class="hidden space-y-4"></div>
+    <div id="ec-cftv-sheet-wrap" class="ec-spreadsheet-wrap">
       <div id="ec-cftv-sheet" class="ec-spreadsheet"></div>
     </div>
   </div>

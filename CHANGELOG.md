@@ -4,6 +4,36 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
+## [2.17.1] — 2026-10-11
+
+### Added
+
+- **O NOC cria e apaga ambientes** (capacidade `ambientes.gerir` no manifesto): dois verbos de escrita, com backup
+  antes e nada enviado a telefone.
+  - `criar_ambiente` — `nome` (1 a 120 caracteres), `servicos` (ausente = só telefone) e `modeloTelefone`
+    (obrigatório com telefone; um dos modelos do seletor da tela local). Nome repetido, sem diferença de maiúscula,
+    é recusado com `AMBIENTE_JA_EXISTE`.
+  - `apagar_ambiente` — `ambienteId` e `de` (`{ nome, linhas }`, o ambiente como o NOC o viu): diferente do atual,
+    `DE_DIVERGENTE` e nada é apagado; aplicação de config em andamento no ambiente, `APLICACAO_EM_ANDAMENTO`.
+    Vão junto os ramais e os relatórios de aplicação, como na tela local; os equipamentos ficam, sem ambiente.
+  - `modelosDeTelefone` no manifesto (`[{ modelo, rotulo }]`): a lista que o `criar_ambiente` aceita, para o
+    formulário "Novo ambiente" do NOC.
+
+### Changed
+
+- **Aba Câmeras do ambiente**: vista Lista (padrão), um cartão por DVR com as câmeras na ordem do canal, estado em
+  badge, aviso de canal repetido ou fora da faixa e mensagem quando não há câmera. A Planilha continua para editar,
+  agora na ordem do DVR e do canal, com colunas mais largas e menos linhas vazias.
+- **Equipamentos · CFTV**: cada gravador aparece seguido das suas câmeras, com o número do canal (`/api/equipamentos`
+  passa a trazer `paiId` e `canal`).
+
+### Fixed
+
+- **Ligar DVR ou Câmeras no ambiente quebrava a tela**: "Cannot set properties of null (setting 'current')" deixava
+  as abas DVR/Câmeras em branco e a planilha de telefones sem aceitar edição — parecia que as planilhas tinham
+  sumido. Nenhum dado era apagado (um F5 trazia tudo). Causa: `jspreadsheet.destroy(el, true)` desligava a
+  biblioteca inteira; agora só a planilha da aba é destruída.
+
 ## [2.17.0] — 2026-10-11
 
 ### Added
