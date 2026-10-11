@@ -163,10 +163,25 @@ def _sem_segredos(valor: Any) -> Any:
 # --- Onde está o ramal ---------------------------------------------------------------
 
 
+def _linhas_do_ramal(db: Any, ramal: str) -> list[ExtensionLine]:
+    """As linhas de planilha do ramal: pelo ``numero_ramal`` exato e, sem ele, pelo **nome visível**.
+
+    A coluna "ramal" da planilha guarda o usuário SIP, que em vários clientes leva o prefixo do
+    servidor (``assaisp01-27611``); o USCall, o monitor e o NOC falam do número (``27611``) — e o
+    nome visível da linha é esse número (regra do dono, 30/09). Sem isto, ping e registro achavam
+    o ramal (pelo inventário) e o normalize respondia "não está cadastrado em nenhum ambiente"
+    (CHM-2026-00177).
+    """
+    exatas = list(db.scalars(select(ExtensionLine).where(ExtensionLine.numero_ramal == ramal)))
+    if exatas:
+        return exatas
+    return list(db.scalars(select(ExtensionLine).where(ExtensionLine.nome_visivel == ramal)))
+
+
 def _linha_unica(db: Any, ramal: str) -> tuple[ExtensionLine | None, str | None]:
     """A linha do ramal, ou o motivo de não ter uma só. Escrita remota mira uma
     linha: com duas, qualquer escolha daqui seria um palpite."""
-    linhas = list(db.scalars(select(ExtensionLine).where(ExtensionLine.numero_ramal == ramal)))
+    linhas = _linhas_do_ramal(db, ramal)
     if not linhas:
         return None, f"O ramal {ramal} não está cadastrado em nenhum ambiente deste middleware."
     if len(linhas) > 1:
@@ -184,14 +199,7 @@ def _ip_do_ramal(db: Any, ramal: str) -> tuple[str | None, str | None, str | Non
     d = db.scalar(select(Device).where(Device.name == ramal))
     if d is not None and d.ip:
         return d.ip, "dispositivo", None
-    ips = sorted(
-        {
-            ip
-            for ip in db.scalars(
-                select(ExtensionLine.ip).where(ExtensionLine.numero_ramal == ramal, ExtensionLine.ip != "")
-            )
-        }
-    )
+    ips = sorted({linha.ip for linha in _linhas_do_ramal(db, ramal) if linha.ip})
     if len(ips) == 1:
         return ips[0], "ambiente", None
     if len(ips) > 1:
