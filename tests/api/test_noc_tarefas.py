@@ -128,6 +128,9 @@ def test_lista_de_permissao_e_fechada_e_nao_tem_rede() -> None:
         "definir_equipamentos",
         # Plano 1: os módulos aceitos são configuração deste agente (tests/api/test_noc_modulos.py).
         "definir_modulos",
+        # 2.17.1: o ambiente nasce e some no agente, nunca no aparelho (tests/api/test_noc_ambientes.py).
+        "criar_ambiente",
+        "apagar_ambiente",
     }
     assert "set_ip" not in executor.ACOES
     assert "send_config" not in executor.ACOES

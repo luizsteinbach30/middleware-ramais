@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session as DBSession
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import ExtensionEnvironment, ExtensionLine
 from middleware_monitor.domain.equipamentos import modulos
+from middleware_monitor.domain.extension_configurator.defaults import PHONE_MODELS
 from middleware_monitor.domain.noc import executor
 from middleware_monitor.domain.uscall import repository as uscall_repo
 from middleware_monitor.domain.uscall import saude as uscall_saude
@@ -56,7 +57,8 @@ def sistema() -> str:
 
 # ``equipamentos.ambiente``: ``ambientes[].servicos`` no retrato, ``ambiente`` no
 # equipamento e no ``para`` do ``definir_equipamentos``.
-CAPACIDADES: tuple[str, ...] = ("equipamentos.ambiente",)
+# ``ambientes.gerir`` (2.17.1): os verbos ``criar_ambiente`` e ``apagar_ambiente``.
+CAPACIDADES: tuple[str, ...] = ("equipamentos.ambiente", "ambientes.gerir")
 
 
 def _capacidades_do_modelo(modelo: str) -> list[str]:
@@ -67,6 +69,13 @@ def _capacidades_do_modelo(modelo: str) -> list[str]:
     except Exception:
         # Modelo que nenhum adapter reconhece não derruba o manifesto inteiro.
         return []
+
+
+def modelos_de_telefone() -> list[dict[str, str]]:
+    """O seletor "Novo ambiente" do NOC. A mesma lista que ``criar_ambiente`` aceita
+    em ``modeloTelefone`` e que o seletor da tela local mostra (o rótulo lá é o próprio
+    modelo) — uma lista só, para o NOC nunca oferecer modelo que o agente recusa."""
+    return [{"modelo": m, "rotulo": m} for m in PHONE_MODELS]
 
 
 def montar(db: DBSession) -> dict[str, Any]:
@@ -101,6 +110,8 @@ def montar(db: DBSession) -> dict[str, Any]:
             {"nome": s.nome, "endereco": s.host, "alcancavel": uscall_saude.alcancavel(s.nome)}
             for s in servidores
         ],
+        # Capacidade ``ambientes.gerir``: os modelos que ``criar_ambiente`` aceita.
+        "modelosDeTelefone": modelos_de_telefone(),
     }
     corpo["sha256"] = sha256_do_manifesto(corpo)
     return corpo

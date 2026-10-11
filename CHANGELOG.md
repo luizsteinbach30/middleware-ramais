@@ -4,6 +4,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
+## [2.17.1] — 2026-10-11
+
+### Added
+
+- **O NOC cria e apaga ambientes** (capacidade `ambientes.gerir` no manifesto): dois verbos de escrita, com backup
+  antes e nada enviado a telefone.
+  - `criar_ambiente` — `nome` (1 a 120 caracteres), `servicos` (ausente = só telefone) e `modeloTelefone`
+    (obrigatório com telefone; um dos modelos do seletor da tela local). Nome repetido, sem diferença de maiúscula,
+    é recusado com `AMBIENTE_JA_EXISTE`.
+  - `apagar_ambiente` — `ambienteId` e `de` (`{ nome, linhas }`, o ambiente como o NOC o viu): diferente do atual,
+    `DE_DIVERGENTE` e nada é apagado; aplicação de config em andamento no ambiente, `APLICACAO_EM_ANDAMENTO`.
+    Vão junto os ramais e os relatórios de aplicação, como na tela local; os equipamentos ficam, sem ambiente.
+  - `modelosDeTelefone` no manifesto (`[{ modelo, rotulo }]`): a lista que o `criar_ambiente` aceita, para o
+    formulário "Novo ambiente" do NOC.
+
 ## [2.17.0] — 2026-10-11
 
 ### Added
