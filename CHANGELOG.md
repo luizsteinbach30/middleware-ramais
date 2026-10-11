@@ -4,7 +4,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
-## [2.17.0] — 2026-10-09
+## [2.17.0] — 2026-10-11
 
 ### Added
 
@@ -22,6 +22,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
   `ON DELETE SET NULL`, sem índice — cada mensagem MQTT apagada varria a tabela de eventos inteira, e com o job
   síncrono no loop a interface e os outros jobs paravam junto (na homologação, mais de 30 min). Migration
   `0018_indice_message_id` cria o índice; medido numa cópia do banco: a poda inteira passou a levar 2,0 s.
+- **O NOC acha o ramal pelo nome visível da planilha**: quando a coluna "ramal" guarda o usuário SIP com o
+  prefixo do servidor (`assaisp01-27611`) e o NOC pede o número (`27611`), as tarefas de escrita
+  (normalizar, reaplicar) e o IP do ping procuram primeiro o ramal exato e, sem ele, a linha cujo **nome
+  visível** é o número. Antes, o ping e o registro achavam o ramal pelo inventário e o normalizar respondia
+  "não está cadastrado em nenhum ambiente". Continua valendo uma linha só: nome visível repetido em dois
+  ambientes é recusado, como o ramal repetido. (Era a 2.16.2, que não chegou a ser publicada.)
 
 ## [2.16.1] — 2026-09-27
 
