@@ -53,6 +53,12 @@ KEY_CURSOR_EVENTOS = f"{_PREFIX}cursor_eventos"
 KEY_CURSOR_APLICACOES = f"{_PREFIX}cursor_aplicacoes"
 KEY_CURSOR_COLETA = f"{_PREFIX}cursor_coleta"
 KEY_CURSOR_CONEXOES = f"{_PREFIX}cursor_conexoes_mqtt"
+KEY_CURSOR_AMOSTRAS_EQUIPAMENTO = f"{_PREFIX}cursor_amostras_equipamento"
+KEY_CURSOR_EVENTOS_EQUIPAMENTO = f"{_PREFIX}cursor_eventos_equipamento"
+# O retrato dos equipamentos só viaja quando muda (ADR 0026): o hash do último
+# entregue com 202, e quando. Apagados no enrolamento — o primeiro lote leva tudo.
+KEY_EQUIPAMENTOS_SHA = f"{_PREFIX}equipamentos_sha256"
+KEY_EQUIPAMENTOS_EM = f"{_PREFIX}equipamentos_enviado_em"
 KEY_TELEMETRIA_EM = f"{_PREFIX}telemetria_enviada_em"
 KEY_TELEMETRIA_DETALHE = f"{_PREFIX}telemetria_detalhe"
 CURSORES = {
@@ -61,6 +67,8 @@ CURSORES = {
     "aplicacoes": KEY_CURSOR_APLICACOES,
     "coleta": KEY_CURSOR_COLETA,
     "conexoes": KEY_CURSOR_CONEXOES,
+    "amostrasEquipamento": KEY_CURSOR_AMOSTRAS_EQUIPAMENTO,
+    "eventosEquipamento": KEY_CURSOR_EVENTOS_EQUIPAMENTO,
 }
 
 TODAS_AS_CHAVES: frozenset[str] = frozenset(
@@ -85,6 +93,10 @@ TODAS_AS_CHAVES: frozenset[str] = frozenset(
         KEY_CURSOR_APLICACOES,
         KEY_CURSOR_COLETA,
         KEY_CURSOR_CONEXOES,
+        KEY_CURSOR_AMOSTRAS_EQUIPAMENTO,
+        KEY_CURSOR_EVENTOS_EQUIPAMENTO,
+        KEY_EQUIPAMENTOS_SHA,
+        KEY_EQUIPAMENTOS_EM,
         KEY_TELEMETRIA_EM,
         KEY_TELEMETRIA_DETALHE,
     }
@@ -222,6 +234,12 @@ def carregar_cursores(db: DBSession) -> dict[str, int | None]:
     return {nome: _int(r.get(chave)) for nome, chave in CURSORES.items()}
 
 
+def retrato_de_equipamentos_entregue(db: DBSession) -> tuple[str | None, datetime | None]:
+    """O hash do último retrato de equipamentos que o NOC aceitou, e quando."""
+    r = {k: v.value for k, v in _linhas(db).items()}
+    return r.get(KEY_EQUIPAMENTOS_SHA) or None, _data(r.get(KEY_EQUIPAMENTOS_EM))
+
+
 def gravar(db: DBSession, valores: dict[str, str | None], *, user_id: int | None = None) -> None:
     """Grava as chaves dadas; ``None`` apaga. Não faz commit — quem chama decide."""
     existentes = _linhas(db)
@@ -261,6 +279,8 @@ def guardar_credencial(
             KEY_MANIFESTO_EM: None,
             KEY_VERSAO_DESEJADA: None,
             KEY_OFFSET: None,
+            KEY_EQUIPAMENTOS_SHA: None,
+            KEY_EQUIPAMENTOS_EM: None,
         },
         user_id=user_id,
     )

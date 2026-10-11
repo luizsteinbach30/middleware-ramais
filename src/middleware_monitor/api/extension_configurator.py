@@ -12,7 +12,7 @@ import asyncio
 import json
 import urllib.parse
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
@@ -41,6 +41,7 @@ from middleware_monitor.core.models import (
 )
 from middleware_monitor.core.time import iso_utc
 from middleware_monitor.domain.backup import bundle as bundle_mod
+from middleware_monitor.domain.equipamentos import planilha_cftv
 from middleware_monitor.domain.extension_configurator import (
     action_state,
     run_state,
@@ -56,6 +57,9 @@ from middleware_monitor.domain.extension_configurator import (
 )
 from middleware_monitor.domain.extension_configurator import (
     repository as repo,
+)
+from middleware_monitor.domain.extension_configurator import (
+    servicos as servicos_mod,
 )
 from middleware_monitor.domain.extension_configurator.defaults import (
     CHAVES_SECRETAS,
@@ -100,14 +104,19 @@ def _searchable_text(env: ExtensionEnvironment) -> str:
 
 def _env_summary(
     env: ExtensionEnvironment, lines: list[ExtensionLine],
+    equipamentos: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     runs = sorted(env.runs, key=lambda r: r.started_at, reverse=True)
     last = runs[0] if runs else None
     devices_vinculados = sum(1 for ln in lines if ln.device_id is not None)
+    contagem = equipamentos or {}
     return {
         "id": env.id,
         "nome": env.nome,
         "modelo_telefone": env.modelo_telefone,
+        "servicos": servicos_mod.servicos_de(env),
+        "dvrs": contagem.get("dvr", 0),
+        "cameras": contagem.get("camera", 0),
         "telefones": len(lines),
         "devices_vinculados": devices_vinculados,
         "atualizado_em": iso_utc(env.updated_at),
@@ -171,11 +180,25 @@ def _run_dict(run: ExtensionApplyRun) -> dict[str, Any]:
 class EnvironmentCreateIn(BaseModel):
     nome: str
     modelo_telefone: str = "HTEK UC902G"
+    # Ausente = só telefone (o ambiente de sempre).
+    servicos: list[str] | None = None
 
 
 class EnvironmentUpdateIn(BaseModel):
     nome: str | None = None
     config_padrao: dict[str, Any] | None = None
+
+
+class ServicosIn(BaseModel):
+    servicos: list[str]
+    # Só quando liga o telefone num ambiente que não tinha.
+    modelo_telefone: str | None = None
+
+
+class EquipamentosIn(BaseModel):
+    # Aba ausente (``None``) não mexe nos equipamentos daquele tipo.
+    dvr: list[dict[str, Any]] | None = None
+    camera: list[dict[str, Any]] | None = None
 
 
 class EnvironmentDuplicateIn(BaseModel):
@@ -404,6 +427,7 @@ def export_environment(
         "environment": {
             "nome": env.nome,
             "modelo_telefone": env.modelo_telefone,
+            "servicos": servicos_mod.servicos_de(env),
             "config_padrao": repo.merged_config_padrao(env),
         },
         "lines": [
@@ -501,10 +525,18 @@ def import_environment(
     for envd in ambientes:
         nome = (renomear or str(envd.get("nome") or "")).strip()
         modelo = str(envd.get("modelo_telefone") or "").strip()
-        if not nome or not modelo:
+        servicos = envd.get("servicos")
+        sem_telefone = isinstance(servicos, list) and "telefone" not in servicos
+        if not nome or (not modelo and not sem_telefone):
             raise HTTPException(status_code=400, detail="ambiente_incompleto")
 
-        new_env = repo.create_environment(db, nome=nome, modelo_telefone=modelo)
+        try:
+            new_env = repo.create_environment(
+                db, nome=nome, modelo_telefone=modelo,
+                servicos=servicos if isinstance(servicos, list) else None,
+            )
+        except servicos_mod.ServicosInvalidos as exc:
+            raise HTTPException(status_code=400, detail="ambiente_incompleto") from exc
         cfg = envd.get("config_padrao")
         if isinstance(cfg, dict):
             repo.update_environment(db, new_env, config_padrao=cfg)
@@ -542,7 +574,8 @@ def list_environments(
     db: DBSession = Depends(get_session),
 ) -> dict[str, list[dict[str, Any]]]:
     envs = repo.list_environments(db)
-    out = [_env_summary(e, repo.list_lines(db, e.id)) for e in envs]
+    contagens = planilha_cftv.contagens(db)
+    out = [_env_summary(e, repo.list_lines(db, e.id), contagens.get(e.id)) for e in envs]
     return {"environments": out}
 
 
@@ -596,7 +629,10 @@ def create_environment(
     modelo = payload.modelo_telefone.strip() or "HTEK UC902G"
     if not nome:
         raise HTTPException(400, "nome obrigatorio")
-    env = repo.create_environment(db, nome=nome, modelo_telefone=modelo)
+    try:
+        env = repo.create_environment(db, nome=nome, modelo_telefone=modelo, servicos=payload.servicos)
+    except servicos_mod.ServicosInvalidos as exc:
+        raise HTTPException(422, str(exc)) from exc
     db.commit()
     log.info("environment_created", env_id=env.id, modelo=modelo)
     return _env_summary(env, [])
@@ -639,6 +675,7 @@ def environment_detail(
         "id": env.id,
         "nome": env.nome,
         "modelo_telefone": env.modelo_telefone,
+        "servicos": servicos_mod.servicos_de(env),
         "config_padrao": repo.merged_config_padrao(env),
         "criado_em": iso_utc(env.created_at),
         "atualizado_em": iso_utc(env.updated_at),
@@ -664,7 +701,7 @@ def update_environment(
     repo.update_environment(
         db, env, nome=payload.nome, config_padrao=payload.config_padrao,
     )
-    if payload.config_padrao is not None:
+    if payload.config_padrao is not None and servicos_mod.tem_telefone(env):
         # Recusa aqui, com a mensagem, o que quebraria a planilha depois
         # (hotline ligada sem numero, `;` no NTP...). Nada foi commitado ainda.
         try:
@@ -703,9 +740,100 @@ def save_lines(
     env = repo.get_environment(db, env_id)
     if env is None:
         raise HTTPException(404, "ambiente nao encontrado")
+    if not servicos_mod.tem_telefone(env):
+        raise HTTPException(409, "o ambiente não tem o serviço telefone ligado")
     repo.save_lines(db, env, payload.linhas)
     db.commit()
     return environment_detail(env_id, _user=_user, db=db)
+
+
+@router.put(
+    "/environments/{env_id}/servicos",
+    dependencies=[Depends(require_csrf), Depends(require_admin)],
+)
+def update_servicos(
+    env_id: str,
+    payload: ServicosIn,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Liga/desliga telefone, DVR e câmera no ambiente. Desligar DVR/câmera só esconde
+    e pausa; desligar telefone com ramal é recusado (409)."""
+    env = repo.get_environment(db, env_id)
+    if env is None:
+        raise HTTPException(404, "ambiente nao encontrado")
+    modelo = (payload.modelo_telefone or "").strip() or None
+    try:
+        repo.definir_servicos(db, env, payload.servicos, modelo_telefone=modelo)
+    except servicos_mod.ServicosInvalidos as exc:
+        db.rollback()
+        raise HTTPException(422, str(exc)) from exc
+    except repo.ServicoRecusado as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    db.commit()
+    log.info(
+        "environment_servicos",
+        env_id=env_id, servicos=servicos_mod.servicos_de(env), operador=user.username,
+    )
+    return _env_summary(env, repo.list_lines(db, env_id), planilha_cftv.contagens(db).get(env_id))
+
+
+def _equipamentos_do_ambiente(db: DBSession, env: ExtensionEnvironment) -> dict[str, Any]:
+    return {
+        **planilha_cftv.linhas(db, env.id),
+        "servicos": servicos_mod.servicos_de(env),
+        "adaptadores": planilha_cftv.adaptadores_aceitos(db),
+    }
+
+
+@router.get("/environments/{env_id}/equipamentos")
+def environment_equipamentos(
+    env_id: str,
+    _user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> dict[str, Any]:
+    """As abas DVR e Câmeras do ambiente. A senha nunca volta (só ``senhaGuardada``)."""
+    env = repo.get_environment(db, env_id)
+    if env is None:
+        raise HTTPException(404, "ambiente nao encontrado")
+    return _equipamentos_do_ambiente(db, env)
+
+
+@router.put(
+    "/environments/{env_id}/equipamentos",
+    dependencies=[Depends(require_csrf), Depends(require_admin)],
+)
+def save_equipamentos(
+    env_id: str,
+    payload: EquipamentosIn,
+    user: User = Depends(get_current_user),
+    db: DBSession = Depends(get_session),
+) -> dict[str, Any]:
+    """Grava as abas DVR/Câmeras na lista de equipamentos (só o cadastro do agente —
+    nada é escrito no DVR nem na câmera). Aba de serviço desligado é recusada."""
+    env = repo.get_environment(db, env_id)
+    if env is None:
+        raise HTTPException(404, "ambiente nao encontrado")
+    ligados = servicos_mod.servicos_de(env)
+    pedido = payload.model_dump()
+    for aba in ("dvr", "camera"):
+        if pedido.get(aba) is not None and aba not in ligados:
+            raise HTTPException(409, f"o serviço {aba} não está ligado neste ambiente")
+    try:
+        gravacao = planilha_cftv.gravar(db, env, pedido, datetime.now(UTC).replace(tzinfo=None))
+    except planilha_cftv.LinhaInvalida as exc:
+        db.rollback()
+        raise HTTPException(422, exc.como_dict()) from exc
+    db.commit()
+    log.info(
+        "environment_equipamentos",
+        env_id=env_id,
+        criados=gravacao.criados,
+        removidos=gravacao.removidos,
+        operador=user.username,
+    )
+    return _equipamentos_do_ambiente(db, env)
 
 
 @router.post(

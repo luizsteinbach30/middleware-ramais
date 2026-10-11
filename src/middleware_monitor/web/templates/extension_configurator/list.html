@@ -72,7 +72,15 @@
       <input id="ec-new-nome" placeholder="Ex: Unidade 03"
              class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"/>
     </label>
-    <label class="flex flex-col gap-1 text-xs">
+    <fieldset class="flex flex-col gap-1 text-xs">
+      <span class="text-gray-300">Serviços</span>
+      <div class="flex items-center gap-3 text-gray-200">
+        <label class="inline-flex items-center gap-1.5"><input type="checkbox" data-novo-servico="telefone" checked> 📞 Telefone</label>
+        <label class="inline-flex items-center gap-1.5"><input type="checkbox" data-novo-servico="dvr"> 📼 DVR</label>
+        <label class="inline-flex items-center gap-1.5"><input type="checkbox" data-novo-servico="camera"> 📷 Câmeras</label>
+      </div>
+    </fieldset>
+    <label id="ec-new-modelo-wrap" class="flex flex-col gap-1 text-xs">
       <span class="text-gray-300">Modelo do telefone</span>
       <select id="ec-new-modelo"
               class="bg-gray-800 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100"></select>

@@ -30,12 +30,18 @@ from sqlalchemy.orm import Session as DBSession
 
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import ExtensionEnvironment, ExtensionLine
+from middleware_monitor.domain.equipamentos import modulos
 from middleware_monitor.domain.noc import executor
 from middleware_monitor.domain.uscall import repository as uscall_repo
 from middleware_monitor.domain.uscall import saude as uscall_saude
 from middleware_monitor.version import __version__
 
 VERSAO_DO_CONTRATO = 1
+
+# Os módulos (CONTRATO §13.1 e §13.8) vêm de ``domain/equipamentos/modulos.py``:
+# o que esta versão sabe (``CATALOGO``, com ``homologado``) e o que este agente
+# aceitou (``aceito``, ``aceitoEm``, ``aceitoPor``). Ligar ou desligar um módulo
+# muda o corpo e, portanto, o sha256 — o NOC relê o manifesto no heartbeat seguinte.
 
 log = get_logger("noc.manifesto")
 
@@ -46,6 +52,11 @@ def nome_da_maquina() -> str:
 
 def sistema() -> str:
     return platform.system().lower() or "desconhecido"
+
+
+# ``equipamentos.ambiente``: ``ambientes[].servicos`` no retrato, ``ambiente`` no
+# equipamento e no ``para`` do ``definir_equipamentos``.
+CAPACIDADES: tuple[str, ...] = ("equipamentos.ambiente",)
 
 
 def _capacidades_do_modelo(modelo: str) -> list[str]:
@@ -77,10 +88,14 @@ def montar(db: DBSession) -> dict[str, Any]:
         "sistema": sistema(),
         "executorRemoto": True,
         "acoes": sorted(executor.ACOES),
+        "modulos": modulos.listar(db),
         "ultimoBackupEm": ultimo_backup_em(),
+        # O que o NOC só usa se este agente declarar (CONTRATO §13.11).
+        "capacidades": list(CAPACIDADES),
         "modelos": [
             {"modelo": modelo, "quantidade": int(qtd), "acoesDoAdapter": _capacidades_do_modelo(modelo)}
             for modelo, qtd in linhas
+            if modelo  # "" = ambiente sem o serviço telefone
         ],
         "uscall": [
             {"nome": s.nome, "endereco": s.host, "alcancavel": uscall_saude.alcancavel(s.nome)}

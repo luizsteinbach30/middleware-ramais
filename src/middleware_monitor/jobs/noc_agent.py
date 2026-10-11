@@ -27,6 +27,7 @@ from typing import Any
 from middleware_monitor.core.db import session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.scheduler import add_interval_job, get_scheduler, remove_job, reschedule
+from middleware_monitor.domain.equipamentos import lista as equipamentos
 from middleware_monitor.domain.mqtt.service import get_ingestor
 from middleware_monitor.domain.noc import certificado, cliente, estado, executor, manifesto, telemetria
 
@@ -252,11 +253,20 @@ async def run_noc_telemetria() -> int:
         with session_factory() as db:
             if estado.carregar(db).telemetria_detalhe:
                 log.info("noc_telemetria_voltou")
+            entregue = datetime.now(UTC).replace(tzinfo=None).isoformat()
+            retratos: dict[str, str | None] = {}
+            if "equipamentos" in lote:
+                # O hash só vale depois do 202: é ele que diz "o NOC já tem isto".
+                retratos = {
+                    estado.KEY_EQUIPAMENTOS_SHA: equipamentos.sha256_do_retrato(lote["equipamentos"]),
+                    estado.KEY_EQUIPAMENTOS_EM: entregue,
+                }
             estado.gravar(
                 db,
                 {
                     **{estado.CURSORES[nome]: str(valor) for nome, valor in novos.items()},
-                    estado.KEY_TELEMETRIA_EM: datetime.now(UTC).replace(tzinfo=None).isoformat(),
+                    **retratos,
+                    estado.KEY_TELEMETRIA_EM: entregue,
                     estado.KEY_TELEMETRIA_DETALHE: None,
                 },
             )

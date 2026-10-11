@@ -122,6 +122,12 @@ def test_lista_de_permissao_e_fechada_e_nao_tem_rede() -> None:
         "editar_config_do_ambiente",
         # Item 14 e ADR 0007: tunel de acesso web; destino conferido em domain/noc/tunel.py.
         "abrir_acesso_web",
+        # Expansao do NOC, Plano 0: a lista e gravada no agente, nunca no equipamento
+        # (tests/api/test_noc_equipamentos.py).
+        "verificar_equipamento",
+        "definir_equipamentos",
+        # Plano 1: os módulos aceitos são configuração deste agente (tests/api/test_noc_modulos.py).
+        "definir_modulos",
     }
     assert "set_ip" not in executor.ACOES
     assert "send_config" not in executor.ACOES

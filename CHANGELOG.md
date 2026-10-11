@@ -2,16 +2,32 @@
 
 Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
-## [2.16.2] — 2026-09-30
+## [Não lançado]
+
+## [2.17.0] — 2026-10-11
+
+### Added
+
+- **Serviços do ambiente** (NOC 1.4.0, AGENTE-NOC item 27): o ambiente liga Telefone, DVR e Câmeras. Cada serviço
+  ligado vira uma aba na tela do ambiente; DVR e Câmeras usam a mesma planilha dos ramais e gravam na lista de
+  equipamentos do agente (só o cadastro — nada é escrito no DVR nem na câmera). Desligar DVR/Câmeras esconde a aba
+  e pausa as verificações; o telefone só desliga sem ramal. Lista de ambientes com ícone e contagem por serviço.
+- **Contrato `equipamentos.ambiente`** (CONTRATO §13.11): `ambientes[].servicos` no retrato; `ambiente`, `canais`
+  e `canal` em cada equipamento e no `para` do `definir_equipamentos` (ausente = mantém; o `de` só compara a chave
+  quando vem); a capacidade no manifesto. Migration `0017_ambiente_servicos`.
 
 ### Fixed
 
+- **A poda diária travava o processo** (00:30): `extension_status_events.message_id` aponta para `mqtt_messages` com
+  `ON DELETE SET NULL`, sem índice — cada mensagem MQTT apagada varria a tabela de eventos inteira, e com o job
+  síncrono no loop a interface e os outros jobs paravam junto (na homologação, mais de 30 min). Migration
+  `0018_indice_message_id` cria o índice; medido numa cópia do banco: a poda inteira passou a levar 2,0 s.
 - **O NOC acha o ramal pelo nome visível da planilha**: quando a coluna "ramal" guarda o usuário SIP com o
   prefixo do servidor (`assaisp01-27611`) e o NOC pede o número (`27611`), as tarefas de escrita
   (normalizar, reaplicar) e o IP do ping procuram primeiro o ramal exato e, sem ele, a linha cujo **nome
   visível** é o número. Antes, o ping e o registro achavam o ramal pelo inventário e o normalizar respondia
   "não está cadastrado em nenhum ambiente". Continua valendo uma linha só: nome visível repetido em dois
-  ambientes é recusado, como o ramal repetido.
+  ambientes é recusado, como o ramal repetido. (Era a 2.16.2, que não chegou a ser publicada.)
 
 ## [2.16.1] — 2026-09-27
 

@@ -702,7 +702,8 @@ async function reload() {
   isHtek = String(modeloTelefone).toLowerCase().startsWith("htek");
   envNome = env.nome || '';
   $('#ec-title').textContent = env.nome;
-  $('#ec-subtitle').textContent = `${modeloTelefone} · ${env.linhas.length} ${env.linhas.length === 1 ? 'ramal' : 'ramais'}`;
+  // Sem o serviço telefone o subtítulo é dos outros serviços (extension_configurator_servicos.js).
+  if (modeloTelefone) $('#ec-subtitle').textContent = `${modeloTelefone} · ${env.linhas.length} ${env.linhas.length === 1 ? 'ramal' : 'ramais'}`;
   $('#ec-config-link').href = `/extension-configurator/environments/${encodeURIComponent(envId)}/config`;
   await loadCapabilities();  // antes do buildSheet: a coluna ⋮ depende das capabilities
   renderStatusPills(env.linhas);

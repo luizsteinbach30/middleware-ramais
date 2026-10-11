@@ -49,6 +49,7 @@ from middleware_monitor.domain.extension_configurator import time_settings
 from middleware_monitor.domain.extension_configurator.defaults import CHAVES_SECRETAS
 from middleware_monitor.domain.extension_configurator.repository import merged_config_padrao, senha_sip_de
 from middleware_monitor.domain.extension_configurator.service import compute_statuses, status_resumo
+from middleware_monitor.domain.extension_configurator.servicos import servicos_de
 from middleware_monitor.domain.extension_configurator.softkeys import softkey_catalog_for
 from middleware_monitor.domain.mqtt.coverage import UP_STATES, compute_coverage
 
@@ -185,11 +186,15 @@ def ambientes(db: DBSession) -> list[dict[str, Any]]:
             contagem[s] = contagem.get(s, 0) + 1
         cfg = merged_config_padrao(env)
         hora = time_settings.resolve(cfg)
+        servicos = servicos_de(env)
+        telefone = "telefone" in servicos
         retrato.append(
             {
                 "id": env.id,
                 "nome": env.nome,
-                "modelo": env.modelo_telefone,
+                # Sem o serviço telefone o ambiente não tem modelo (CONTRATO §13.11).
+                "modelo": env.modelo_telefone if telefone and env.modelo_telefone else None,
+                "servicos": servicos,
                 "ramais": len(linhas),
                 "vinculados": sum(1 for ln in linhas if ln.device_id is not None),
                 "situacao": status_resumo(linhas)["agregado"],
@@ -204,7 +209,7 @@ def ambientes(db: DBSession) -> list[dict[str, Any]]:
                     "origemFuso": hora.origem_tz,
                     "origemNtp": hora.origem_ntp,
                 },
-                "secoes": secoes_do_modelo(env.modelo_telefone),
+                "secoes": secoes_do_modelo(env.modelo_telefone) if telefone else [],
                 "linhas": [
                     {
                         # O número da linha, 1..N na ordem da planilha: o mesmo do executor (ADR 0012).

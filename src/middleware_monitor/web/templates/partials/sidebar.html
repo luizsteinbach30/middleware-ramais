@@ -36,51 +36,122 @@
       </button>
     </div>
   </div>
-  <nav class="flex-1 px-3 py-4 space-y-1 overflow-auto" data-current="{{ page }}">
-    {% set NAV = [
-      ('dashboard',   'Dashboard',     '/',              'home'),
-      ('devices',     'Devices',       '/devices',       'phone'),
-      ('collections', 'Coletas',       '/collections',   'database'),
-      ('logs',        'Logs',          '/logs',          'terminal'),
-      ('config',      'Configuração',  '/config',        'settings'),
-      ('system_updates','Atualizações','/system/updates','package'),
-      ('system_backup','Backup',       '/system/backup', 'shield'),
-      ('system_noc',  'NOC',           '/system/noc',    'activity'),
-    ] %}
-    {% for id, label, href, icon in NAV %}
-    <a href="{{ href }}" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if page == id or (page == 'device_detail' and id == 'devices') %}bg-blue-500/10 text-blue-300 ring-1 ring-blue-500/30{% else %}text-gray-400 hover:text-gray-100 hover:bg-gray-800/60{% endif %}">
-      {% include "partials/icon.html" with context %}{# icon variable in scope from parent #}
-      <span data-icon="{{ icon }}"></span><span class="sb-label">{{ label }}</span>
-    </a>
-    {% endfor %}
 
-    <div class="pt-4 mt-2 border-t border-gray-800/80">
-      <div class="sb-hide-collapsed px-3 pb-1.5 text-[10px] tracking-wider uppercase text-gray-500">Configurador de Ramais</div>
-      {% set CR_NAV = [
-        ('ec_environments', 'Ambientes',  '/extension-configurator/environments', 'grid'),
-        ('ec_runs',         'Relatórios', '/extension-configurator/runs',         'bar-chart'),
-      ] %}
-      {% for id, label, href, icon in CR_NAV %}
-      <a href="{{ href }}" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if page == id or (page == 'ec_environment_detail' and id == 'ec_environments') or (page == 'ec_environment_config' and id == 'ec_environments') or (page == 'ec_run_detail' and id == 'ec_runs') %}bg-blue-500/10 text-blue-300 ring-1 ring-blue-500/30{% else %}text-gray-400 hover:text-gray-100 hover:bg-gray-800/60{% endif %}">
-        <span data-icon="{{ icon }}"></span><span class="sb-label">{{ label }}</span>
-      </a>
-      {% endfor %}
-    </div>
+  {#- Menu em árvore (expansão do NOC). Os ramos Telefonia e Equipamentos, e as
+      frentes, seguem os módulos aceitos e o que há cadastrado: o servidor já
+      manda certo (``menu`` no contexto) e o JS relê de /api/menu quando um
+      módulo muda (components/menu.js). Telefonia desligada só some DAQUI: as
+      páginas continuam abrindo pela URL e a coleta segue. -#}
+  {%- set M = menu or {"telefonia": true, "equipamentos": false, "frentes": {}, "contagem": {}} -%}
+  {%- set F = frente if frente is defined else none -%}
+  {%- set ATIVOS = {
+      "dashboard": page == "dashboard",
+      "collections": page == "collections",
+      "devices": page in ("devices", "device_detail"),
+      "ec_environments": page in ("extension_configurator/list", "ec_environment_detail", "ec_environment_config"),
+      "ec_runs": page in ("extension_configurator/runs", "ec_run_detail"),
+      "mqtt_live": page == "mqtt_live",
+      "mqtt_calls": page == "mqtt_calls",
+      "mqtt_messages": page == "mqtt_messages",
+      "eq_todos": page in ("equipamentos", "equipamento_detalhe") and not F,
+      "eq_cftv": page in ("equipamentos", "equipamento_detalhe") and F == "cftv",
+      "eq_rede": page in ("equipamentos", "equipamento_detalhe") and F == "rede",
+      "eq_servidores": page in ("equipamentos", "equipamento_detalhe") and F == "servidores",
+      "eq_outros": page in ("equipamentos", "equipamento_detalhe") and F == "outros",
+      "config": page == "config",
+      "system_modulos": page == "system_modulos",
+      "system_noc": page == "system_noc",
+      "system_updates": page == "system_updates",
+      "system_backup": page == "system_backup",
+      "logs": page == "logs",
+  } -%}
 
-    <div class="pt-4 mt-2 border-t border-gray-800/80">
-      <div class="sb-hide-collapsed px-3 pb-1.5 text-[10px] tracking-wider uppercase text-gray-500">Coletor MQTT</div>
-      {% set MQTT_NAV = [
-        ('mqtt_live',     'Painel ao vivo', '/mqtt-painel',   'phone'),
-        ('mqtt_calls',    'Chamadas',       '/mqtt-chamadas', 'list'),
-        ('mqtt_messages', 'Mensagens',      '/mqtt-messages', 'activity'),
-      ] %}
-      {% for id, label, href, icon in MQTT_NAV %}
-      <a href="{{ href }}" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if page == id %}bg-blue-500/10 text-blue-300 ring-1 ring-blue-500/30{% else %}text-gray-400 hover:text-gray-100 hover:bg-gray-800/60{% endif %}">
-        <span data-icon="{{ icon }}"></span><span class="sb-label">{{ label }}</span>
-      </a>
+  {%- macro item(id, label, href, icon, attrs="") -%}
+  <a href="{{ href }}" {{ attrs|safe }} {% if ATIVOS[id] %}aria-current="page"{% endif %}
+     class="mm-item w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if ATIVOS[id] %}bg-blue-500/10 text-blue-300 ring-1 ring-blue-500/30{% else %}text-gray-400 hover:text-gray-100 hover:bg-gray-800/60{% endif %}">
+    <span data-icon="{{ icon }}"></span><span class="sb-label flex-1 min-w-0 truncate">{{ label }}</span>{{ caller() if caller else "" }}
+  </a>
+  {%- endmacro -%}
+
+  {%- macro ramo(id, label, icon, ativo, nivel=0, visivel=true, attrs="") -%}
+  <div class="mm-ramo{% if nivel %} mm-sub{% endif %}{% if ativo %} aberto{% endif %}" data-ramo="{{ id }}" {{ attrs|safe }} {% if not visivel %}hidden{% endif %}>
+    <button type="button" data-ramo-toggle aria-expanded="{{ 'true' if ativo else 'false' }}"
+            class="mm-ramo-cab w-full flex items-center gap-2 px-3 {% if nivel %}py-1.5 text-xs text-gray-400{% else %}py-2 text-[11px] tracking-wider uppercase font-semibold text-gray-500{% endif %} rounded-lg hover:text-gray-200 hover:bg-gray-800/40 transition-colors">
+      <span class="mm-seta" data-icon="chevron-r" data-size="12"></span>
+      {% if icon %}<span data-icon="{{ icon }}"></span>{% endif %}
+      <span class="flex-1 min-w-0 text-left truncate">{{ label }}</span>
+    </button>
+    <div class="mm-ramo-filhos"><div class="mm-ramo-dentro space-y-0.5 {% if nivel %}pl-3{% else %}pl-2{% endif %}">
+      {{ caller() }}
+    </div></div>
+  </div>
+  {%- endmacro -%}
+
+  {%- macro conta(chave) -%}
+  <span class="sb-label text-[10px] tabular-nums text-gray-600" data-contagem="{{ chave }}">{{ M.contagem.get(chave) or "" }}</span>
+  {%- endmacro -%}
+
+  <nav id="mm-menu" class="flex-1 px-3 py-4 space-y-1 overflow-auto mm-sem-animacao" data-current="{{ page }}" data-usuario="{{ user.username }}">
+    {% call ramo("visao", "Visão geral", none, ATIVOS.dashboard) %}
+      {{ item("dashboard", "Dashboard", "/", "home") }}
+    {% endcall %}
+
+    {% set ativo_cfg = ATIVOS.ec_environments or ATIVOS.ec_runs %}
+    {% set ativo_mqtt = ATIVOS.mqtt_live or ATIVOS.mqtt_calls or ATIVOS.mqtt_messages %}
+    {% call ramo("telefonia", "Telefonia", none, ATIVOS.collections or ATIVOS.devices or ativo_cfg or ativo_mqtt, visivel=M.telefonia, attrs='data-visivel="telefonia"') %}
+      {{ item("collections", "USCall", "/collections", "database") }}
+      {{ item("devices", "Devices", "/devices", "phone") }}
+      {% call ramo("configurador", "Configurador", "grid", ativo_cfg, nivel=1) %}
+        {{ item("ec_environments", "Ambientes", "/extension-configurator/environments", "grid") }}
+        {{ item("ec_runs", "Relatórios", "/extension-configurator/runs", "bar-chart") }}
+      {% endcall %}
+      {% call ramo("mqtt", "MQTT", "activity", ativo_mqtt, nivel=1) %}
+        {{ item("mqtt_live", "Painel ao vivo", "/mqtt-painel", "phone") }}
+        {{ item("mqtt_calls", "Chamadas", "/mqtt-chamadas", "list") }}
+        {{ item("mqtt_messages", "Mensagens", "/mqtt-messages", "activity") }}
+      {% endcall %}
+    {% endcall %}
+
+    {% set ativo_eq = page in ("equipamentos", "equipamento_detalhe") %}
+    {% call ramo("equipamentos", "Equipamentos", none, ativo_eq, visivel=M.equipamentos, attrs='data-visivel="equipamentos"') %}
+      {% call item("eq_todos", "Todos", "/equipamentos", "server") %}{{ conta("total") }}{% endcall %}
+      {% for f, rotulo, icone in [("cftv", "CFTV", "camera"), ("rede", "Rede", "share"), ("servidores", "Servidores", "server"), ("outros", "Outros", "package")] %}
+        {% call item("eq_" ~ f, rotulo, "/equipamentos?frente=" ~ f, icone, 'data-frente="' ~ f ~ '"' ~ ('' if (M.frentes.get(f) or ATIVOS["eq_" ~ f]) else ' hidden')) %}{{ conta(f) }}{% endcall %}
       {% endfor %}
-    </div>
+    {% endcall %}
+
+    {% set ativo_sis = ATIVOS.config or ATIVOS.system_modulos or ATIVOS.system_noc or ATIVOS.system_updates or ATIVOS.system_backup or ATIVOS.logs %}
+    {% call ramo("sistema", "Sistema", none, ativo_sis) %}
+      {{ item("config", "Configuração", "/config", "settings") }}
+      {{ item("system_modulos", "Módulos", "/system/modulos", "toggle") }}
+      {{ item("system_noc", "NOC", "/system/noc", "activity") }}
+      {{ item("system_updates", "Atualizações", "/system/updates", "package") }}
+      {{ item("system_backup", "Backup", "/system/backup", "shield") }}
+      {{ item("logs", "Logs", "/logs", "terminal") }}
+    {% endcall %}
   </nav>
+  <script>
+    // Ramos abertos, por usuário, ANTES do primeiro paint (senão o menu abre
+    // fechado e "pula"). O ramo da página atual já vem aberto do servidor.
+    // Sem nada guardado, os ramos de cima começam abertos.
+    (function () {
+      var nav = document.getElementById('mm-menu');
+      if (!nav) return;
+      var abertos = null;
+      try {
+        var bruto = localStorage.getItem('mm.menu.' + nav.dataset.usuario);
+        if (bruto) abertos = JSON.parse(bruto);
+      } catch (_e) { /* localStorage bloqueado ou lixo: segue o padrão */ }
+      var ramos = nav.querySelectorAll('.mm-ramo');
+      for (var i = 0; i < ramos.length; i++) {
+        var r = ramos[i];
+        var abrir = Array.isArray(abertos) ? abertos.indexOf(r.dataset.ramo) >= 0 : !r.classList.contains('mm-sub');
+        if (abrir) r.classList.add('aberto');
+        var cab = r.querySelector(':scope > [data-ramo-toggle]');
+        if (cab) cab.setAttribute('aria-expanded', String(r.classList.contains('aberto')));
+      }
+    })();
+  </script>
   <div class="px-3 py-3 border-t border-gray-800 space-y-1">
     <a href="/account" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors {% if page == 'account' %}bg-blue-500/10 text-blue-300{% else %}text-gray-400 hover:text-gray-100 hover:bg-gray-800/60{% endif %}">
       <span data-icon="user"></span>

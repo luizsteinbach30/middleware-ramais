@@ -13,8 +13,10 @@ from sqlalchemy.orm import Session as DBSession
 from middleware_monitor.core.db import get_engine, session_factory
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.core.models import (
+    AmostraDeVerificacao,
     Collection,
     DevicePing,
+    EventoDeEquipamento,
     ExtensionCall,
     ExtensionDailyStat,
     LoginAttempt,
@@ -132,6 +134,12 @@ async def run_retention() -> None:
         i = mqtt_realtime.purge_status_events(db, cutoff_ext_events)
         j = _delete_count(db, delete(ExtensionCall).where(ExtensionCall.started_at < cutoff_chamadas))
         k = _delete_count(db, delete(ExtensionDailyStat).where(ExtensionDailyStat.dia < corte_resumo))
+        # Equipamentos (expansao do NOC): a amostra segue a regra do ping dos
+        # ramais; o evento e raro e e o historico de quedas, fica um ano.
+        m = _delete_count(db, delete(AmostraDeVerificacao).where(AmostraDeVerificacao.em < cutoff_pings))
+        n = _delete_count(
+            db, delete(EventoDeEquipamento).where(EventoDeEquipamento.em < _now() - timedelta(days=365))
+        )
         db.commit()
 
     # A poda muda de uma vez os dois números que a tela de config mostra.
@@ -148,6 +156,8 @@ async def run_retention() -> None:
         extension_status_events=i,
         extension_calls=j,
         extension_daily_stats=k,
+        equipamento_amostras=m,
+        equipamento_eventos=n,
     )
 
     # Depois de apagar, e não antes: o espaço a recuperar é justamente o que a

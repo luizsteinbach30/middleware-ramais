@@ -361,6 +361,32 @@
     0%   { background: rgba(96, 165, 250, 0.35); }
     100% { background: rgba(59, 130, 246, 0.10); }
   }
+
+  /* Serviços do ambiente (chips) e abas Telefones / DVR / Câmeras */
+  .ec-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 28px; padding: 0 11px; border-radius: 999px;
+    font-size: 12px; font-weight: 500; cursor: pointer; user-select: none;
+    color: #9ca3af; background: rgba(31, 41, 55, 0.6);
+    box-shadow: inset 0 0 0 1px #374151; transition: all .15s;
+  }
+  .ec-chip:hover { color: #e5e7eb; }
+  .ec-chip[aria-pressed="true"] {
+    color: #bfdbfe; background: rgba(59, 130, 246, 0.15); box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.45);
+  }
+  .ec-chip[aria-pressed="true"]::before { content: "✓"; font-size: 11px; }
+  .ec-chip:disabled { opacity: .5; cursor: wait; }
+  .ec-tab {
+    height: 30px; padding: 0 14px; font-size: 12.5px; font-weight: 500; color: #9ca3af;
+    border-bottom: 2px solid transparent; transition: color .15s, border-color .15s;
+  }
+  .ec-tab:hover { color: #e5e7eb; }
+  .ec-tab[aria-selected="true"] { color: #f3f4f6; border-bottom-color: #3b82f6; }
+  .ec-tab .ec-tab-count { margin-left: 6px; font-size: 11px; color: #6b7280; font-variant-numeric: tabular-nums; }
+  .ec-cftv-estado-no_ar { color: #4ade80; }
+  .ec-cftv-estado-fora { color: #f87171; }
+  .ec-cftv-estado-degradado { color: #fbbf24; }
+  .ec-cftv-estado-pausada, .ec-cftv-estado-desconhecido { color: #9ca3af; }
 </style>
 
 <div class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-20">
@@ -387,6 +413,64 @@
   </div>
 </div>
 
+<!-- Serviços do ambiente: cada um liga a sua aba. Desligar DVR/Câmeras esconde a
+     aba e pausa as verificações (nada é apagado); o telefone só desliga sem ramal. -->
+<div class="px-6 pt-3 border-b border-gray-800/70 bg-gray-900/40">
+  <div class="flex items-center gap-3 flex-wrap pb-2">
+    <span class="ec-group-label">Serviços</span>
+    <div id="ec-servicos" class="flex items-center gap-2">
+      <button type="button" class="ec-chip" data-servico="telefone" aria-pressed="false">Telefone</button>
+      <button type="button" class="ec-chip" data-servico="dvr" aria-pressed="false">DVR</button>
+      <button type="button" class="ec-chip" data-servico="camera" aria-pressed="false">Câmeras</button>
+    </div>
+  </div>
+  <nav id="ec-abas" class="flex items-end gap-1 -mb-px" role="tablist">
+    <button type="button" role="tab" class="ec-tab hidden" data-aba="telefone" aria-selected="false">Telefones<span class="ec-tab-count" data-conta="telefone"></span></button>
+    <button type="button" role="tab" class="ec-tab hidden" data-aba="dvr" aria-selected="false">DVR<span class="ec-tab-count" data-conta="dvr"></span></button>
+    <button type="button" role="tab" class="ec-tab hidden" data-aba="camera" aria-selected="false">Câmeras<span class="ec-tab-count" data-conta="camera"></span></button>
+  </nav>
+</div>
+
+<!-- Modal: escolher o modelo ao ligar o telefone num ambiente que não tinha -->
+<div id="ec-modelo-modal" class="hidden fixed inset-0 bg-black/60 z-30 flex items-center justify-center p-4">
+  <div class="bg-gray-900 ring-1 ring-gray-700 rounded-xl p-5 w-full max-w-md space-y-3">
+    <h3 class="text-sm font-semibold text-gray-100">Ligar o serviço Telefone</h3>
+    <p class="text-xs text-gray-400">Escolha o modelo dos telefones deste ambiente.</p>
+    <select id="ec-modelo-select" class="w-full rounded-lg bg-gray-800 ring-1 ring-inset ring-gray-700 px-3 py-2 text-sm text-gray-100"></select>
+    <div class="flex justify-end gap-2">
+      <button id="ec-modelo-cancel" class="text-xs text-gray-400 hover:text-gray-200 px-3 py-1.5">Cancelar</button>
+      <button id="ec-modelo-confirm" class="inline-flex items-center gap-2 rounded-lg font-medium bg-blue-500 hover:bg-blue-400 text-white px-3 py-1.5 text-xs">Ligar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Abas DVR e Câmeras: a mesma planilha, com as colunas de cada serviço. Grava só
+     o cadastro deste agente — nada é escrito no DVR nem na câmera. -->
+<div id="ec-aba-cftv" class="hidden">
+  <div class="px-6 py-3 border-b border-gray-800/70 bg-gray-900/40">
+    <div class="ec-toolbar">
+      <div class="ec-group">
+        <span class="ec-group-label" id="ec-cftv-rotulo">DVR</span>
+        <div class="ec-group-items">
+          <button id="ec-cftv-save" class="ec-btn ec-btn-primary" title="Gravar a planilha na lista de equipamentos deste agente">💾 Salvar</button>
+          <button id="ec-cftv-add" class="ec-btn" title="Nova linha no fim da planilha">＋ Linha</button>
+          <button id="ec-cftv-del" class="ec-btn ec-btn-warn" title="Remover a linha selecionada (vale ao salvar)">− Remover linha</button>
+          <button id="ec-cftv-reload" class="ec-btn" title="Descartar o que não foi salvo e recarregar">↻ Recarregar</button>
+        </div>
+      </div>
+      <span id="ec-cftv-status" class="text-[11px] font-medium text-gray-500 self-center"></span>
+    </div>
+    <div id="ec-cftv-aviso" class="hidden mt-3 rounded-lg ring-1 ring-inset ring-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200 w-fit"></div>
+    <p id="ec-cftv-ajuda" class="mt-2 text-[11px] text-gray-500 max-w-4xl"></p>
+  </div>
+  <div class="px-6 py-4">
+    <div class="ec-spreadsheet-wrap">
+      <div id="ec-cftv-sheet" class="ec-spreadsheet"></div>
+    </div>
+  </div>
+</div>
+
+<div id="ec-aba-telefone">
 <!-- Barra de ferramentas: grupos por finalidade, da esquerda (preparar) para a
      direita (executar nos telefones). Todos os controles usam .ec-btn. -->
 <div class="px-6 py-3 border-b border-gray-800/70 bg-gray-900/40">
@@ -518,6 +602,7 @@
     <div id="ec-action-run-rows" class="max-h-64 overflow-auto text-xs"></div>
   </div>
 </div>
+</div><!-- /ec-aba-telefone -->
 
 <!-- Modal Duplicar -->
 <div id="ec-dup-modal" class="hidden fixed inset-0 bg-black/60 z-30 flex items-center justify-center p-4">
@@ -579,4 +664,5 @@
 <script src="/static/vendor/jspreadsheet/jsuites.js"></script>
 <script src="/static/vendor/jspreadsheet/index.min.js"></script>
 <script type="module" src="/static/js/pages/extension_configurator_detail.js"></script>
+<script type="module" src="/static/js/pages/extension_configurator_servicos.js"></script>
 {% endblock %}

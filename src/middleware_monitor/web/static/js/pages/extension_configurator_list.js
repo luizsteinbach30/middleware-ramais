@@ -59,6 +59,14 @@ function envCard(e) {
     ? `${e.devices_vinculados}/${e.telefones} devices vinculados`
     : `nenhum device vinculado`;
   const ramaisLabel = `${e.telefones} ${e.telefones === 1 ? 'ramal' : 'ramais'}`;
+  // Os serviços do ambiente, com ícone e contagem; sem telefone não há modelo.
+  const servicos = e.servicos || ['telefone'];
+  const temTelefone = servicos.includes('telefone');
+  const partes = [];
+  if (temTelefone) partes.push(`📞 ${esc(e.modelo_telefone)} · ${ramaisLabel}`);
+  if (servicos.includes('dvr')) partes.push(`📼 ${e.dvrs || 0} DVR`);
+  if (servicos.includes('camera')) partes.push(`📷 ${e.cameras || 0} ${(e.cameras || 0) === 1 ? 'câmera' : 'câmeras'}`);
+  const resumo = partes.join(' · ');
   const isSel = selectedEnvs.has(e.id);
   // Realce do card selecionado: borda azul + fundo levemente azul + leve elevação.
   const shell = isSel
@@ -73,8 +81,8 @@ function envCard(e) {
       <a href="/extension-configurator/environments/${encodeURIComponent(e.id)}"
          class="block p-4">
         <h3 class="text-sm font-semibold text-gray-100 truncate pr-24">${esc(e.nome)}</h3>
-        <p class="text-xs text-gray-400 mt-1 truncate pr-2">${esc(e.modelo_telefone)} · ${ramaisLabel}</p>
-        <div class="mt-2 flex items-center gap-2 flex-wrap">
+        <p class="text-xs text-gray-400 mt-1 truncate pr-2" title="${resumo}">${resumo}</p>
+        <div class="mt-2 flex items-center gap-2 flex-wrap ${temTelefone ? '' : 'hidden'}">
           ${statusPill(e.status_resumo)}
           <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium ring-1 ring-inset bg-${vincTone}-500/15 text-${vincTone}-400 ring-${vincTone}-500/30">
             <span class="w-1.5 h-1.5 rounded-full bg-${vincTone}-400"></span>${vincLabel}
@@ -198,21 +206,29 @@ function openModal() {
 function closeModal() { $('#ec-modal').classList.add('hidden'); }
 
 $('#ec-new').addEventListener('click', openModal);
+// O modelo só faz sentido com o serviço telefone.
+document.querySelector('[data-novo-servico="telefone"]').addEventListener('change', (ev) => {
+  $('#ec-new-modelo-wrap').classList.toggle('hidden', !ev.target.checked);
+});
 $('#ec-modal-cancel').addEventListener('click', closeModal);
 $('#ec-modal').addEventListener('click', (e) => { if (e.target.id === 'ec-modal') closeModal(); });
 $('#ec-modal-create').addEventListener('click', async () => {
   const nome = $('#ec-new-nome').value.trim();
   const modelo = $('#ec-new-modelo').value;
+  const servicos = [...document.querySelectorAll('[data-novo-servico]')]
+    .filter((c) => c.checked).map((c) => c.dataset.novoServico);
   if (!nome) { toast.error('Nome obrigatório'); return; }
+  if (!servicos.length) { toast.error('Escolha pelo menos um serviço'); return; }
   try {
     const env = await api('/api/extension-configurator/environments', {
-      method: 'POST', body: { nome, modelo_telefone: modelo },
+      method: 'POST', body: { nome, modelo_telefone: modelo, servicos },
     });
     closeModal();
-    // Recém-criado: config padrão primeiro; `novo=1` faz o Salvar de lá seguir
-    // direto para a planilha de ramais.
-    location.href =
-      `/extension-configurator/environments/${encodeURIComponent(env.id)}/config?novo=1`;
+    // Recém-criado com telefone: config padrão primeiro; `novo=1` faz o Salvar de
+    // lá seguir direto para a planilha de ramais. Sem telefone, direto às abas.
+    location.href = servicos.includes('telefone')
+      ? `/extension-configurator/environments/${encodeURIComponent(env.id)}/config?novo=1`
+      : `/extension-configurator/environments/${encodeURIComponent(env.id)}#${servicos[0]}`;
   } catch (err) {
     toast.error('Erro: ' + err.message);
   }

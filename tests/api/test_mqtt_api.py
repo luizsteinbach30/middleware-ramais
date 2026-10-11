@@ -283,10 +283,12 @@ def test_tela_de_mensagens_renderiza_com_filtros_e_cobertura(client, db) -> None
 def test_menu_lateral_tem_a_entrada_do_coletor(client, db) -> None:
     _authed(client, db)
     html = client.get("/mqtt-messages").text
-    assert "Coletor MQTT" in html
+    # Menu em árvore (expansão do NOC): o coletor é o ramo MQTT dentro de Telefonia.
+    assert 'data-ramo="mqtt"' in html
     assert 'href="/mqtt-messages"' in html
-    # Fica depois do Configurador de Ramais, como pedido.
-    assert html.index("Configurador de Ramais") < html.index("Coletor MQTT")
+    # Fica depois do Configurador, como pedido, e os dois dentro de Telefonia.
+    posicoes = [html.index(f'data-ramo="{r}"') for r in ("telefonia", "configurador", "mqtt")]
+    assert posicoes == sorted(posicoes)
 
 
 def test_paginacao_para_tras_pelo_before_id(client, db) -> None:
