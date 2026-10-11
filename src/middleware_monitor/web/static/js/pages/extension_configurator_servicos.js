@@ -133,8 +133,12 @@ function fonteDeDvr() {
 
 function destruir() {
   const el = $('#ec-cftv-sheet');
+  // Só esta planilha. ``jspreadsheet.destroy(el, true)`` também tira os eventos do
+  // documento e zera o jspreadsheet da página inteira (CE 4.x: ``jexcel = null``): a
+  // planilha de telefones parava de responder e a próxima planilha de DVR/câmeras
+  // não nascia mais ("Cannot set properties of null (setting 'current')").
   if (sheet) {
-    try { jspreadsheet.destroy(el, true); } catch (_e) { /* versão sem destroy estático */ }
+    try { sheet.destroy(); } catch (_e) { /* já destruída */ }
   }
   sheet = null;
   el.innerHTML = '';
