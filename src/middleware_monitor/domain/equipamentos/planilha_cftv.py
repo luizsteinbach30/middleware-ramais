@@ -145,6 +145,8 @@ def contagens(db: DBSession) -> dict[str, dict[str, int]]:
             Equipamento.ambiente_id.is_not(None), Equipamento.tipo.in_(tuple(ABAS.values()))
         )
     ).all():
+        if amb is None:
+            continue
         aba = "dvr" if tipo == "gravador" else "camera"
         conta = saida.setdefault(amb, {"dvr": 0, "camera": 0})
         conta[aba] += 1
