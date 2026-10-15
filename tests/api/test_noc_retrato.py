@@ -17,6 +17,8 @@ import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
+
 from middleware_monitor.core.models import Device, MqttConnectionEvent, MqttMessage
 from middleware_monitor.domain.extension_configurator import repository as repo
 from middleware_monitor.domain.extension_configurator.defaults import CHAVES_SECRETAS, default_config_padrao
@@ -326,3 +328,28 @@ def test_conexoes_andam_por_cursor_e_comecam_24h_para_tras(db) -> None:
     lote2, novos2, _ = telemetria.montar_lote(db, cur_seguinte)
     assert lote2["conexoesMqtt"] == []
     assert novos2["conexoes"] == novos["conexoes"]
+
+
+
+@pytest.mark.parametrize(
+    ("modelo", "leva"),
+    [
+        ("HTEK UC902G", True),
+        ("Yealink T31G", True),
+        ("Intelbras TIP 125i", True),
+        ("Intelbras V5501", False),
+        ("Intelbras S3002", False),
+        ("FlyingVoice P10", False),
+    ],
+)
+def test_transporte_sip_so_vai_ao_noc_onde_o_modelo_grava(modelo, leva) -> None:
+    """Modelo que não grava não manda (CONTRATO-DO-AGENTE §8, ADR 0058 do NOC)."""
+    campos = {c["chave"]: c for c in retrato.config_para_o_noc(default_config_padrao(), modelo)}
+    assert ("sip_transport" in campos) is leva
+    if leva:
+        assert campos["sip_transport"] == {"chave": "sip_transport", "valor": "udp"}
+
+
+def test_sem_modelo_nao_vai_transporte() -> None:
+    campos = {c["chave"] for c in retrato.config_para_o_noc(default_config_padrao())}
+    assert "sip_transport" not in campos and "register_expiration" in campos

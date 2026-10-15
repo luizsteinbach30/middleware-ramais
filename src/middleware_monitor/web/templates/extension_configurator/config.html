@@ -32,6 +32,14 @@
         </select>
         <span id="cfg-sip_account-hint" class="text-[10px] text-gray-500"></span>
       </label>
+      <label id="cfg-sip_transport-campo" class="flex flex-col gap-1 hidden">
+        <span class="text-gray-300">Transporte SIP</span>
+        <select id="cfg-sip_transport" class="bg-gray-900 ring-1 ring-inset ring-gray-700 rounded-lg px-2 py-1.5 text-gray-100">
+          <option value="udp">UDP</option>
+          <option value="tcp">TCP</option>
+        </select>
+        <span class="text-[10px] text-gray-500">TCP só se o servidor SIP da loja escutar TCP; senão os telefones perdem o registro ao reaplicar. Teste num ramal antes.</span>
+      </label>
     </div>
     <p class="text-[11px] text-gray-500">O servidor SIP é informado por linha na coluna <strong>Servidor SIP</strong> da planilha — uma config aqui seria redundante.</p>
   </div>

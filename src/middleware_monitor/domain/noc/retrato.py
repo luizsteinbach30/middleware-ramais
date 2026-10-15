@@ -50,7 +50,7 @@ from middleware_monitor.domain.extension_configurator.defaults import CHAVES_SEC
 from middleware_monitor.domain.extension_configurator.repository import merged_config_padrao, senha_sip_de
 from middleware_monitor.domain.extension_configurator.service import compute_statuses, status_resumo
 from middleware_monitor.domain.extension_configurator.servicos import servicos_de
-from middleware_monitor.domain.extension_configurator.softkeys import softkey_catalog_for
+from middleware_monitor.domain.extension_configurator.softkeys import grava_transporte, softkey_catalog_for
 from middleware_monitor.domain.mqtt.coverage import UP_STATES, compute_coverage
 
 __all__ = [
@@ -78,6 +78,8 @@ def ordem_da_planilha(env: ExtensionEnvironment) -> list[ExtensionLine]:
 CONFIG_COM_VALOR: tuple[str, ...] = (
     "register_expiration",
     "sip_account",
+    # Só nos modelos cujo adapter grava o campo (``grava_transporte``; ADR 0058 do NOC).
+    "sip_transport",
     "timezone_mode",
     "timezone",
     "ntp_mode",
@@ -96,10 +98,14 @@ CONFIG_COM_VALOR: tuple[str, ...] = (
 # porque é metade da mesma credencial.
 CONFIG_SO_DEFINIDA: tuple[str, ...] = (*CHAVES_SECRETAS, "web_user", "nova_web_user")
 
-# Não saem. ``sip_server`` e ``sip_transport`` dizem para onde o aparelho registra —
-# para o aparelho é rede, e rede nunca viaja para ser editada de fora. Os idiomas
-# ficam fora até o TELAS §14 pedir: chave nova no espelho é decisão, não sobra.
-CONFIG_NAO_SAI: tuple[str, ...] = ("sip_server", "sip_transport", "web_language", "lcd_language")
+# Não saem. ``sip_server`` diz para onde o aparelho registra — e o servidor vem por linha
+# na planilha. Os idiomas ficam fora até o TELAS §14 pedir: chave nova no espelho é decisão,
+# não sobra. ``sip_transport`` saiu desta lista na 2.18.0 (solicitação #24 do NOC): não muda
+# endereço nem porta, e só viaja onde o adapter grava o campo.
+CONFIG_NAO_SAI: tuple[str, ...] = ("sip_server", "web_language", "lcd_language")
+
+# Chaves que dependem do modelo: "modelo que não grava não manda" (CONTRATO-DO-AGENTE §8).
+CONFIG_POR_MODELO = {"sip_transport": grava_transporte}
 
 # Seções de todo modelo; as outras dependem do catálogo do fabricante — o NOC não
 # oferece o que o aparelho não tem (TELAS §14).
@@ -137,13 +143,22 @@ def secoes_do_modelo(modelo: str) -> list[str]:
     return secoes
 
 
-def config_para_o_noc(cfg: dict[str, Any]) -> list[dict[str, Any]]:
+def chave_do_modelo(chave: str, modelo: str | None) -> bool:
+    """A chave vale para o modelo? As de ``CONFIG_POR_MODELO`` só onde o adapter grava."""
+    regra = CONFIG_POR_MODELO.get(chave)
+    return regra is None or (modelo is not None and regra(modelo))
+
+
+def config_para_o_noc(cfg: dict[str, Any], modelo: str | None = None) -> list[dict[str, Any]]:
     """A config padrão por lista branca: ``[{chave, valor}]`` e ``[{chave, definida}]``.
 
     Recebe a config **decifrada** (é o que ``merged_config_padrao`` devolve) e só
-    deixa passar valor das chaves de ``CONFIG_COM_VALOR``.
+    deixa passar valor das chaves de ``CONFIG_COM_VALOR`` — as de ``CONFIG_POR_MODELO``
+    só quando o modelo grava o campo.
     """
-    campos: list[dict[str, Any]] = [{"chave": k, "valor": cfg[k]} for k in CONFIG_COM_VALOR if k in cfg]
+    campos: list[dict[str, Any]] = [
+        {"chave": k, "valor": cfg[k]} for k in CONFIG_COM_VALOR if k in cfg and chave_do_modelo(k, modelo)
+    ]
     campos.extend({"chave": k, "definida": bool(cfg.get(k))} for k in CONFIG_SO_DEFINIDA)
     return campos
 
@@ -201,7 +216,7 @@ def ambientes(db: DBSession) -> list[dict[str, Any]]:
                 "contagemPorStatus": contagem,
                 "ultimaAplicacao": _ultima_aplicacao(env),
                 "atualizadoEm": _hora(env.updated_at),
-                "configPadrao": config_para_o_noc(cfg),
+                "configPadrao": config_para_o_noc(cfg, env.modelo_telefone if telefone else None),
                 # O que o telefone recebe de fato, e de onde veio — é o "herdado" da tela do NOC.
                 "hora": {
                     "timezone": hora.timezone,

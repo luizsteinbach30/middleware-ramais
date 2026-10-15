@@ -365,7 +365,7 @@ async def test_config_com_tipo_trocado_ou_valor_que_o_fabricante_recusa(db, apar
 
 
 @pytest.mark.parametrize(
-    "chave", ["sip_server", "web_password", "menu_password", "web_user", "sip_transport", "ip"]
+    "chave", ["sip_server", "web_password", "menu_password", "web_user", "ip"]
 )
 async def test_chave_da_config_fora_da_lista_e_recusada(db, aparelho, chave) -> None:
     """As credenciais da config padrão continuam só "definida" (ADR 0012 mudou a planilha, não a config)."""
@@ -390,3 +390,36 @@ async def test_o_numero_da_linha_do_retrato_e_o_que_o_executor_aceita(db, aparel
     pronta = await _processar(_editar(env, de, [{**_para(de)[1], "nomeVisivel": "Segunda"}, _para(de)[0]]))
     assert pronta.corpo["ok"] is True, pronta.corpo
     assert [ln.numero_ramal for ln in _linhas(db, env)] == ["1002", "1001"]
+
+
+# --- Transporte SIP (2.18.0, solicitação #24 do NOC) ----------------------------------------------
+
+
+async def test_transporte_sip_grava_tcp_onde_o_adapter_grava_o_campo(db, aparelho) -> None:
+    env = _ambiente(db, ("1001", "10.0.0.11"))  # HTEK: P130
+    pronta = await _processar(_editar_config(env, [{"chave": "sip_transport", "de": "udp", "para": "tcp"}]))
+    assert pronta.corpo["ok"] is True, pronta.corpo
+    assert pronta.corpo["resultado"]["campos"] == [{"chave": "sip_transport", "gravado": "tcp"}]
+    db.expire_all()
+    assert repo.merged_config_padrao(db.get(ExtensionEnvironment, env.id))["sip_transport"] == "tcp"
+    assert aparelho.chamadas == []
+
+
+@pytest.mark.parametrize("modelo", ["FlyingVoice P10", "Intelbras V5501", "Intelbras S3002"])
+async def test_transporte_sip_recusado_no_modelo_que_nao_grava(db, aparelho, modelo) -> None:
+    """Modelo que não grava não manda — e também não se edita: o aparelho não receberia."""
+    env = _ambiente(db, ("1001", "10.0.0.11"), modelo=modelo)
+    antes = env.config_padrao
+    pronta = await _processar(_editar_config(env, [{"chave": "sip_transport", "de": "udp", "para": "tcp"}]))
+    assert pronta.corpo["resultado"]["recusa"] == "CAMPO_NAO_PERMITIDO"
+    db.expire_all()
+    assert db.get(ExtensionEnvironment, env.id).config_padrao == antes
+
+
+@pytest.mark.parametrize("valor", ["tls", "TCP", "xyz", ""])
+async def test_transporte_sip_so_aceita_udp_ou_tcp(db, aparelho, valor) -> None:
+    env = _ambiente(db, ("1001", "10.0.0.11"), modelo="Yealink T31G")
+    pronta = await _processar(_editar_config(env, [{"chave": "sip_transport", "de": "udp", "para": valor}]))
+    assert pronta.corpo["resultado"]["recusa"] == "VALOR_INVALIDO"
+    db.expire_all()
+    assert repo.merged_config_padrao(db.get(ExtensionEnvironment, env.id))["sip_transport"] == "udp"

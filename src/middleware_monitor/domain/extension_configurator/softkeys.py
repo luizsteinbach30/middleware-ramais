@@ -56,6 +56,30 @@ def vendor_of_model(modelo: str) -> str:
     return "htek"
 
 
+# Transporte SIP (udp/tcp) editável pela tela e pelo NOC (ADR 0058 do NOC, solicitação #24).
+# True só onde o adapter **já grava** o campo do fabricante em toda aplicação: HTEK P130,
+# Yealink ``account.N.sip_server.1.transport_type`` e TIP 125i ``TAB_VOIP_ACCOUNT.Transport``.
+# Nos outros o adapter não emite transporte nenhum — o aparelho fica com o que tem. Ligar um
+# deles é adapter + whitelist + prova num aparelho real: emitir ali muda o hash de todas as
+# linhas do modelo e devolveria a UDP quem hoje está em TCP.
+_TRANSPORTE: dict[str, bool] = {
+    "htek": True,
+    "yealink": True,
+    "intelbras_tip125i": True,
+    "intelbras": False,  # campo do V-series ainda não mapeado
+    "intelbras_s3002": False,  # ``LinkUse`` (UDP/TCP/TLS) no form; falta a prova no aparelho
+    "flyingvoice": False,  # campo do P10 ainda não mapeado
+}
+
+# Os valores que a tela e o NOC oferecem. TLS fica fora: pede certificado no aparelho.
+TRANSPORTES_SIP: tuple[str, ...] = ("udp", "tcp")
+
+
+def grava_transporte(modelo: str) -> bool:
+    """O adapter do modelo grava o transporte SIP? É o que decide se a chave aparece."""
+    return _TRANSPORTE.get(vendor_of_model(modelo), False)
+
+
 def _slots(prefix: str, n: int) -> list[dict[str, str]]:
     # value LineKeyN (compat com dados salvos); label com o nome nativo do fabricante.
     return [{"value": f"LineKey{i}", "label": f"{prefix} {i}"} for i in range(1, n + 1)]
@@ -174,4 +198,6 @@ def softkey_catalog_for(modelo: str) -> dict[str, Any]:
         # True = o modelo tem hotline (linha direta) na config padrão. É o que
         # substitui o atalho onde não há tecla.
         "hotline": cat.get("hotline", vendor == "intelbras_tip125i"),
+        # True = a tela mostra o "Transporte SIP" (o adapter grava o campo).
+        "transporte": _TRANSPORTE.get(vendor, False),
     }

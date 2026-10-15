@@ -4,6 +4,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
+## [2.18.0] — 2026-10-15
+
+### Added
+
+- **Transporte SIP (UDP ou TCP) na config padrão do ambiente**, na tela local e pelo NOC (solicitação #24 do NOC,
+  ADR 0058 de lá). Vale só nos modelos cujo adapter já grava o campo em toda aplicação: HTEK (`P130`), Yealink
+  (`account.N.sip_server.1.transport_type`) e Intelbras TIP 125i (`TAB_VOIP_ACCOUNT.Transport`).
+  - A tela do ambiente ganha o seletor **Transporte SIP** na seção SIP, só nesses modelos (`transporte` no
+    catálogo do fabricante); nos outros ele nem aparece nem é salvo.
+  - O retrato manda `sip_transport` no `configPadrao` só nesses modelos ("modelo que não grava não manda",
+    CONTRATO-DO-AGENTE §8). `editar_config_do_ambiente` aceita a chave com `udp` ou `tcp`; em outro modelo,
+    `CAMPO_NAO_PERMITIDO`; outro valor (`tls`, maiúsculas), `VALOR_INVALIDO`.
+  - Intelbras V, S3002 e FlyingVoice P10 continuam sem emitir transporte nenhum — o aparelho fica com o que tem.
+    Ligar um deles pede o campo no adapter e a prova num aparelho real (emitir ali deixaria todas as linhas
+    do modelo desatualizadas e devolveria a UDP quem está em TCP).
+
+### Changed
+
+- `sip_transport` sai de `CONFIG_NAO_SAI`: não muda endereço nem porta do aparelho, e só viaja onde é gravado.
+
 ## [2.17.1] — 2026-10-11
 
 ### Added

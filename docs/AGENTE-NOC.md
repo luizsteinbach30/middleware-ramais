@@ -318,7 +318,8 @@ Hoje o ambiente só chega ao NOC como o **nome** repetido em cada linha de `perf
     Ambientes);
   - `ultimaAplicacao` (`id`, `inicio`, `ok`, `total`);
   - `configPadrao`, montado **por lista branca**, nunca por lista negra:
-    - chaves que vão com valor: `register_expiration` · `sip_account` ·
+    - chaves que vão com valor: `register_expiration` · `sip_account` · `sip_transport` (2.18.0, só onde o
+      adapter grava o campo: HTEK, Yealink e TIP 125i) ·
       `timezone_mode` · `timezone` · `ntp_mode` · `ntp_server` ·
       `validar_conectividade` · `verificar_registro_sip` · `keylock_enable` ·
       `keylock_timeout` · `hotline_enable` · `hotline_number` · `hotline_time` ·
@@ -352,9 +353,10 @@ chegarem — e a contagem tem de ser zero.
 > senha. Com o nome da chave como valor, o filtro de lá continua valendo e a informação
 > chega. Há teste que passa o retrato pelo filtro do NOC e exige que nada se perca.
 >
-> **A terceira lista existe:** `CONFIG_NAO_SAI` guarda `sip_server`, `sip_transport`,
-> `web_language` e `lcd_language`. O endereço do PBX é rede para o aparelho. Os idiomas
-> ficam fora até o TELAS §14 pedir.
+> **A terceira lista existe:** `CONFIG_NAO_SAI` guarda `sip_server`, `web_language` e
+> `lcd_language`. O endereço do PBX é rede para o aparelho. Os idiomas ficam fora até o
+> TELAS §14 pedir. `sip_transport` estava aqui até a 2.18.0; saiu pela solicitação #24 do NOC
+> (`CONFIG_POR_MODELO`: só vai, e só se edita, no modelo cujo adapter grava o campo).
 >
 > **Campos a mais**, que as telas v2 do NOC usam:
 > - `contagemPorStatus`, com o status fino da planilha (`applied`, `registered`, `pending`,
@@ -422,7 +424,8 @@ nem rede**. Dois verbos novos no executor, ambos de raio `ESCRITA REVERSÍVEL`:
   - Campos permitidos: `nomeVisivel` e `numeroAbreviado` (os nomes do retrato do item 11).
   - Um pedido por ramal, com os campos do ramal juntos.
 - **`editar_config_do_ambiente`** — `{ ambienteId, campos: [{ chave, de, para }] }`.
-  - Chaves permitidas: as que o item 11 manda **com valor** (`retrato.CONFIG_COM_VALOR`).
+  - Chaves permitidas: as que o item 11 manda **com valor** (`retrato.CONFIG_COM_VALOR`), e as de
+    `CONFIG_POR_MODELO` só no modelo que grava (`sip_transport`: `udp` ou `tcp`, desde a 2.18.0).
 
 O contrato inteiro, com o resultado e os códigos de recusa, está em
 `noc-workconnect/docs/CONTRATO-DO-AGENTE.md` §10.

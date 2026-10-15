@@ -164,6 +164,8 @@ async function reload() {
     // hotline, que é o que cumpre o papel do atalho nele.
     $('#ec-section-fk')?.classList.toggle('hidden', cat.softkeys === false);
     $('#ec-section-hotline')?.classList.toggle('hidden', !cat.hotline);
+    // Transporte SIP só onde o adapter grava o campo; nos outros nem aparece nem é salvo.
+    $('#cfg-sip_transport-campo')?.classList.toggle('hidden', !cat.transporte);
     const accounts = Array.isArray(cat.accounts) && cat.accounts.length ? cat.accounts : [1];
     const opt2 = document.querySelector('#cfg-sip_account option[value="2"]');
     const hint = $('#cfg-sip_account-hint');
@@ -177,6 +179,8 @@ async function reload() {
   FIELDS_STR.forEach((k) => { const el = $('#cfg-' + k); if (el) el.value = cfg[k] ?? ''; });
   FIELDS_INT.forEach((k) => { const el = $('#cfg-' + k); if (el) el.value = String(cfg[k] ?? ''); });
   FIELDS_BOOL.forEach((k) => { const el = $('#cfg-' + k); if (el) el.checked = !!cfg[k]; });
+  const transporte = $('#cfg-sip_transport');
+  if (transporte) transporte.value = ['udp', 'tcp'].includes(cfg.sip_transport) ? cfg.sip_transport : 'udp';
 
   const hotlineOn = $('#cfg-hotline_enable');
   if (hotlineOn) hotlineOn.checked = Number(cfg.hotline_enable) === 1;
@@ -255,6 +259,10 @@ async function save() {
   FIELDS_STR.forEach((k) => { body.config_padrao[k] = $('#cfg-' + k).value; });
   FIELDS_INT.forEach((k) => { body.config_padrao[k] = parseInt($('#cfg-' + k).value || '0', 10); });
   FIELDS_BOOL.forEach((k) => { body.config_padrao[k] = $('#cfg-' + k).checked; });
+  // Só manda o transporte quando o campo está à vista: o merge do servidor preserva o guardado.
+  if (!$('#cfg-sip_transport-campo')?.classList.contains('hidden')) {
+    body.config_padrao.sip_transport = $('#cfg-sip_transport').value;
+  }
   body.config_padrao.function_keys = collectFKs();
   // No aparelho a hotline é 0/1, não booleano — mandamos no formato do campo.
   body.config_padrao.hotline_enable = $('#cfg-hotline_enable')?.checked ? 1 : 0;

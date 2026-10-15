@@ -824,7 +824,8 @@ async def _editar_config(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa
         compute_statuses,
         validate_config_padrao,
     )
-    from middleware_monitor.domain.noc.retrato import CONFIG_COM_VALOR
+    from middleware_monitor.domain.extension_configurator.softkeys import TRANSPORTES_SIP
+    from middleware_monitor.domain.noc.retrato import CONFIG_COM_VALOR, chave_do_modelo
     from middleware_monitor.integrations.extension_configurator.vendors.base import VendorConfigError
 
     campos, recusa = _campos_do_pedido(p, "chave", CONFIG_COM_VALOR)
@@ -846,6 +847,16 @@ async def _editar_config(p: dict[str, Any], ctx: Contexto) -> Resultado:  # noqa
         if env is None:
             return recusa  # type: ignore[return-value]
         cfg = repo.merged_config_padrao(env)
+        for c in campos:
+            # "Modelo que não grava não manda" (2.18.0): a chave que o retrato não mostra
+            # para este modelo também não se edita — o adapter não a levaria ao aparelho.
+            if not chave_do_modelo(c["chave"], env.modelo_telefone):
+                return _nao_permitido(c["chave"])
+            if c["chave"] == "sip_transport" and c["para"] not in TRANSPORTES_SIP:
+                return _recusa_da_edicao(
+                    "VALOR_INVALIDO",
+                    f"sip_transport: aceita {' ou '.join(TRANSPORTES_SIP)}, veio {c['para']!r}.",
+                )
         if (divergente := divergentes(cfg)) is not None:
             return divergente
         for c in campos:
