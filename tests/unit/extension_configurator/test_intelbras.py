@@ -318,3 +318,24 @@ def test_fuso_desconhecido_nao_derruba_a_geracao() -> None:
         _template_com_hora(timezone_offset_minutes="lixo"), _row(),
     )
     assert ET.fromstring(cfg).find("date").findtext("SNTPServer") == "a.ntp.br"
+
+
+# --- Transporte SIP (2.18.1): <sip><line><Transport>, 0=UDP e 1=TCP medido pelo dono -------------
+
+
+@pytest.mark.parametrize(
+    ("valor", "esperado"), [("udp", "0"), ("tcp", "1"), ("TCP", "1"), ("tls", "0"), (None, "0")],
+)
+def test_transporte_vai_na_linha_sip(valor, esperado) -> None:
+    tpl = _template()
+    if valor is not None:
+        tpl["sip_transport"] = valor
+    line = ET.fromstring(IntelbrasAdapter().generate_config(tpl, _row())).find("./sip/line[@index='1']")
+    assert line.findtext("Transport") == esperado
+
+
+def test_transporte_vai_na_conta_escolhida() -> None:
+    tpl = {**_template(), "sip_account": 2, "sip_transport": "tcp"}
+    root = ET.fromstring(IntelbrasAdapter().generate_config(tpl, _row()))
+    assert root.find("./sip/line[@index='2']").findtext("Transport") == "1"
+    assert root.find("./sip/line[@index='1']") is None

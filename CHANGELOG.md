@@ -4,6 +4,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
+## [2.18.1] — 2026-10-15
+
+### Added
+
+- **Transporte SIP também no Intelbras V-series** (V3001, V3501, V5501): o adapter grava
+  `<sip><line index="N"><Transport>` na conta escolhida, `0` = UDP e `1` = TCP — mapeamento medido pelo dono nos
+  aparelhos. O seletor **Transporte SIP** aparece na tela desses modelos, o retrato manda `sip_transport` ao NOC e
+  o `editar_config_do_ambiente` aceita a chave (`udp`/`tcp`).
+  - **Efeito ao atualizar:** a config gerada para o V passa a levar `<Transport>`, então as linhas V aparecem como
+    desatualizadas até a próxima aplicação, que grava o transporte da config padrão (padrão `udp`). Ambiente V que
+    hoje roda em TCP: escolher **TCP** no ambiente antes de reaplicar.
+  - S3002 e FlyingVoice P10 continuam sem transporte.
+
 ## [2.18.0] — 2026-10-15
 
 ### Added

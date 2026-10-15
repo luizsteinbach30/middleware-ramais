@@ -395,8 +395,9 @@ async def test_o_numero_da_linha_do_retrato_e_o_que_o_executor_aceita(db, aparel
 # --- Transporte SIP (2.18.0, solicitação #24 do NOC) ----------------------------------------------
 
 
-async def test_transporte_sip_grava_tcp_onde_o_adapter_grava_o_campo(db, aparelho) -> None:
-    env = _ambiente(db, ("1001", "10.0.0.11"))  # HTEK: P130
+@pytest.mark.parametrize("modelo", ["HTEK UC902G", "Intelbras V3501", "Intelbras V5501"])
+async def test_transporte_sip_grava_tcp_onde_o_adapter_grava_o_campo(db, aparelho, modelo) -> None:
+    env = _ambiente(db, ("1001", "10.0.0.11"), modelo=modelo)  # HTEK P130; V-series <Transport>
     pronta = await _processar(_editar_config(env, [{"chave": "sip_transport", "de": "udp", "para": "tcp"}]))
     assert pronta.corpo["ok"] is True, pronta.corpo
     assert pronta.corpo["resultado"]["campos"] == [{"chave": "sip_transport", "gravado": "tcp"}]
@@ -405,7 +406,7 @@ async def test_transporte_sip_grava_tcp_onde_o_adapter_grava_o_campo(db, aparelh
     assert aparelho.chamadas == []
 
 
-@pytest.mark.parametrize("modelo", ["FlyingVoice P10", "Intelbras V5501", "Intelbras S3002"])
+@pytest.mark.parametrize("modelo", ["FlyingVoice P10", "Intelbras S3002"])
 async def test_transporte_sip_recusado_no_modelo_que_nao_grava(db, aparelho, modelo) -> None:
     """Modelo que não grava não manda — e também não se edita: o aparelho não receberia."""
     env = _ambiente(db, ("1001", "10.0.0.11"), modelo=modelo)

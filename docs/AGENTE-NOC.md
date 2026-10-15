@@ -319,7 +319,7 @@ Hoje o ambiente só chega ao NOC como o **nome** repetido em cada linha de `perf
   - `ultimaAplicacao` (`id`, `inicio`, `ok`, `total`);
   - `configPadrao`, montado **por lista branca**, nunca por lista negra:
     - chaves que vão com valor: `register_expiration` · `sip_account` · `sip_transport` (2.18.0, só onde o
-      adapter grava o campo: HTEK, Yealink e TIP 125i) ·
+      adapter grava o campo: HTEK, Yealink, TIP 125i e, desde a 2.18.1, Intelbras V) ·
       `timezone_mode` · `timezone` · `ntp_mode` · `ntp_server` ·
       `validar_conectividade` · `verificar_registro_sip` · `keylock_enable` ·
       `keylock_timeout` · `hotline_enable` · `hotline_number` · `hotline_time` ·
