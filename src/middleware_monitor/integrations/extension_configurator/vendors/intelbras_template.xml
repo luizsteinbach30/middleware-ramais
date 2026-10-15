@@ -14,7 +14,7 @@
     <web><WebPort/HttpsWebPort/TelnetPort/RemoteControl>  portas/admin remoto
 
   Secoes PERMITIDAS (apenas estas aparecem aqui):
-    <sip><line index="1">  numero/senha/servidor SIP da linha
+    <sip><line index="1">  numero/senha/servidor SIP da linha + Transport (0=UDP, 1=TCP)
     <web><account index="1">  usuario/senha da web admin
     <phone><MenuPassword/KeyLockPassword>  senhas de menu e bloqueio
     <phone><EnableKeyLock/KeyLockTimeout>  bloqueio universal de menu (default 2 / 30s)
@@ -34,6 +34,7 @@
             <RegisterUser>{register_user}</RegisterUser>
             <RegisterPswd>{register_pwd}</RegisterPswd>
             <RegisterTTL>90</RegisterTTL>
+            <Transport>{transport}</Transport>
             <EnableReg>1</EnableReg>
         </line>
     </sip>

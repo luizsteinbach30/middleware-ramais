@@ -57,8 +57,9 @@ def vendor_of_model(modelo: str) -> str:
 
 
 # Transporte SIP (udp/tcp) editável pela tela e pelo NOC (ADR 0058 do NOC, solicitação #24).
-# True só onde o adapter **já grava** o campo do fabricante em toda aplicação: HTEK P130,
-# Yealink ``account.N.sip_server.1.transport_type`` e TIP 125i ``TAB_VOIP_ACCOUNT.Transport``.
+# True só onde o adapter grava o campo do fabricante em toda aplicação: HTEK P130,
+# Yealink ``account.N.sip_server.1.transport_type``, TIP 125i ``TAB_VOIP_ACCOUNT.Transport``
+# e, desde a 2.18.1, Intelbras V-series ``<sip><line><Transport>`` (0/1 medido pelo dono).
 # Nos outros o adapter não emite transporte nenhum — o aparelho fica com o que tem. Ligar um
 # deles é adapter + whitelist + prova num aparelho real: emitir ali muda o hash de todas as
 # linhas do modelo e devolveria a UDP quem hoje está em TCP.
@@ -66,7 +67,7 @@ _TRANSPORTE: dict[str, bool] = {
     "htek": True,
     "yealink": True,
     "intelbras_tip125i": True,
-    "intelbras": False,  # campo do V-series ainda não mapeado
+    "intelbras": True,  # V3001/V3501/V5501: <Transport> 0=UDP, 1=TCP (2.18.1)
     "intelbras_s3002": False,  # ``LinkUse`` (UDP/TCP/TLS) no form; falta a prova no aparelho
     "flyingvoice": False,  # campo do P10 ainda não mapeado
 }

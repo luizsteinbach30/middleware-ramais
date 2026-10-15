@@ -79,6 +79,11 @@ log = get_logger("extension_configurator.intelbras")
 # comprovado entra aqui; ver _render_date.
 _TIMEZONE_IDS: dict[int, tuple[str, str]] = {-180: ("-12", "UTC-3")}
 
+# Transporte SIP da linha (``<sip><line><Transport>``). Medido pelo dono nos V-series
+# (15/10/2026): 0 = UDP, 1 = TCP. Só esses dois — TLS pede certificado e não foi medido.
+# Valor fora da lista vira UDP, o padrão de fábrica dos exports do V3501 e do V5501.
+_TRANSPORT_IDS: dict[str, str] = {"udp": "0", "tcp": "1"}
+
 
 def _md5(s: str) -> str:
     # Protocolo de login do Intelbras (firmware Rapid Logic) usa MD5 — uso de
@@ -257,8 +262,10 @@ class IntelbrasAdapter(VendorAdapter):
 
         # Conta SIP alvo (1 ou 2). Config parcial → a outra linha fica intacta.
         sip_line = "2" if str(template.get("sip_account", 1)) == "2" else "1"
+        transport = _TRANSPORT_IDS.get(str(template.get("sip_transport", "udp")).lower(), "0")
         ctx = {
             "sip_line": sip_line,
+            "transport": transport,
             "register_addr": xml_escape(register_addr),
             "register_user": xml_escape(register_user),
             "register_pwd": _xml_escape_password(register_pwd),
