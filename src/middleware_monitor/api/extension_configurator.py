@@ -15,11 +15,12 @@ import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
+from middleware_monitor.api.autoria import autoria_do_pedido
 from middleware_monitor.api.deps import (
     get_current_user,
     get_session,
@@ -492,8 +493,9 @@ def _ambientes_do_arquivo(data: object) -> list[dict[str, Any]]:
     dependencies=[Depends(require_csrf), Depends(require_admin)],
 )
 def import_environment(
+    request: Request,
     payload: ImportIn = Body(...),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: DBSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Importa ambientes de um arquivo cifrado, criando NOVOS ambientes.
@@ -520,6 +522,7 @@ def import_environment(
     # vários, cada um mantém o próprio nome (renomear todos para o mesmo valor
     # criaria "Nome", "Nome (2)"... sem dizer qual é qual).
     renomear = (payload.nome or "").strip() if len(ambientes) == 1 else ""
+    criado_por, criado_via = autoria_do_pedido(request, user)
 
     criados: list[dict[str, Any]] = []
     for envd in ambientes:
@@ -534,6 +537,7 @@ def import_environment(
             new_env = repo.create_environment(
                 db, nome=nome, modelo_telefone=modelo,
                 servicos=servicos if isinstance(servicos, list) else None,
+                criado_por=criado_por, criado_via=criado_via,
             )
         except servicos_mod.ServicosInvalidos as exc:
             raise HTTPException(status_code=400, detail="ambiente_incompleto") from exc
@@ -622,19 +626,27 @@ def export_environments(
     dependencies=[Depends(require_csrf), Depends(require_admin)],
 )
 def create_environment(
+    request: Request,
     payload: EnvironmentCreateIn,
+    user: User = Depends(require_admin),
     db: DBSession = Depends(get_session),
 ) -> dict[str, Any]:
     nome = payload.nome.strip()
     modelo = payload.modelo_telefone.strip() or "HTEK UC902G"
     if not nome:
         raise HTTPException(400, "nome obrigatorio")
+    criado_por, criado_via = autoria_do_pedido(request, user)
     try:
-        env = repo.create_environment(db, nome=nome, modelo_telefone=modelo, servicos=payload.servicos)
+        env = repo.create_environment(
+            db, nome=nome, modelo_telefone=modelo, servicos=payload.servicos,
+            criado_por=criado_por, criado_via=criado_via,
+        )
     except servicos_mod.ServicosInvalidos as exc:
         raise HTTPException(422, str(exc)) from exc
     db.commit()
-    log.info("environment_created", env_id=env.id, modelo=modelo)
+    log.info(
+        "environment_created", env_id=env.id, modelo=modelo, criado_por=criado_por, criado_via=criado_via,
+    )
     return _env_summary(env, [])
 
 
@@ -644,8 +656,9 @@ def create_environment(
 )
 def duplicate_environment(
     env_id: str,
+    request: Request,
     payload: EnvironmentDuplicateIn = Body(default_factory=EnvironmentDuplicateIn),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     db: DBSession = Depends(get_session),
 ) -> dict[str, Any]:
     """Cria um novo ambiente copiando modelo + config padrão (sem ramais)."""
@@ -653,7 +666,8 @@ def duplicate_environment(
     if src is None:
         raise HTTPException(404, "ambiente nao encontrado")
     nome = (payload.nome or "").strip() or None
-    new_env = repo.clone_environment(db, src, nome=nome)
+    criado_por, criado_via = autoria_do_pedido(request, user)
+    new_env = repo.clone_environment(db, src, nome=nome, criado_por=criado_por, criado_via=criado_via)
     db.commit()
     log.info("environment_duplicated", src_id=env_id, env_id=new_env.id)
     return _env_summary(new_env, [])

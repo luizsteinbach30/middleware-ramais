@@ -4,6 +4,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
+## [2.19.0] — 2026-10-23
+
+### Added
+
+- **Autoria do ambiente**: `extension_environments` ganha `criado_por` e `criado_via` (migration 0019), gravados em
+  todo caminho que cria ambiente pela aplicação:
+  - tela daqui (criar, duplicar, importar): `local` + o usuário logado no middleware;
+  - a mesma tela aberta pelo túnel do NOC: `tunel` + o e-mail do operador dono da sessão. Vale só quando o
+    cabeçalho `X-Noc-Tunel` traz o id de uma sessão de túnel aberta neste processo e o pedido vem desta máquina —
+    cabeçalho forjado ou de sessão encerrada cai na regra local;
+  - tela de dispositivos ("criar ambiente"): `dispositivos` + o autor pela regra túnel/local;
+  - tarefa `criar_ambiente` do NOC: `noc` + o e-mail de quem pediu (`pedidaPor`).
+  - Ambiente que já existia fica com os dois em NULL (= desconhecido); nada de backfill. Restaurar backup também
+    cria sem autor.
+- **Vai ao NOC no retrato**: cada item de `ambientes[]` leva `criadoEm`, `criadoPor` e `criadoVia` (`null` quando
+  desconhecido), para o relatório de criação de ambientes.
+
 ## [2.18.1] — 2026-10-15
 
 ### Added

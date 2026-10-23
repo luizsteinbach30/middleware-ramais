@@ -203,6 +203,12 @@ class ExtensionEnvironment(Base):
     servicos: Mapped[str] = mapped_column(Text, nullable=False, default='["telefone"]')
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # Quem criou e por onde (2.19.0, migration 0019). NULL = desconhecido: ambiente
+    # de antes da 2.19.0 ou restaurado de backup. ``criado_via``: ``local`` (tela
+    # daqui), ``tunel`` (tela daqui aberta pelo túnel do NOC), ``noc`` (tarefa do
+    # NOC), ``dispositivos`` (criado a partir da tela de dispositivos).
+    criado_por: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    criado_via: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     lines: Mapped[list[ExtensionLine]] = relationship(
         back_populates="environment", cascade="all, delete-orphan",

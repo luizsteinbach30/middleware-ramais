@@ -349,13 +349,17 @@ class Sessao:
     """Um WebSocket de saída e os fluxos HTTP que ele carrega."""
 
     def __init__(
-        self, sessao_id: str, destino: Destino, *, canal: str, credencial: str, operador: str
+        self, sessao_id: str, destino: Destino, *, canal: str, credencial: str, operador: str,
+        pedida_por: str | None = None,
     ) -> None:
         self.id = sessao_id
         self.destino = destino
         self.canal = canal
         self.credencial = credencial
         self.operador = operador
+        # O e-mail inteiro de quem abriu no NOC (``operador`` é ``noc:<e-mail>`` cortado em 64):
+        # é ele que vira o autor do ambiente criado pela tela daqui aberta no túnel (2.19.0).
+        self.pedida_por = pedida_por
         self.inicio = time.monotonic()
         self.fluxos: dict[int, _Fluxo] = {}
         self.requisicoes = 0
@@ -907,7 +911,10 @@ _sessoes: dict[str, Sessao] = {}
 _tarefas: set[asyncio.Task[None]] = set()
 
 
-def abrir(sessao_id: str, destino: Destino, *, canal: str, credencial: str, operador: str) -> bool:
+def abrir(
+    sessao_id: str, destino: Destino, *, canal: str, credencial: str, operador: str,
+    pedida_por: str | None = None,
+) -> bool:
     """Liga a sessão em segundo plano. Devolve ``False`` se ela já estava aberta
     (a tarefa foi reentregue) — nada é aberto duas vezes."""
     if not _SESSAO.match(sessao_id):
@@ -915,7 +922,9 @@ def abrir(sessao_id: str, destino: Destino, *, canal: str, credencial: str, oper
     atual = _sessoes.get(sessao_id)
     if atual is not None and not atual.encerrada:
         return False
-    sessao = Sessao(sessao_id, destino, canal=canal, credencial=credencial, operador=operador)
+    sessao = Sessao(
+        sessao_id, destino, canal=canal, credencial=credencial, operador=operador, pedida_por=pedida_por
+    )
     _sessoes[sessao_id] = sessao
     log.info("noc_tunel_aberto", sessao=sessao_id, destino=destino.rotulo, operador=operador)
 
@@ -931,6 +940,24 @@ def abrir(sessao_id: str, destino: Destino, *, canal: str, credencial: str, oper
     _tarefas.add(tarefa)
     tarefa.add_done_callback(_tarefas.discard)
     return True
+
+
+def operador_da_sessao(sessao_id: str | None) -> str | None:
+    """O e-mail do operador do NOC dono da sessão de túnel **aberta neste processo**, ou ``None``.
+
+    É o que transforma o cabeçalho ``CABECALHO_DO_TUNEL`` em autoria: o valor só vale
+    se for o id de uma sessão viva aqui — cabeçalho com id desconhecido (forjado, ou de
+    sessão já encerrada) não atribui nada a ninguém."""
+    if not sessao_id:
+        return None
+    sessao = _sessoes.get(sessao_id.strip()[:64])
+    if sessao is None or sessao.encerrada:
+        return None
+    if sessao.pedida_por:
+        return sessao.pedida_por
+    # Sessão aberta sem o e-mail à parte: ``operador`` é ``noc:<e-mail>``.
+    email = sessao.operador.removeprefix("noc:")
+    return email if email and email != "desconhecido" else None
 
 
 def abertas() -> list[dict[str, Any]]:

@@ -990,8 +990,11 @@ async def _criar_ambiente(p: dict[str, Any], ctx: Contexto) -> Resultado:
         # De novo, já com o backup feito: a tela local pode ter criado o mesmo nome.
         if (rep := repetido(db)) is not None:
             return rep
+        # Autoria (2.19.0): o e-mail de quem pediu no NOC, inteiro — ``ctx.operador`` é o
+        # mesmo com prefixo e cortado em 64, bom para log, não para relatório.
         env = repo.create_environment(
-            db, nome=novo["nome"], modelo_telefone=novo["modelo"], servicos=novo["servicos"]
+            db, nome=novo["nome"], modelo_telefone=novo["modelo"], servicos=novo["servicos"],
+            criado_por=ctx.pedida_por, criado_via="noc",
         )
         env_id = env.id
         db.commit()
@@ -1115,7 +1118,10 @@ async def _abrir_acesso_web(p: dict[str, Any], ctx: Contexto) -> Resultado:
             destino = tunel.destino_uscall(p.get("uscall"), servidores)
         else:
             return Resultado(ok=False, erro="tipoDeDestino: use lan, tcp ou uscall.")
-        nova = tunel.abrir(sessao, destino, canal=ctx.canal, credencial=ctx.credencial, operador=ctx.operador)
+        nova = tunel.abrir(
+            sessao, destino, canal=ctx.canal, credencial=ctx.credencial, operador=ctx.operador,
+            pedida_por=ctx.pedida_por,
+        )
     except tunel.DestinoRecusado as exc:
         return Resultado(ok=False, erro=str(exc))
     return Resultado(ok=True, resultado={"aberto": True, "reaberto": not nova, "destino": destino.rotulo})

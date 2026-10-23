@@ -363,6 +363,14 @@ chegarem — e a contagem tem de ser zero.
 >   `outdated`, `error`, `invalid`);
 > - `hora { timezone, ntpServer, origemFuso, origemNtp }`, que é o "herdado" do TELAS §14;
 > - `atualizadoEm`;
+> - **autoria (2.19.0):** `criadoEm` (UTC sem fuso, como `atualizadoEm`), `criadoPor` e `criadoVia` — para o
+>   relatório de criação de ambientes do NOC. `criadoVia` é `local` (tela daqui; `criadoPor` = usuário logado no
+>   middleware), `tunel` (tela daqui aberta pelo túnel do NOC; `criadoPor` = e-mail do operador dono da sessão),
+>   `noc` (tarefa `criar_ambiente`; `criadoPor` = `pedidaPor` da tarefa) ou `dispositivos` (criado na tela de
+>   dispositivos; autor pela regra túnel/local). Duplicar e importar ambiente seguem a regra túnel/local.
+>   **`null` nos dois = desconhecido**: ambiente de antes da 2.19.0 (migration 0019, sem backfill) ou restaurado de
+>   backup. O cabeçalho `X-Noc-Tunel` só vira `tunel` se o valor for o id de uma sessão de túnel aberta no próprio
+>   processo e o pedido vier desta máquina; cabeçalho forjado cai na regra local;
 > - nas linhas, `dispositivo` (o ramal do aparelho vinculado), porque o NOC conhece o
 >   aparelho pelo ramal e não pelo `deviceId` local.
 >
