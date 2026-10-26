@@ -169,9 +169,14 @@ def campos_da_linha(line: ExtensionLine, campos: tuple[str, ...]) -> dict[str, A
 def create_environment(
     db: DBSession, *, nome: str, modelo_telefone: str,
     servicos: list[str] | None = None,
+    criado_por: str | None = None,
+    criado_via: str | None = None,
 ) -> ExtensionEnvironment:
     """``servicos`` ausente = só telefone (o ambiente de sempre). Sem telefone, o
-    modelo é gravado como "" — ``ServicosInvalidos`` se a lista não tem forma."""
+    modelo é gravado como "" — ``ServicosInvalidos`` se a lista não tem forma.
+
+    ``criado_por``/``criado_via``: a autoria (2.19.0). Ausente = desconhecida (NULL);
+    quem cria por pedido HTTP usa ``api.autoria.autoria_do_pedido``."""
     lista_de_servicos = servicos_mod.normalizar(
         list(servicos_mod.PADRAO) if servicos is None else servicos
     )
@@ -192,6 +197,8 @@ def create_environment(
         servicos=servicos_mod.serializar(lista_de_servicos),
         created_at=now,
         updated_at=now,
+        criado_por=criado_por[:254] if criado_por else None,
+        criado_via=criado_via[:16] if criado_via else None,
     )
     db.add(env)
     db.flush()
@@ -200,6 +207,7 @@ def create_environment(
 
 def clone_environment(
     db: DBSession, src: ExtensionEnvironment, *, nome: str | None = None,
+    criado_por: str | None = None, criado_via: str | None = None,
 ) -> ExtensionEnvironment:
     """Cria um NOVO ambiente copiando o modelo e TODA a config padrão de `src`.
 
@@ -213,6 +221,7 @@ def clone_environment(
     new_env = create_environment(
         db, nome=new_nome, modelo_telefone=src.modelo_telefone,
         servicos=servicos_mod.servicos_de(src),
+        criado_por=criado_por, criado_via=criado_via,
     )
     new_env.config_padrao = _cifrar_config(merged_config_padrao(src))
     new_env.updated_at = _now()

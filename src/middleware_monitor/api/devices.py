@@ -6,11 +6,12 @@ import time
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DBSession
 
+from middleware_monitor.api.autoria import autoria_do_pedido
 from middleware_monitor.api.deps import (
     get_current_user,
     get_session,
@@ -709,7 +710,9 @@ def bulk_add_to_environment(
     dependencies=[Depends(require_csrf), Depends(require_admin)],
 )
 def bulk_create_environment(
+    request: Request,
     payload: CreateEnvFromDevicesIn,
+    user: User = Depends(require_admin),
     db: DBSession = Depends(get_session),
 ) -> BulkAddResult:
     """Cria um ambiente novo (nome + modelo) e já adiciona os devices
@@ -718,12 +721,17 @@ def bulk_create_environment(
     if not nome:
         raise HTTPException(status_code=400, detail="nome_obrigatorio")
     modelo = payload.modelo_telefone.strip() or "HTEK UC902G"
-    env = ec_repo.create_environment(db, nome=nome, modelo_telefone=modelo)
+    # O autor segue a regra túnel/local; o "via" diz que nasceu da tela de dispositivos.
+    criado_por, _via = autoria_do_pedido(request, user)
+    env = ec_repo.create_environment(
+        db, nome=nome, modelo_telefone=modelo, criado_por=criado_por, criado_via="dispositivos",
+    )
     res = ec_repo.add_devices_as_lines(db, env, payload.device_ids)
     db.commit()
     log.info(
         "environment_created_from_devices",
         env_id=env.id, modelo=modelo, added=res["added"], skipped=res["skipped"],
+        criado_por=criado_por,
     )
     return BulkAddResult(
         environment_id=env.id, environment_nome=env.nome,

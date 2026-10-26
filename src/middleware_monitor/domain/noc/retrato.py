@@ -216,6 +216,11 @@ def ambientes(db: DBSession) -> list[dict[str, Any]]:
                 "contagemPorStatus": contagem,
                 "ultimaAplicacao": _ultima_aplicacao(env),
                 "atualizadoEm": _hora(env.updated_at),
+                # Autoria (2.19.0): null = desconhecido (ambiente de antes da 2.19.0 ou
+                # restaurado de backup). ``criadoVia``: local · tunel · noc · dispositivos.
+                "criadoEm": _hora(env.created_at),
+                "criadoPor": env.criado_por,
+                "criadoVia": env.criado_via,
                 "configPadrao": config_para_o_noc(cfg, env.modelo_telefone if telefone else None),
                 # O que o telefone recebe de fato, e de onde veio — é o "herdado" da tela do NOC.
                 "hora": {
