@@ -115,6 +115,8 @@ def test_lista_de_permissao_e_fechada_e_nao_tem_rede() -> None:
         "inventario",
         "capacidades",
         "logs",
+        # 2.19.1: só lê extension_calls (tests/api/test_noc_chamadas.py).
+        "chamadas_dos_ramais",
         "normalize",
         "reaplicar_config_do_ambiente",
         # Item 13 e ADR 0012: gravam na planilha, nunca no aparelho (tests/api/test_noc_edicao.py).

@@ -929,6 +929,46 @@ quando ligado. Gravadores e câmeras são os equipamentos de sempre (item 18), a
   (`paiRef`), canal, fabricante, modelo. Ref local `mw_<hex>`. Verificação que o NOC pôs a mais fica como está.
   **Nada aqui escreve no DVR nem na câmera.**
 
+### 28 — Chamadas dos ramais: o relatório de chamadas de teste da instalação da loja
+
+`domain/noc/executor.py` (`_chamadas_dos_ramais`) · `core/models.py::ExtensionCall` · **NOC: Instalação da loja** ·
+✅ **feito (27/10)**, versão **2.19.1**
+
+Na ativação de uma loja o técnico liga de cada ramal novo para um número de teste (`5`, `800`, a URA
+`ATIVA_LOJA_NOVA`…). O NOC monta o "Relatório de Chamadas de Teste" com as chamadas que o coletor MQTT já
+reconstrói aqui em `extension_calls` (`domain/mqtt/calls.py`, uma linha por **perna**: numa ligação interna os
+dois ramais aparecem).
+
+| Verbo | Raio | Pedido |
+|---|---|---|
+| `chamadas_dos_ramais` | `LEITURA` | `{ ramais: string[], desde: ISO-8601, ate: ISO-8601, limite?: int }` |
+
+- **Declaração:** está em `executor.ACOES` e, por isso, em `acoes` do manifesto — como toda leitura, sem capacidade
+  à parte e sem aprovação. Só lê `extension_calls`: não cria, não fecha e não reconstrói chamada.
+- **Pedido** (fora de forma → `ok: false`, `naoSuportado: true`, `resultado: { recusa: "VALOR_INVALIDO" }` e o
+  motivo em `erro`; campo a mais ou faltando é recusado antes, como em todo verbo):
+  - `ramais`: lista de 1 a 500 textos na forma de ramal do NOC (`[0-9A-Za-z*#_.-]`, até 32);
+  - `desde` e `ate`: data e hora ISO-8601, as **duas pontas incluídas**, `desde <= ate`. Com fuso (`Z`, `-03:00`) é
+    convertido para UTC; **sem fuso é tomado como UTC** (a convenção das horas do lote);
+  - `limite`: inteiro de 1 a 5000, padrão 2000.
+- **Que ramal casa.** `extension_calls.ramal` é o campo `ramal` do payload do PBX — o **número** que o USCall e o
+  monitor mostram (`27611`), não o usuário SIP da planilha, que em vários clientes leva o prefixo do servidor
+  (`assaisp01-27611`; ver o nome visível no item 13). O NOC pode mandar qualquer um dos dois: cada item casa **como
+  veio** e, se tiver `-`, **também pelo que vem depois do último `-`** (`assaisp01-27611` acha `27611`). O `ramal`
+  do resultado é o gravado aqui; o NOC aplica a mesma regra do sufixo para ligar a chamada ao item que pediu.
+- **Resultado:** `{ chamadas: [...], cortado, coletorMqtt }`.
+  - cada chamada: `{ ramal, direcao, numero, uniqueid, inicio, atendidaEm, fimEm, toqueS, conversaS, resultado }`,
+    em ordem de `inicio` (crescente). Horas em **UTC com `Z`** (`2026-10-27T13:05:00Z`); `null` quando não houve
+    (não atendida, ainda em curso). `direcao`: `entrante` · `sainte` · `desconhecida`. `resultado`: `atendida` ·
+    `perdida` (tocou e ninguém atendeu) · `nao_atendida` (discou e ninguém atendeu) · `indeterminada` · `em_curso`.
+    `numero` é o outro lado como o PBX publicou (na saída, o número discado; na ligação interna, o chamador entra
+    sem número);
+  - `cortado: true` = havia mais chamadas no período do que o `limite`; o NOC estreita o período ou sobe o limite;
+  - `coletorMqtt`: há broker MQTT **ligado** neste middleware (`mqtt_brokers.enabled`, a mesma regra do
+    `coletor[]` do item 12). `false` = este cliente não tem coletor: lista vazia **não** quer dizer "nenhuma
+    chamada" — o NOC diz "cliente sem MQTT, anexar o relatório". Com `true` e lista vazia, a hora a hora do
+    coletor (`mensagensPorHora[]`, item 12) diz se ele estava ouvindo no período.
+
 ## Resumo por fase
 
 | Fase | O que este repositório entrega |
@@ -947,6 +987,7 @@ quando ligado. Gravadores e câmeras são os equipamentos de sempre (item 18), a
 | **Expansão · Plano 1** ✅ | CFTV por adaptador, com simuladores (23) · módulos aceitos e `telefonia` como sinal (25) · credencial de monitoria e `cftv` no retrato (26) — 2026-09-30, linha paralela, só local |
 | **Expansão · Planos 2 e 3** | rede por SNMP (22) · servidores (24) |
 | **NOC 1.4.0** ✅ | serviços do ambiente, DVR e câmeras por ambiente, `equipamentos.ambiente` (27) — 2026-10-09, versão proposta 2.17.0 |
+| **Instalação da loja** ✅ | verbo `chamadas_dos_ramais`, o relatório de chamadas de teste (28) — 2026-10-27, 2.19.1 |
 
 ---
 

@@ -55,8 +55,10 @@ from middleware_monitor.core.models import (
     Collection,
     Device,
     ExtensionApplyRunLine,
+    ExtensionCall,
     ExtensionEnvironment,
     ExtensionLine,
+    MqttBroker,
     NocTarefa,
     SystemLog,
 )
@@ -415,6 +417,115 @@ async def _logs(p: dict[str, Any], _ctx: Contexto) -> Resultado:
                 }
             )
     return Resultado(ok=True, resultado={"linhas": linhas})
+
+
+# --- Chamadas dos ramais (2.19.1): o relatório de chamadas de teste do NOC ----------------
+#
+# Na ativação de loja o técnico liga de cada ramal novo para um número de teste; o NOC
+# monta o "Relatório de Chamadas de Teste" com o que o coletor MQTT reconstruiu aqui
+# (``extension_calls``, ``domain/mqtt/calls.py``). Só lê: nenhuma linha é criada nem
+# fechada a pedido do NOC.
+#
+# ``extension_calls.ramal`` é o campo ``ramal`` do payload do PBX — o número que o
+# USCall e o monitor mostram (``27611``), não o usuário SIP da planilha, que em vários
+# clientes leva o prefixo do servidor (``assaisp01-27611``). O NOC pode mandar qualquer
+# um dos dois: o item casa como veio e, se tiver ``-``, também pelo que vem depois do
+# último ``-``.
+
+MAXIMO_DE_RAMAIS_NAS_CHAMADAS = 500
+LIMITE_PADRAO_DAS_CHAMADAS = 2000
+LIMITE_MAXIMO_DAS_CHAMADAS = 5000
+
+
+def _instante_do_pedido(valor: Any) -> datetime | None:
+    """ISO-8601 → UTC sem fuso (como ``started_at``). Sem fuso no texto = já é UTC."""
+    if not isinstance(valor, str) or not 10 <= len(valor.strip()) <= 40:
+        return None
+    try:
+        dt = datetime.fromisoformat(valor.strip())
+    except ValueError:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(UTC).replace(tzinfo=None)
+    return dt
+
+
+def _forma_das_chamadas(p: dict[str, Any]) -> tuple[dict[str, Any] | None, Resultado | None]:
+    """``ramais``, ``desde``, ``ate`` e ``limite`` conferidos; nada vai ao banco antes disto."""
+    ramais = p.get("ramais")
+    if (
+        not isinstance(ramais, list)
+        or not 1 <= len(ramais) <= MAXIMO_DE_RAMAIS_NAS_CHAMADAS
+        or not all(isinstance(r, str) and _RAMAL.match(r) for r in ramais)
+    ):
+        return None, _recusa_da_edicao(
+            "VALOR_INVALIDO",
+            f"ramais: lista de 1 a {MAXIMO_DE_RAMAIS_NAS_CHAMADAS} ramais "
+            "(letras, dígitos, * # _ . -; até 32).",
+        )
+    desde, ate = _instante_do_pedido(p.get("desde")), _instante_do_pedido(p.get("ate"))
+    if desde is None or ate is None:
+        return None, _recusa_da_edicao(
+            "VALOR_INVALIDO", "desde e ate: data e hora ISO-8601 (ex.: 2026-10-27T13:00:00Z)."
+        )
+    if desde > ate:
+        return None, _recusa_da_edicao("VALOR_INVALIDO", "desde precisa ser anterior ou igual a ate.")
+    limite = p.get("limite", LIMITE_PADRAO_DAS_CHAMADAS)
+    inteiro = isinstance(limite, int) and not isinstance(limite, bool)
+    if not (inteiro and 1 <= limite <= LIMITE_MAXIMO_DAS_CHAMADAS):
+        return None, _recusa_da_edicao(
+            "VALOR_INVALIDO", f"limite: inteiro entre 1 e {LIMITE_MAXIMO_DAS_CHAMADAS}."
+        )
+    procurados: set[str] = set()
+    for r in ramais:
+        procurados.add(r)
+        # Usuário SIP com prefixo (``assaisp01-27611``): o PBX publica o número (``27611``).
+        sufixo = r.rsplit("-", 1)[-1]
+        if "-" in r and sufixo:
+            procurados.add(sufixo)
+    return {"ramais": procurados, "desde": desde, "ate": ate, "limite": limite}, None
+
+
+async def _chamadas_dos_ramais(p: dict[str, Any], _ctx: Contexto) -> Resultado:
+    pedido, recusa = _forma_das_chamadas(p)
+    if recusa is not None:
+        return recusa
+    assert pedido is not None
+    consulta = (
+        select(ExtensionCall)
+        .where(
+            ExtensionCall.ramal.in_(sorted(pedido["ramais"])),
+            ExtensionCall.started_at >= pedido["desde"],
+            ExtensionCall.started_at <= pedido["ate"],
+        )
+        .order_by(ExtensionCall.started_at, ExtensionCall.id)
+        # Um a mais só para saber se cortou.
+        .limit(pedido["limite"] + 1)
+    )
+    with session_factory() as db:
+        linhas = list(db.scalars(consulta))
+        # Sem broker ligado não há coletor: "nenhuma chamada" seria mentira — o NOC
+        # diz "cliente sem MQTT" e pede o relatório anexado.
+        coletor = bool(
+            db.scalar(select(func.count()).select_from(MqttBroker).where(MqttBroker.enabled.is_(True)))
+        )
+    cortado = len(linhas) > pedido["limite"]
+    chamadas = [
+        {
+            "ramal": c.ramal,
+            "direcao": c.direcao,
+            "numero": c.numero,
+            "uniqueid": c.uniqueid,
+            "inicio": _iso(c.started_at),
+            "atendidaEm": _iso(c.answered_at),
+            "fimEm": _iso(c.ended_at),
+            "toqueS": c.ring_seconds,
+            "conversaS": c.talk_seconds,
+            "resultado": c.outcome,
+        }
+        for c in linhas[: pedido["limite"]]
+    ]
+    return Resultado(ok=True, resultado={"chamadas": chamadas, "cortado": cortado, "coletorMqtt": coletor})
 
 
 # --- Escritas ------------------------------------------------------------------------------
@@ -1390,6 +1501,14 @@ ACOES: dict[str, Acao] = {
     "inventario": Acao(LEITURA, _inventario),
     "capacidades": Acao(LEITURA, _capacidades),
     "logs": Acao(LEITURA, _logs, opcionais=frozenset({"linhas", "nivel"})),
+    # 2.19.1: as chamadas que o coletor MQTT reconstruiu, para o relatório de chamadas
+    # de teste da instalação da loja. Só lê ``extension_calls``.
+    "chamadas_dos_ramais": Acao(
+        LEITURA,
+        _chamadas_dos_ramais,
+        obrigatorios=frozenset({"ramais", "desde", "ate"}),
+        opcionais=frozenset({"limite"}),
+    ),
     "normalize": Acao(ESCRITA, _normalize, obrigatorios=frozenset({"ramal"})),
     "reaplicar_config_do_ambiente": Acao(
         ESCRITA, _reaplicar, opcionais=frozenset({"ramal", "ambienteId", "posicao"})
