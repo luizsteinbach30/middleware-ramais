@@ -423,3 +423,86 @@ def test_diff_nao_promete_remocao_que_o_import_nao_fara(db: Session) -> None:
     assert grupo["ausentes_total"] == 1
     assert grupo["removable"] is False
     assert grupo["scope"] == bundle_mod.SCOPE_SELECTION
+
+
+# ------------------------------------------------ autoria do ambiente (2.19.1)
+
+
+def test_pacote_preserva_a_autoria_do_ambiente(db: Session) -> None:
+    """Restaurar o backup não pode virar "autor desconhecido" no relatório de criação do NOC."""
+    criado_em = datetime(2026, 10, 20, 15, 30, 0)
+    env = ec_repo.create_environment(
+        db, nome="Loja 27", modelo_telefone="Intelbras S3002",
+        criado_por="ana@workconnect.com.br", criado_via="noc",
+    )
+    env.created_at = criado_em
+    db.commit()
+    data = bundle_mod.build(db, ("environments",))
+    (item,) = data["sections"]["environments"]
+    assert item["criado_por"] == "ana@workconnect.com.br"
+    assert item["criado_via"] == "noc"
+    assert item["criado_em"] == "2026-10-20T15:30:00"
+
+    ec_repo.delete_environment(db, env.id)
+    db.commit()
+    bundle_mod.apply(db, data, sections=("environments",), mode="merge")
+
+    (volta,) = ec_repo.list_environments(db)
+    assert volta.id == item["id"]
+    assert (volta.criado_por, volta.criado_via, volta.created_at) == (
+        "ana@workconnect.com.br", "noc", criado_em,
+    )
+
+
+def test_pacote_antigo_sem_autoria_restaura_como_desconhecido(db: Session) -> None:
+    _povoar(db)
+    data = bundle_mod.build(db, ("environments",))
+    for amb in data["sections"]["environments"]:
+        for campo in ("criado_por", "criado_via", "criado_em"):
+            amb.pop(campo)
+    for env in ec_repo.list_environments(db):
+        ec_repo.delete_environment(db, env.id)
+    db.commit()
+
+    bundle_mod.apply(db, data, sections=("environments",), mode="merge")
+    (volta,) = ec_repo.list_environments(db)
+    assert (volta.criado_por, volta.criado_via) == (None, None)
+    assert volta.created_at is not None
+
+
+def test_autoria_nao_e_conflito_e_arquivo_sem_autor_nao_apaga(db: Session) -> None:
+    """A autoria é história, não configuração: diferir só nela é idêntico, e um
+    pacote antigo (sem os campos) aplicado por cima não esquece quem criou."""
+    env = ec_repo.create_environment(
+        db, nome="Loja 27", modelo_telefone="Intelbras S3002",
+        criado_por="operador", criado_via="local",
+    )
+    db.commit()
+    data = bundle_mod.build(db, ("environments",))
+    (item,) = data["sections"]["environments"]
+    for campo in ("criado_por", "criado_via", "criado_em"):
+        item.pop(campo)
+
+    grupo = bundle_mod.diff(db, data, ("environments",))["groups"]["environments"]
+    assert grupo["identicos"] == 1 and grupo["conflitos_total"] == 0
+
+    # Conflito de verdade (outro nome) com o arquivo vencendo: a autoria daqui fica.
+    item["nome"] = "Loja 27 (matriz)"
+    bundle_mod.apply(db, data, sections=("environments",), mode="merge")
+    db.refresh(env)
+    assert env.nome == "Loja 27 (matriz)"
+    assert (env.criado_por, env.criado_via) == ("operador", "local")
+
+
+def test_via_desconhecida_no_pacote_vira_desconhecido(db: Session) -> None:
+    env = ec_repo.create_environment(db, nome="Loja 27", modelo_telefone="Intelbras S3002")
+    db.commit()
+    data = bundle_mod.build(db, ("environments",))
+    (item,) = data["sections"]["environments"]
+    item.update(criado_por="alguem", criado_via="planilha-magica")
+    ec_repo.delete_environment(db, env.id)
+    db.commit()
+
+    bundle_mod.apply(db, data, sections=("environments",), mode="merge")
+    (volta,) = ec_repo.list_environments(db)
+    assert (volta.criado_por, volta.criado_via) == (None, None)

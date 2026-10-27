@@ -143,6 +143,13 @@ LINE_STATE_FIELDS = (
 # identificador interno — duas instalacoes com a mesma planilha tem ids
 # diferentes e nao ha nada para o operador decidir sobre isso.
 _LINE_VOLATILE: frozenset[str] = frozenset({*LINE_STATE_FIELDS, "id"})
+# Autoria do ambiente (2.19.0; viaja no pacote desde a 2.19.1). É história de quem
+# criou, não configuração: fica fora da comparação — senão todo ambiente de antes
+# da 2.19.1 (pacote sem estes campos) viraria um conflito sem campo para mostrar.
+_ENV_AUTORIA: frozenset[str] = frozenset({"criado_por", "criado_via", "criado_em"})
+# Os ``criado_via`` que esta versão grava (``core/models.py``). Outro valor no
+# pacote vira desconhecido, em vez de um rótulo que o NOC não sabe mostrar.
+_VIAS_DE_CRIACAO: frozenset[str] = frozenset({"local", "tunel", "noc", "dispositivos"})
 # Teto de itens detalhados por grupo na resposta do diff. Com 1930 devices, uma
 # lista completa de conflitos seria impossivel de ler e cara de trafegar; o
 # resto se resolve pela decisao em massa do grupo.
@@ -301,6 +308,10 @@ def _build_environments(
             "modelo_telefone": env.modelo_telefone,
             "servicos": servicos_de(env),
             "config_padrao": ec_repo.merged_config_padrao(env),
+            # Autoria (2.19.1): o restaurado continua dizendo quem criou e quando.
+            "criado_por": env.criado_por,
+            "criado_via": env.criado_via,
+            "criado_em": _serial(env.created_at),
             "lines": [
                 ec_repo.campos_da_linha(ln, _LINE_FIELDS)
                 # O id viaja junto para o reimport reconhecer a MESMA linha
@@ -487,6 +498,7 @@ def _comparavel(grupo: str, item: dict[str, Any]) -> dict[str, Any]:
     """
     if grupo != "environments":
         return item
+    item = {k: v for k, v in item.items() if k not in _ENV_AUTORIA}
     linhas = item.get("lines")
     if not isinstance(linhas, list):
         return item
@@ -789,12 +801,14 @@ def _aplicar_ambiente(db: DBSession, item: dict[str, Any]) -> None:
         return
     env_id = str(item.get("id") or "").strip() or ec_repo.generate_slug(nome)
     env = db.get(ExtensionEnvironment, env_id)
+    criado_por, criado_via, criado_em = _autoria_do_arquivo(item)
     if env is None:
         agora = _now()
         env = ExtensionEnvironment(
             id=env_id, nome=nome, modelo_telefone=modelo,
             servicos=serializar_servicos(servicos),
-            config_padrao="{}", created_at=agora, updated_at=agora,
+            config_padrao="{}", created_at=criado_em or agora, updated_at=agora,
+            criado_por=criado_por, criado_via=criado_via,
         )
         db.add(env)
         db.flush()
@@ -802,6 +816,12 @@ def _aplicar_ambiente(db: DBSession, item: dict[str, Any]) -> None:
         env.nome = nome
         env.modelo_telefone = modelo
         env.servicos = serializar_servicos(servicos)
+        # O mesmo ambiente (mesmo id): a autoria do arquivo só preenche, nunca apaga —
+        # pacote antigo (sem os campos) ou com autor desconhecido não esquece quem criou.
+        if criado_via is not None:
+            env.criado_por, env.criado_via = criado_por, criado_via
+            if criado_em is not None:
+                env.created_at = criado_em
     cfg = item.get("config_padrao")
     if isinstance(cfg, dict):
         ec_repo.update_environment(db, env, config_padrao=cfg)
@@ -813,6 +833,26 @@ def _aplicar_ambiente(db: DBSession, item: dict[str, Any]) -> None:
         for ln in linhas
     ])
     restaurar_estado(salvas, linhas)
+
+
+def _autoria_do_arquivo(item: dict[str, Any]) -> tuple[str | None, str | None, datetime | None]:
+    """``(criado_por, criado_via, criado_em)`` do pacote; ausente ou fora de forma = ``None``.
+
+    Pacote de antes da 2.19.1 não traz nenhum dos três: o ambiente fica com autor
+    desconhecido, como era. ``criado_por`` sem ``criado_via`` conhecido não vale —
+    um autor sem o caminho por onde criou não entra no relatório do NOC.
+    """
+    criado_em = _parse_dt(item.get("criado_em"))
+    if criado_em is not None and criado_em.tzinfo is not None:
+        # O banco guarda UTC sem fuso; o pacote daqui sai assim, mas um editado à mão não.
+        criado_em = criado_em.astimezone(UTC).replace(tzinfo=None)
+    via = item.get("criado_via")
+    via = via.strip() if isinstance(via, str) else ""
+    if via not in _VIAS_DE_CRIACAO:
+        return None, None, criado_em
+    por = item.get("criado_por")
+    por = por.strip()[:254] if isinstance(por, str) and por.strip() else None
+    return por, via, criado_em
 
 
 def restaurar_estado(salvas: list[Any], do_arquivo: list[dict[str, Any]]) -> None:

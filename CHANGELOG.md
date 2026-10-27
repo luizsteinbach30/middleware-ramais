@@ -4,6 +4,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
+## [2.19.1] — 2026-10-27
+
+### Added
+
+- **Verbo `chamadas_dos_ramais` para o NOC** (leitura, sem aprovação): as chamadas que o coletor MQTT reconstruiu em
+  `extension_calls`, para o "Relatório de Chamadas de Teste" da instalação da loja (o técnico liga de cada ramal
+  novo para o número de teste). Pedido `{ ramais[1..500], desde, ate, limite? (padrão 2000, até 5000) }`; resultado
+  `{ chamadas[{ ramal, direcao, numero, uniqueid, inicio, atendidaEm, fimEm, toqueS, conversaS, resultado }],
+  cortado, coletorMqtt }`, horas em UTC com `Z`, em ordem de início.
+  - O PBX publica o **número** do ramal (`27611`); o NOC pode mandar o usuário SIP com prefixo (`assaisp01-27611`):
+    cada item casa como veio e, com `-`, também pelo que vem depois do último `-`.
+  - `coletorMqtt: false` (nenhum broker ligado) separa "cliente sem MQTT" de "nenhuma chamada".
+  - Pedido fora de forma volta `VALOR_INVALIDO`, sem consultar o banco. Contrato em `docs/AGENTE-NOC.md`, item 28.
+
+### Fixed
+
+- **O pacote de backup (`.mwrbak`) passa a levar a autoria do ambiente**: `criado_por`, `criado_via` e `criado_em`
+  saem no pacote e voltam na restauração — antes, ambiente restaurado ficava com autor desconhecido e com a data da
+  restauração no relatório de criação de ambientes do NOC.
+  - Pacote antigo (sem os campos) restaura como antes: autor desconhecido.
+  - A autoria não entra na comparação (não vira conflito) e o arquivo só a preenche: pacote sem autor aplicado
+    sobre o mesmo ambiente não apaga quem criou. `criado_via` fora de `local`/`tunel`/`noc`/`dispositivos` vira
+    desconhecido.
+  - Importar pela tela de Ambientes continua criando ambiente **novo**, com a autoria de quem importa.
+
 ## [2.19.0] — 2026-10-23
 
 ### Added
