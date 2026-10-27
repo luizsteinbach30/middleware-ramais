@@ -1,5 +1,6 @@
 import { api } from '/static/js/api.js';
 import { toast } from '/static/js/components/toast.js';
+import { ligarToque } from '/static/js/components/planilha_toque.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -504,6 +505,15 @@ function buildSheet(linhas) {
   attachDevicePopover(container);
   attachPreviewClick(container);
   attachActionsMenu(container);
+  // iPad/celular: toque para editar, seleção por arrasto, copiar/colar/preencher/apagar (v2.19.2).
+  // O "Preencher ↓" usa a mesma sequência da alça do mouse (_columnPattern).
+  ligarToque(container, sheet, {
+    valorDoPreenchimento: (x, yFonte, deslocamento) => {
+      const p = _columnPattern(x, yFonte);
+      return p.hasPattern ? p.prefix + String(p.startNum + deslocamento).padStart(p.width, "0") : p.lastVal;
+    },
+    avisar: (msg, tipo) => (toast[tipo] || toast.info)(msg),
+  });
 }
 
 // ----- Popover de ações no device vinculado (ver / desvincular) ---------------

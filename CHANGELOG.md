@@ -4,6 +4,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
+## [2.19.2] — 2026-10-27
+
+### Fixed
+
+- **Planilha no iPad (toque)** — pedido do dono: "não consigo digitar nem copiar e arrastar as informações da
+  planilha". O Jspreadsheet só abria a edição segurando o dedo meio segundo, arrastar só rolava a tela, e copiar,
+  colar, apagar e a alça de preencher dependiam de mouse e teclado. Com tela de toque (`static/js/components/
+  planilha_toque.js`, nas planilhas de Telefones e de DVR/Câmeras):
+  - tocar seleciona a célula; **tocar de novo edita**, com o teclado do iPad;
+  - uma barra acima da planilha: **Selecionar** (arrastar o dedo marca células em vez de rolar), **Copiar**,
+    **Colar**, **Preencher ↓** (a primeira linha da seleção desce pelas outras com a mesma sequência da alça:
+    2001, 2002, 2003…) e **Apagar**;
+  - copiar/colar usa a área de transferência do sistema quando o navegador deixa (HTTPS, o acesso pelo NOC) e
+    sempre uma área interna da página (o `http://IP:8080` não tem a API);
+  - as colunas ✓, 👁, ⋮ e Device continuam respondendo ao toque. Com mouse e teclado nada muda.
+- **Menu lateral no tablet**: sem escolha salva, abre recolhido (trilho de ícones) até 1279 px — no iPad em pé os
+  16rem do menu tomavam um terço da tela. Abaixo de 768 px (iPad em tela dividida) o menu sumia sem substituto;
+  agora fica o trilho. O recolhido automático não vira preferência salva.
+
 ## [2.19.1] — 2026-10-27
 
 ### Added

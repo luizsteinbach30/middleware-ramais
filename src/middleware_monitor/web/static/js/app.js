@@ -8,11 +8,15 @@ import { atualizarMenu, ligarMenu } from '/static/js/components/menu.js';
 // inline no base.html (antes do paint); aqui só ficam o toggle e o atalho.
 const SIDEBAR_KEY = 'mm.sidebar';
 
-function setSidebarCollapsed(collapsed) {
+function setSidebarCollapsed(collapsed, { salvar = true } = {}) {
   document.documentElement.classList.toggle('sidebar-collapsed', collapsed);
-  try {
-    localStorage.setItem(SIDEBAR_KEY, collapsed ? 'collapsed' : 'expanded');
-  } catch (_e) { /* localStorage bloqueado: vale só nesta página */ }
+  // Só a escolha da pessoa é salva: o recolhido automático do tablet (base.html)
+  // não vira preferência — numa janela larga depois, a lateral volta a abrir.
+  if (salvar) {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, collapsed ? 'collapsed' : 'expanded');
+    } catch (_e) { /* localStorage bloqueado: vale só nesta página */ }
+  }
   const btn = document.getElementById('sb-toggle');
   if (btn) {
     const label = collapsed ? 'Expandir menu (Ctrl+B)' : 'Recolher menu (Ctrl+B)';
@@ -28,7 +32,7 @@ function setSidebarCollapsed(collapsed) {
 function bindSidebar() {
   const btn = document.getElementById('sb-toggle');
   const collapsed = document.documentElement.classList.contains('sidebar-collapsed');
-  setSidebarCollapsed(collapsed);   // sincroniza título/aria com o estado salvo
+  setSidebarCollapsed(collapsed, { salvar: false });   // sincroniza título/aria com o estado inicial
   if (btn) {
     btn.addEventListener('click', () => {
       setSidebarCollapsed(!document.documentElement.classList.contains('sidebar-collapsed'));
