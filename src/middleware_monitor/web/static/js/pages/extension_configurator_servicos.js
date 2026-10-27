@@ -5,6 +5,7 @@
 // câmeras, que gravam na lista de equipamentos do agente (o mesmo caminho do NOC).
 // Nada daqui fala com o DVR nem com a câmera.
 import { toast } from '/static/js/components/toast.js';
+import { ligarToque } from '/static/js/components/planilha_toque.js';
 import { badge, esc } from '/static/js/components/equipamentos.js';
 
 const envId = window.EC_ENV_ID;
@@ -187,6 +188,8 @@ function montarPlanilha(aba) {
       if (chave) cell.classList.add(`ec-cftv-estado-${chave}`);
     },
   });
+  // iPad/celular: a mesma camada de toque da planilha de telefones (v2.19.2).
+  ligarToque($('#ec-cftv-sheet'), sheet, { avisar: (msg, tipo) => (toast[tipo] || toast.info)(msg) });
 }
 
 // --- câmeras em lista, agrupadas pelo DVR ---------------------------------------------------

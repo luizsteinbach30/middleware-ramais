@@ -10,12 +10,17 @@
   <link rel="stylesheet" href="/static/css/app.css">
   <script>
     // Aplica o estado da sidebar ANTES do primeiro paint — senão a tela abre
-    // expandida e "pula" para recolhida.
-    try {
-      if (localStorage.getItem('mm.sidebar') === 'collapsed') {
+    // expandida e "pula" para recolhida. Sem escolha salva, tela de tablet
+    // (até 1279 px, ex.: iPad) abre recolhida; abaixo de 768 px sempre abre
+    // recolhida, porque o menu de 16rem tomaria a tela (v2.19.2).
+    (function () {
+      var salvo = null;
+      try { salvo = localStorage.getItem('mm.sidebar'); } catch (_e) { /* bloqueado */ }
+      var mm = function (q) { try { return window.matchMedia(q).matches; } catch (_e) { return false; } };
+      if (salvo === 'collapsed' || mm('(max-width: 767.98px)') || (salvo === null && mm('(max-width: 1279.98px)'))) {
         document.documentElement.classList.add('sidebar-collapsed');
       }
-    } catch (_e) { /* localStorage bloqueado: segue expandida */ }
+    })();
   </script>
   <script>
     tailwind.config = { theme: { extend: { fontFamily: { sans: ['ui-sans-serif','system-ui'] } } } };
