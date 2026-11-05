@@ -400,21 +400,34 @@ class FlyingVoiceAdapter(VendorAdapter):
 
     # ------------------------------------------------------------ device actions
     # Homologado ao vivo (P10, 2026-07-31): a Phone_Preference posta em
-    # /goform/setSip (OnSubmit). Volume escala 0-9 (máx=9). DND = DBID_DND_ENABLE.
+    # /goform/setSip (OnSubmit). Volume escala 0-9. DND = DBID_DND_ENABLE.
     # Fazemos replay do form inteiro (parse_form_fields preserva os ~214 campos)
-    # sobrescrevendo só DND + volumes → DND off + volume máx, SIP intacto. Mudar
-    # o DND pode reiniciar o aparelho (não é ImmeEffect); volume é imediato.
+    # sobrescrevendo só DND + volumes → DND off + volumes em 5 (padrão definido
+    # pelo dono em 2026-11-05), SIP intacto. Mudar o DND pode reiniciar o aparelho
+    # (não é ImmeEffect); volume é imediato.
+    #
+    # ATENÇÃO — os 7 <select> de volume da página são preenchidos por JavaScript
+    # no navegador (GenVoLMenu): no HTML não há <option>, e o replay os lê VAZIOS.
+    # Todo select desses precisa de valor aqui, ou o POST o envia em branco.
+    # Em branco, o firmware esvazia o slot da linha 1 no export (medido, V0.7.89).
+    # INVOICE/OUTVOICE levam UM valor: o POST grava só o slot da linha 1; o
+    # "5<TAB>5<TAB>..." do export é a mesma chave vista por slot de linha.
+    # DBID_VOL_BACKUP não entra aqui: o setSip o descarta, e o aparelho o recalcula
+    # dos volumes a cada reboot; com tudo em 5, ele fica 5-5-5-5-5
+    # (DEVICE_ACTIONS_HOMOLOGACAO.md).
     _PREFERENCE_PAGE = "/phone/Phone_Preference.asp"
     _PREFERENCE_SET = "/goform/setSip"
     _PREFERENCE_FORM = "preference"
-    _VOLUME_MAX = "9"
+    _VOLUME_PADRAO = "5"
     _NORMALIZE_OVERRIDES: ClassVar[dict[str, str]] = {
         "DBID_DND_ENABLE": "0",       # DND off
-        "DBID_HF_OUT_VOL": _VOLUME_MAX,       # viva-voz saída
-        "DBID_HEADSET_OUT_VOL": _VOLUME_MAX,  # headset saída (ImmeEffect)
-        "DBID_HF_IN_VOL": _VOLUME_MAX,
-        "DBID_HEADSET_IN_VOL": _VOLUME_MAX,
-        "DBID_RING_VOL": _VOLUME_MAX,
+        "DBID_HF_OUT_VOL": _VOLUME_PADRAO,       # viva-voz saída
+        "DBID_HEADSET_OUT_VOL": _VOLUME_PADRAO,  # headset saída (ImmeEffect)
+        "DBID_HF_IN_VOL": _VOLUME_PADRAO,
+        "DBID_HEADSET_IN_VOL": _VOLUME_PADRAO,
+        "DBID_RING_VOL": _VOLUME_PADRAO,
+        "DBID_INVOICE_NUM": _VOLUME_PADRAO,   # monofone: ganho de entrada
+        "DBID_OUTVOICE_NUM": _VOLUME_PADRAO,  # monofone: volume
     }
 
     def capabilities(self) -> frozenset[str]:
@@ -445,7 +458,7 @@ class FlyingVoiceAdapter(VendorAdapter):
         if status not in (200, 302):
             raise RuntimeError(f"FlyingVoice: normalize HTTP {status}")
         return ActionResult(
-            ok=True, detail="DND off + volume máximo", rebooted=True,
+            ok=True, detail="DND off + volumes no padrão (5)", rebooted=True,
         )
 
     # ----------------------------------------------------- credencial web

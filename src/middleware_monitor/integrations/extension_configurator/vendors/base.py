@@ -29,7 +29,7 @@ def reset_avisos_para_testes() -> None:
 # ---------------------------------------------------------------- device actions
 # Ações remotas nos telefones (v2.7.0). O catálogo é fechado; cada adapter
 # declara em ``capabilities()`` o subconjunto que homologou.
-#   normalize  — devolver o telefone ao estado operacional: volume no máximo +
+#   normalize  — devolver o telefone ao estado operacional: volume no padrão do modelo +
 #                DND desligado (o problema real: operador abaixa o volume/ativa
 #                DND). Homologado ao vivo (ver docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md).
 #   set_ip     — trocar o endereço IP (ação PERIGOSA; a UI exige confirmação).

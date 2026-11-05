@@ -4,6 +4,21 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
+## [2.19.3] — 2026-11-05
+
+### Fixed
+
+- **Normalize do FlyingVoice P10 enviava o monofone em branco** — `DBID_INVOICE_NUM` e `DBID_OUTVOICE_NUM` são
+  montados por JavaScript, e o replay do formulário os reenviava vazios, esvaziando o slot da linha 1 (conferido no
+  export de um P10 fw V0.7.89).
+
+### Changed
+
+- **Normalize do FlyingVoice P10 deixa os volumes em 5, não mais no máximo** — os 7 volumes (monofone, viva-voz,
+  headset e campainha) vão a `5`, padrão definido pelo dono. Com isso, `DBID_VOL_BACKUP`, que o aparelho recalcula a
+  cada reboot, fica `5-5-5-5-5`. A campainha e o viva-voz ficam mais baixos do que antes. Os demais modelos seguem
+  no máximo; a tela agora diz "volume no padrão do modelo".
+
 ## [2.19.2] — 2026-10-27
 
 ### Fixed
