@@ -345,7 +345,7 @@ class MqttConnection:
         if self.on_message is None:
             return
         try:
-            self.on_message(message.topic, message.payload or b"", int(message.qos), bool(message.retain))
+            self.on_message(message.topic, bytes(message.payload or b""), int(message.qos), bool(message.retain))
         except Exception as exc:  # pragma: no cover - callback do chamador
             log.error("mqtt_on_message_failed", error=type(exc).__name__, message=str(exc))
 

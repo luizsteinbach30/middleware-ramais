@@ -11,6 +11,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 - **Normalize do FlyingVoice P10 enviava o monofone em branco** — `DBID_INVOICE_NUM` e `DBID_OUTVOICE_NUM` são
   montados por JavaScript, e o replay do formulário os reenviava vazios, esvaziando o slot da linha 1 (conferido no
   export de um P10 fw V0.7.89).
+- **MQTT com `paho-mqtt` 2.2** — o `payload` pode vir como `bytearray`; agora é convertido para `bytes` antes de
+  chegar ao callback.
 
 ### Changed
 
