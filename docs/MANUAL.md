@@ -1,6 +1,6 @@
 # Manual de instalação e uso
 
-Guia prático para usar o **Middleware USCall Monitor** nos servidores. A partir da v2.1.0 a entrega no Windows é um **único `.exe` standalone** — sem instalador, sem serviço, sem dependências.
+Guia prático para usar o **Middleware USCall Monitor** nos servidores. A partir da v2.1.0 a entrega no Windows é um **único `.exe` standalone** — sem instalador nem dependências. A partir da v2.20.0 ele se instala como serviço do Windows, se você aceitar (seção 2.2).
 
 ---
 
@@ -32,11 +32,20 @@ Não há instalador no Windows. **Um único `.exe` contém tudo**: Python embuti
 - **Aba "Log de execução"**: tail em tempo real do que o servidor está fazendo, com cor por nível (INFO branco, WARN amarelo, ERROR vermelho).
 - **Aba "Sobre"**: caminho dos dados, repositório, canal e credenciais iniciais.
 
-### 2.2 Parar o servidor
+### 2.2 Iniciar junto com o Windows (serviço)
+
+Ao abrir o `.exe`, a janela pergunta se deve instalar o Middleware como serviço. Clique em **Sim** e aceite a permissão de administrador. A janela fecha, o painel fica fora do ar por alguns instantes e abre sozinho no fim.
+
+- Ele passa a iniciar com a máquina, sem ninguém logado, e reinicia sozinho se cair.
+- **Programa:** `%ProgramFiles%\MiddlewareMonitor\MiddlewareMonitor.exe`.
+- **Dados:** `%ProgramData%\MiddlewareMonitor\`, só para administradores. A pasta antiga fica como estava, mas deixa de ser usada.
+- Abrir o `.exe` agora só abre o painel. Para parar ou iniciar, use `services.msc` → **Middleware USCall Monitor**.
+- O serviço não enxerga unidades de rede mapeadas nem VPN iniciada só na sessão do usuário.
+- **Para desfazer**, como administrador: `"%ProgramFiles%\MiddlewareMonitor\MiddlewareMonitor.exe" --remover-servico`. Para manter o que foi alterado no serviço, copie a pasta de dados dele por cima de `%LOCALAPPDATA%\MiddlewareMonitor` antes de abrir o `.exe`.
+
+Se recusar, ele continua na janela e pergunta de novo na próxima abertura. Nesse caso:
 
 - Clique em **Fechar** na janela, ou simplesmente feche a janela (`X`). O servidor encerra junto.
-- Não há serviço Windows. Quando você fecha o app, o servidor para.
-- Para rodar sempre: coloque um atalho do `.exe` em `shell:startup` (`Win+R` → digite `shell:startup`). O app abrirá automaticamente no logon.
 
 ### 2.3 Acessar de outro computador da rede
 

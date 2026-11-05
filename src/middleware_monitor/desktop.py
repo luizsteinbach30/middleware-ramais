@@ -3,7 +3,9 @@
 This module turns the FastAPI application into a regular Windows/Linux
 desktop app:
 
-* No Windows service / NSSM. The app runs while the window is open.
+* Without the Windows service, the app runs while the window is open. The window
+  offers to install the service, which starts with Windows (ADR 0011). With it
+  installed, opening the ``.exe`` only opens the panel.
 * A small Tkinter window shows the live status, lets the operator
   open the web panel, view the log tail and quit cleanly.
 * The web server (uvicorn) runs in a daemon thread inside the same
@@ -47,6 +49,9 @@ if sys.stdout is None:
     sys.stdout = open(os.devnull, "w", encoding="utf-8")
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+from middleware_monitor import servico_windows
+
 
 def request_shutdown() -> None:
     """Ask the desktop app to terminate from any thread. Idempotent.
@@ -100,7 +105,12 @@ APP_NAME = "MiddlewareMonitor"
 
 
 def _user_data_dir() -> Path:
-    """Per-user writable directory. No admin required."""
+    """Per-user writable directory. No admin required.
+
+    Como serviço, a pasta é a da máquina: o ``%LOCALAPPDATA%`` do SYSTEM não é o do operador.
+    """
+    if servico_windows.em_servico():
+        return servico_windows.pasta_dados()
     if sys.platform.startswith("win"):
         base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
         return Path(base) / APP_NAME
@@ -488,6 +498,7 @@ PALETTE = {
 class DesktopApp:
     POLL_INTERVAL_MS = 250
     UPDATE_CHECK_DELAY_MS = 4_000
+    OFERTA_DO_SERVICO_MS = 2_000
 
     def __init__(self, root: tk.Tk) -> None:
         from middleware_monitor.version import __version__
@@ -532,6 +543,33 @@ class DesktopApp:
         self.root.after(self.POLL_INTERVAL_MS, self._poll_status)
         self.root.after(self.POLL_INTERVAL_MS, self._poll_shutdown)
         self.root.after(self.UPDATE_CHECK_DELAY_MS, self._check_for_update_async)
+        if _pode_oferecer_servico():
+            self.root.after(self.OFERTA_DO_SERVICO_MS, self._oferecer_servico)
+
+    def _oferecer_servico(self) -> None:
+        """Pergunta a cada abertura até virar serviço. O servidor segue rodando enquanto isso."""
+        if not messagebox.askyesno(
+            "Iniciar junto com o Windows",
+            "Instalar o Middleware como serviço do Windows?\n\n"
+            "Ele passa a iniciar junto com a máquina, sem precisar de ninguém logado "
+            "e sem esta janela. Os dados são copiados para a pasta do serviço.\n\n"
+            "O Windows vai pedir permissão de administrador, e o painel fica fora do ar "
+            "por alguns instantes.",
+        ):
+            return
+        port = int(os.environ.get("APP_PORT", str(DEFAULT_PORT)))
+        argumentos = [
+            servico_windows.ARGUMENTO_INSTALAR, "--pid", str(os.getpid()),
+            "--dados", str(self.data_dir), "--porta", str(port),
+        ]
+        if not servico_windows.pedir_elevacao(argumentos):
+            messagebox.showinfo(
+                "Serviço não instalado",
+                "Sem a permissão de administrador, o Middleware continua rodando nesta janela.",
+            )
+            return
+        # A cópia dos dados só começa depois que este processo larga o banco e a porta.
+        request_shutdown()
 
     def _poll_shutdown(self) -> None:
         """Watch the cross-thread shutdown flag (set by the API layer when
@@ -986,7 +1024,124 @@ def _porta_ocupada_com_retry(port: int, *, tentativas: int = 3) -> bool:
     return True
 
 
+# --- serviço do Windows (ADR 0011) ---------------------------------------------
+
+
+def _pode_oferecer_servico() -> bool:
+    """Só o ``.exe`` no Windows: em modo dev o caminho do programa seria o ``python.exe``."""
+    return sys.platform.startswith("win") and bool(getattr(sys, "frozen", False))
+
+
+def _corpo_do_servico() -> int:
+    """O servidor sem janela. 0 = parada pedida; outro código = o Windows reinicia."""
+    from logging.handlers import RotatingFileHandler
+
+    from middleware_monitor.core import encerramento
+
+    _bootstrap_env()
+    # Serviço não fecha à noite como a janela: sem rotação, o log cresce até encher o disco.
+    arquivo = RotatingFileHandler(
+        _user_data_dir() / "logs" / "app.log",
+        maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8",
+    )
+    arquivo.setFormatter(logging.Formatter("%(asctime)s %(levelname)-5s %(name)s | %(message)s"))
+    arquivo.setLevel(logging.INFO)
+    raiz = logging.getLogger()
+    raiz.setLevel(logging.INFO)
+    raiz.addHandler(arquivo)
+
+    server = ServerThread(os.environ["APP_HOST"], int(os.environ["APP_PORT"]))
+    server.start()
+    while not encerramento.pedido():
+        if server.error is not None or server.thread is None or not server.thread.is_alive():
+            return 1
+        time.sleep(0.5)
+    server.stop()
+    if server.thread is not None:
+        server.thread.join(timeout=servico_windows.ESPERA_DA_PARADA_S - 5)
+    return 0
+
+
+def _rodar_como_servico() -> int:
+    from middleware_monitor.core import encerramento
+
+    os.environ[servico_windows.ENV_MODO] = "1"
+    return servico_windows.rodar(_corpo_do_servico, encerramento.pedir)
+
+
+def _argumento(nome: str, padrao: str) -> str:
+    args = sys.argv
+    return args[args.index(nome) + 1] if nome in args[:-1] else padrao
+
+
+def _instalar_servico() -> int:
+    """Roda elevado, aberto pela janela. Sem janela própria: só o resultado no fim."""
+    from middleware_monitor.version import __version__
+
+    root = tk.Tk()
+    root.withdraw()
+    porta = int(_argumento("--porta", str(DEFAULT_PORT)))
+    try:
+        servico_windows.instalar(
+            origem_exe=Path(sys.executable),
+            dados_origem=Path(_argumento("--dados", str(_user_data_dir()))),
+            pid=int(_argumento("--pid", "0")),
+            porta=porta,
+            versao=__version__,
+        )
+    except (servico_windows.FalhaNoServico, ValueError) as exc:
+        messagebox.showerror(
+            "Serviço não instalado",
+            f"Nada mudou: abra o Middleware de novo e ele volta a rodar nesta janela.\n\n{exc}",
+        )
+        root.destroy()
+        return 1
+    messagebox.showinfo(
+        "Serviço instalado",
+        "O Middleware agora inicia junto com o Windows.\n\n"
+        f"Programa: {servico_windows.caminho_do_programa()}\n"
+        f"Dados: {servico_windows.pasta_dados()}",
+    )
+    root.destroy()
+    webbrowser.open(f"http://localhost:{porta}/")
+    return 0
+
+
+def _abrir_servico_instalado(situacao: int) -> int:
+    """Com o serviço instalado, a janela não sobe servidor: seriam dois bancos divergindo."""
+    port = int(os.environ.get("APP_PORT", str(DEFAULT_PORT)))
+    if situacao == servico_windows.RODANDO and _ocupante_e_o_middleware(port):
+        webbrowser.open(f"http://localhost:{port}/")
+        return 0
+    root = tk.Tk()
+    root.withdraw()
+    messagebox.showinfo(
+        "Serviço do Middleware",
+        "O Middleware está instalado como serviço, mas o painel não está respondendo agora.\n\n"
+        "Se ele acabou de iniciar, aguarde alguns instantes. Se não, abra services.msc "
+        f'e inicie o serviço "{servico_windows.NOME_VISIVEL}".',
+    )
+    root.destroy()
+    return 0
+
+
+def _remover_servico() -> int:
+    servico_windows.remover()
+    return 0
+
+
 def main() -> int:
+    comandos = {
+        servico_windows.ARGUMENTO_SERVICO: _rodar_como_servico,
+        servico_windows.ARGUMENTO_INSTALAR: _instalar_servico,
+        servico_windows.ARGUMENTO_REMOVER: _remover_servico,
+    }
+    for argumento, comando in comandos.items():
+        if argumento in sys.argv:
+            return comando()
+    situacao = servico_windows.estado()
+    if situacao is not None:
+        return _abrir_servico_instalado(situacao)
     _bootstrap_env()
     port = int(os.environ.get("APP_PORT", str(DEFAULT_PORT)))
     root = tk.Tk()

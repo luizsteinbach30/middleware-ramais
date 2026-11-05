@@ -4,7 +4,16 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
-## [2.19.4] — 2026-11-05
+## [2.20.0] — 2026-11-05
+
+### Added
+
+- **Windows: o middleware como serviço, iniciando junto com a máquina** — pedido do dono. Ao abrir o `.exe`, a janela
+  oferece instalar o serviço, e o Windows pede a permissão de administrador. Ele passa a rodar sem ninguém logado e
+  sem janela, reinicia sozinho se cair, e a atualização (botão ou NOC) reabre o serviço. Programa em
+  `%ProgramFiles%\MiddlewareMonitor` e dados copiados para `%ProgramData%\MiddlewareMonitor`, acessíveis só a
+  administradores; a pasta antiga fica como está. Quem não aceitar segue na janela, como antes. Sem dependência nova
+  (ADR 0011).
 
 ### Changed
 

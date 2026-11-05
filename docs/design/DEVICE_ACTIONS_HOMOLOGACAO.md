@@ -73,7 +73,7 @@ API/UI, mas **nenhum vendor homologou** até agora.
     `5-5-5-5-5`, porque os volumes estão em 5.
 - **⚠️ `GET /reboot.asp` reinicia o aparelho** (302, sem confirmação). Fora o normalize,
   não abrir essa página, muito menos em varredura de recon.
-- **Sempre reinicia ao final** (desde a 2.19.4): o volume aplica na hora, mas o
+- **Sempre reinicia ao final** (desde a 2.20.0): o volume aplica na hora, mas o
   `DBID_VOL_BACKUP` só é recalculado no reboot. Chamada em curso cai.
   `ActionResult.rebooted=True`.
 - Regra inviolável do adapter vale aqui também: **replay nunca emite valor
