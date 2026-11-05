@@ -4,6 +4,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
+## [2.19.4] — 2026-11-05
+
+### Changed
+
+- **Normalize do FlyingVoice P10 sempre reinicia o aparelho ao final** — pedido do dono: sem o reboot,
+  `DBID_VOL_BACKUP` só virava `5-5-5-5-5` quando o telefone reiniciasse por outro motivo. Chamada em curso cai, e a
+  tela avisa antes de confirmar. Se o pedido de reinício falhar, a ação vira erro dizendo que os volumes foram gravados.
+
 ## [2.19.3] — 2026-11-05
 
 ### Fixed

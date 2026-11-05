@@ -209,6 +209,56 @@ async def test_flyingvoice_normalize_nao_envia_select_de_volume_em_branco(monkey
     assert {nome: campos[nome] for nome in selects} == dict.fromkeys(selects, "5")
 
 
+def _flyingvoice_com_reboot(monkeypatch, resposta_reboot) -> tuple[FlyingVoiceAdapter, list[str]]:
+    """Adapter com aparelho falso; ``eventos`` registra a ordem de POST e reboot."""
+    ad = FlyingVoiceAdapter()
+    eventos: list[str] = []
+
+    class _FakeCli:
+        async def get(self, url):
+            if url.endswith("/reboot.asp"):
+                eventos.append("reboot")
+                return resposta_reboot()
+            return httpx.Response(
+                200, text='<form name="preference"><input name="CheckString" value="cs">'
+                '<input name="DBID_HF_OUT_VOL" value="3"></form>',
+            )
+
+        async def aclose(self):
+            eventos.append("fechou")
+
+    async def _fake_login(ip, creds):
+        return _FakeCli(), "abc"
+
+    def _fake_http10(ip, path, body, cookie, referer):
+        eventos.append("post")
+        return 302
+
+    monkeypatch.setattr(ad, "_login", _fake_login)
+    monkeypatch.setattr(ad, "_http10_post", _fake_http10)
+    return ad, eventos
+
+
+async def test_flyingvoice_normalize_reinicia_depois_de_gravar(monkeypatch) -> None:
+    ad, eventos = _flyingvoice_com_reboot(monkeypatch, lambda: httpx.Response(302))
+
+    res = await ad.execute_action("1.2.3.4", _CREDS, "normalize", {})
+
+    assert res.ok and res.rebooted
+    assert eventos == ["post", "reboot", "fechou"]
+
+
+@pytest.mark.parametrize("resposta", [
+    lambda: httpx.Response(500),
+    lambda: (_ for _ in ()).throw(httpx.ConnectError("sem rota")),
+])
+async def test_flyingvoice_normalize_avisa_se_o_reboot_falha(monkeypatch, resposta) -> None:
+    ad, _ = _flyingvoice_com_reboot(monkeypatch, resposta)
+
+    with pytest.raises(RuntimeError, match="pedido de reinício falhou"):
+        await ad.execute_action("1.2.3.4", _CREDS, "normalize", {})
+
+
 # ---------------------------------------------------------------- Intelbras V
 
 

@@ -403,8 +403,8 @@ class FlyingVoiceAdapter(VendorAdapter):
     # /goform/setSip (OnSubmit). Volume escala 0-9. DND = DBID_DND_ENABLE.
     # Fazemos replay do form inteiro (parse_form_fields preserva os ~214 campos)
     # sobrescrevendo só DND + volumes → DND off + volumes em 5 (padrão definido
-    # pelo dono em 2026-11-05), SIP intacto. Mudar o DND pode reiniciar o aparelho
-    # (não é ImmeEffect); volume é imediato.
+    # pelo dono em 2026-11-05), SIP intacto. Volume é imediato; o normalize sempre
+    # termina reiniciando o aparelho, para o DBID_VOL_BACKUP ser recalculado.
     #
     # ATENÇÃO — os 7 <select> de volume da página são preenchidos por JavaScript
     # no navegador (GenVoLMenu): no HTML não há <option>, e o replay os lê VAZIOS.
@@ -413,11 +413,12 @@ class FlyingVoiceAdapter(VendorAdapter):
     # INVOICE/OUTVOICE levam UM valor: o POST grava só o slot da linha 1; o
     # "5<TAB>5<TAB>..." do export é a mesma chave vista por slot de linha.
     # DBID_VOL_BACKUP não entra aqui: o setSip o descarta, e o aparelho o recalcula
-    # dos volumes a cada reboot; com tudo em 5, ele fica 5-5-5-5-5
-    # (DEVICE_ACTIONS_HOMOLOGACAO.md).
+    # dos volumes a cada reboot; com tudo em 5 e o reboot do fim do normalize, ele
+    # fica 5-5-5-5-5 (DEVICE_ACTIONS_HOMOLOGACAO.md).
     _PREFERENCE_PAGE = "/phone/Phone_Preference.asp"
     _PREFERENCE_SET = "/goform/setSip"
     _PREFERENCE_FORM = "preference"
+    _REBOOT_PAGE = "/reboot.asp"
     _VOLUME_PADRAO = "5"
     _NORMALIZE_OVERRIDES: ClassVar[dict[str, str]] = {
         "DBID_DND_ENABLE": "0",       # DND off
@@ -433,6 +434,16 @@ class FlyingVoiceAdapter(VendorAdapter):
     def capabilities(self) -> frozenset[str]:
         return frozenset({ACTION_NORMALIZE})
 
+    async def _reiniciar(self, cli: httpx.AsyncClient, ip: str) -> None:
+        """Abrir /reboot.asp com a sessão ativa reinicia o aparelho (302, sem confirmação)."""
+        erro = "FlyingVoice: volumes gravados, mas o pedido de reinício falhou"
+        try:
+            resp = await cli.get(f"http://{ip}{self._REBOOT_PAGE}")
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"{erro}: {exc}") from exc
+        if resp.status_code not in (200, 302):
+            raise RuntimeError(f"{erro}: HTTP {resp.status_code}")
+
     async def execute_action(
         self, ip: str, creds: VendorCredentials, action: str, params: dict[str, Any],
     ) -> ActionResult:
@@ -443,20 +454,21 @@ class FlyingVoiceAdapter(VendorAdapter):
         cli, cookie = await self._login(ip, creds)
         try:
             html = (await cli.get(f"http://{ip}{self._PREFERENCE_PAGE}")).text
+            pairs, cs = self._parse_form_fields(html, self._PREFERENCE_FORM)
+            if not pairs:
+                raise RuntimeError("FlyingVoice: form de preferências não encontrado")
+            body = self._merge_body(
+                pairs, cs, dict(self._NORMALIZE_OVERRIDES), self._PREFERENCE_FORM, quote,
+            )
+            status = self._http10_post(
+                ip, self._PREFERENCE_SET, body, cookie,
+                referer=f"http://{ip}{self._PREFERENCE_PAGE}",
+            )
+            if status not in (200, 302):
+                raise RuntimeError(f"FlyingVoice: normalize HTTP {status}")
+            await self._reiniciar(cli, ip)
         finally:
             await cli.aclose()
-        pairs, cs = self._parse_form_fields(html, self._PREFERENCE_FORM)
-        if not pairs:
-            raise RuntimeError("FlyingVoice: form de preferências não encontrado")
-        body = self._merge_body(
-            pairs, cs, dict(self._NORMALIZE_OVERRIDES), self._PREFERENCE_FORM, quote,
-        )
-        status = self._http10_post(
-            ip, self._PREFERENCE_SET, body, cookie,
-            referer=f"http://{ip}{self._PREFERENCE_PAGE}",
-        )
-        if status not in (200, 302):
-            raise RuntimeError(f"FlyingVoice: normalize HTTP {status}")
         return ActionResult(
             ok=True, detail="DND off + volumes no padrão (5)", rebooted=True,
         )
