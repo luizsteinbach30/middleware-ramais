@@ -4,6 +4,23 @@ Format: [Keep a Changelog](https://keepachangelog.com/) · SemVer.
 
 ## [Não lançado]
 
+## [2.20.0] — 2026-11-05
+
+### Added
+
+- **Windows: o middleware como serviço, iniciando junto com a máquina** — pedido do dono. Ao abrir o `.exe`, a janela
+  oferece instalar o serviço, e o Windows pede a permissão de administrador. Ele passa a rodar sem ninguém logado e
+  sem janela, reinicia sozinho se cair, e a atualização (botão ou NOC) reabre o serviço. Programa em
+  `%ProgramFiles%\MiddlewareMonitor` e dados copiados para `%ProgramData%\MiddlewareMonitor`, acessíveis só a
+  administradores; a pasta antiga fica como está. Quem não aceitar segue na janela, como antes. Sem dependência nova
+  (ADR 0011).
+
+### Changed
+
+- **Normalize do FlyingVoice P10 sempre reinicia o aparelho ao final** — pedido do dono: sem o reboot,
+  `DBID_VOL_BACKUP` só virava `5-5-5-5-5` quando o telefone reiniciasse por outro motivo. Chamada em curso cai, e a
+  tela avisa antes de confirmar. Se o pedido de reinício falhar, a ação vira erro dizendo que os volumes foram gravados.
+
 ## [2.19.3] — 2026-11-05
 
 ### Fixed

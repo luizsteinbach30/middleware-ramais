@@ -19,7 +19,7 @@ O que não fechou os 5 pontos ficou como "não suportado" (fora da capability).
 | Vendor / modelo    | normalize | set_ip | Mecanismo                         | Reboot |
 |--------------------|-----------|--------|-----------------------------------|--------|
 | Yealink T31G       | ✅        | —      | Action URI (`GET /servlet?key=…`) | não    |
-| FlyingVoice P10    | ✅        | —      | form-replay `preference` → `/goform/setSip` | **sim, ao mudar DND** |
+| FlyingVoice P10    | ✅        | —      | form-replay `preference` → `/goform/setSip` | **sim, sempre** |
 | HTEK UC902G        | ✅ (volume + DND) | — | `hl_provision` parcial (P-codes) | **sim, sempre** |
 | Intelbras V3501/V5501 | ✅ (volume + DND + campainha) | — | Action URI `DNDOff` + `sysConf` parcial | não |
 | Intelbras S3002    | ❌        | —      | sem unidade em lab para homologar | —      |
@@ -69,12 +69,13 @@ API/UI, mas **nenhum vendor homologou** até agora.
   - `/goform/setSip` responde 302 e descarta o campo, que não existe no form.
   - O upload do `.cfg` (`/cgi-bin/upload_settings.cgi?config`) grava o valor, mas o
     próximo reboot o recalcula a partir dos volumes.
-  - O normalize não muda o campo na hora: `5-5-5-5-5` aparece no reboot seguinte, porque
-    os volumes ficam em 5.
-- **⚠️ `GET /reboot.asp` reinicia o aparelho** (302, sem confirmação). Não abrir essa
-  página em varredura de recon.
-- **Reinicia ao mudar o DND** (o campo não é ImmeEffect); volume aplica na
-  hora. `ActionResult.rebooted=True`.
+  - O normalize termina com `GET /reboot.asp`: o aparelho reinicia e o campo vira
+    `5-5-5-5-5`, porque os volumes estão em 5.
+- **⚠️ `GET /reboot.asp` reinicia o aparelho** (302, sem confirmação). Fora o normalize,
+  não abrir essa página, muito menos em varredura de recon.
+- **Sempre reinicia ao final** (desde a 2.20.0): o volume aplica na hora, mas o
+  `DBID_VOL_BACKUP` só é recalculado no reboot. Chamada em curso cai.
+  `ActionResult.rebooted=True`.
 - Regra inviolável do adapter vale aqui também: **replay nunca emite valor
   próprio para chaves de rede** (whitelist).
 

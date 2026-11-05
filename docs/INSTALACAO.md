@@ -108,6 +108,9 @@ docker run --rm -v "$PWD/dist:/dist:ro" ubuntu:24.04 bash -c '
 
 ### Windows
 
+Como serviço (ADR 0011), a mesma estrutura fica em `%ProgramData%\MiddlewareMonitor\`, e o programa em
+`%ProgramFiles%\MiddlewareMonitor\`. Na janela:
+
 ```
 %LOCALAPPDATA%\MiddlewareMonitor\
 ├── db\app.db

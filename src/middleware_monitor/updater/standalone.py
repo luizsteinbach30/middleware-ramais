@@ -39,6 +39,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from middleware_monitor import servico_windows
 from middleware_monitor.core.logging import get_logger
 from middleware_monitor.updater.checksums import verify_file
 from middleware_monitor.updater.client import download_asset_sync
@@ -130,6 +131,7 @@ def apply_standalone_update(
             porta=porta or _porta_local(),
             resultado=data_dir / RESULTADO,
             trava=trava,
+            servico=servico_windows.NOME if servico_windows.em_servico() else "",
         ),
         encoding="utf-8-sig",  # o PowerShell 5.1 só lê acento em arquivo com BOM
     )
@@ -245,7 +247,7 @@ def _ps(texto: str | Path) -> str:
 
 
 def script_do_ajudante(
-    *, novo: Path, atual: Path, alvo: str, porta: int, resultado: Path, trava: Path
+    *, novo: Path, atual: Path, alvo: str, porta: int, resultado: Path, trava: Path, servico: str = ""
 ) -> str:
     """O ``.ps1`` que troca o executável depois que este processo sai.
 
@@ -254,8 +256,16 @@ def script_do_ajudante(
     PyInstaller onefile roda dois: o carregador e o Python) e, passado o prazo, os
     encerra. Sem ``alvo`` (versão desconhecida) a saúde aceita qualquer versão que
     responda: ainda prova que o executável novo abre.
+
+    Com ``servico``, subir é ``Start-Service``: abrir o ``.exe`` direto o deixaria fora do
+    gerenciador de serviços, sem ``--servico`` e na sessão 0, sem tela para a janela.
     """
     bak = atual.with_name(atual.name + ".bak")
+    subir = (
+        f"Start-Service -Name {_ps(servico)} -ErrorAction SilentlyContinue"
+        if servico
+        else "Start-Process -FilePath $atual -WorkingDirectory (Split-Path -Parent $atual) | Out-Null"
+    )
     return f"""$ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 $novo = {_ps(novo)}
@@ -290,7 +300,7 @@ function Subir {{
   Get-ChildItem Env: | Where-Object {{ $_.Name -like '_PYI_*' -or $_.Name -like '_MEIPASS*' }} |
     ForEach-Object {{ Remove-Item -LiteralPath ('Env:' + $_.Name) -ErrorAction SilentlyContinue }}
   $env:PYINSTALLER_RESET_ENVIRONMENT = '1'
-  Start-Process -FilePath $atual -WorkingDirectory (Split-Path -Parent $atual) | Out-Null
+  {subir}
 }}
 
 $mutex = New-Object Threading.Mutex($false, 'Global\\MiddlewareMonitorUpdate')

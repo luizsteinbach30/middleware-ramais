@@ -1233,9 +1233,18 @@ function attachActionsMenu(container) {
   window.addEventListener('scroll', hideActionsMenu, true);
 }
 
+function avisoReinicioNormalize() {
+  const modelo = String(modeloTelefone).toLowerCase();
+  if (isHtek) return '\n\nAtenção: telefones HTEK reiniciam ao receber a normalização.';
+  if (modelo.startsWith('flyingvoice')) {
+    return '\n\nAtenção: telefones FlyingVoice reiniciam ao receber a normalização, e a chamada em curso cai.';
+  }
+  return '';
+}
+
 async function runNormalizeOnLine(lineId, ip, ramal) {
   if (!ip) { toast.info('Linha sem IP — nada a normalizar.'); return; }
-  if (!confirm(`Normalizar o telefone ${ip} (ramal ${ramal || '—'})?\nVolume no padrão do modelo + DND desligado.`)) return;
+  if (!confirm(`Normalizar o telefone ${ip} (ramal ${ramal || '—'})?\nVolume no padrão do modelo + DND desligado.${avisoReinicioNormalize()}`)) return;
   stopMonitor();  // mesmo motivo do "Aplicar": vendor que reinicia deixaria o ping vermelho à toa
   try {
     const r = await api(
@@ -1329,11 +1338,11 @@ async function normalizeAll() {
   const ok = confirm(
     `Normalizar ${escopo}?\n` +
     'Volume no padrão do modelo + DND desligado em cada aparelho.' +
-    (isHtek ? '\n\nAtenção: telefones HTEK reiniciam ao receber a normalização.' : '')
+    avisoReinicioNormalize()
   );
   if (!ok) return;
   // Mesmo motivo do "Aplicar" (ver `apply`): vendor que reinicia ao normalizar
-  // (HTEK sempre; FlyingVoice ao mexer no DND) derrubaria a bolinha de todo
+  // (HTEK e FlyingVoice, sempre) derrubaria a bolinha de todo
   // mundo, e o round de ping ainda concorre com as 5 aplicações em paralelo.
   stopMonitor();
   const btn = $('#ec-normalize');
