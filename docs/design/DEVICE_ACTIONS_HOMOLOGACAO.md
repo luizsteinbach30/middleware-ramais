@@ -54,9 +54,25 @@ API/UI, mas **nenhum vendor homologou** até agora.
 - Login de sessão (cookie `ASPSSIONID`), `GET /phone/Phone_Preference.asp`,
   replay do form `preference` (~214 campos preservados) com overrides, POST
   HTTP/1.0 em `/goform/setSip`.
-- Overrides do normalize: `DBID_DND_ENABLE=0` + volumes no máximo da escala
-  **0-9**: `DBID_HF_OUT_VOL`, `DBID_HF_IN_VOL`, `DBID_HEADSET_OUT_VOL`,
-  `DBID_HEADSET_IN_VOL`, `DBID_RING_VOL`.
+- Overrides do normalize: `DBID_DND_ENABLE=0` + os 7 volumes em **5** (escala 0-9,
+  padrão definido pelo dono em 2026-11-05; antes iam ao máximo): `DBID_HF_OUT_VOL`,
+  `DBID_HF_IN_VOL`, `DBID_HEADSET_OUT_VOL`, `DBID_HEADSET_IN_VOL`, `DBID_RING_VOL`,
+  `DBID_INVOICE_NUM`, `DBID_OUTVOICE_NUM`. Os demais modelos seguem no máximo.
+- **Selects vazios no replay:** os 7 selects de volume são montados por JavaScript
+  (`GenVoLMenu`), sem `<option>` no HTML, então o replay os lê em branco. Até esta
+  correção, `DBID_INVOICE_NUM` e `DBID_OUTVOICE_NUM` iam vazios no POST, e o slot da
+  linha 1 ficava vazio no export (medido em 2026-11-05, P10 fw V0.7.89, `192.168.0.95`).
+- **Slots:** o POST grava só o primeiro slot da chave; o export deste firmware tem 10.
+- **`DBID_VOL_BACKUP` é derivado dos volumes** (medido em 2026-11-05):
+  - Formato: `HF_OUT-HF_IN-OUTVOICE-INVOICE-RING`. Com os valores 1, 2, 4, 3 e 6, o
+    reboot gerou `1-2-4-3-6`. Headset não entra.
+  - `/goform/setSip` responde 302 e descarta o campo, que não existe no form.
+  - O upload do `.cfg` (`/cgi-bin/upload_settings.cgi?config`) grava o valor, mas o
+    próximo reboot o recalcula a partir dos volumes.
+  - O normalize não muda o campo na hora: `5-5-5-5-5` aparece no reboot seguinte, porque
+    os volumes ficam em 5.
+- **⚠️ `GET /reboot.asp` reinicia o aparelho** (302, sem confirmação). Não abrir essa
+  página em varredura de recon.
 - **Reinicia ao mudar o DND** (o campo não é ImmeEffect); volume aplica na
   hora. `ActionResult.rebooted=True`.
 - Regra inviolável do adapter vale aqui também: **replay nunca emite valor

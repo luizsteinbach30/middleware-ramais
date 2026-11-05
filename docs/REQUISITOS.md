@@ -674,7 +674,7 @@ Ver [ADR-0002](ADRs/0002-extension-configurator.md).
   cada adapter declara em `capabilities()` só o que foi **homologado ao vivo**
   (critério em `docs/design/DEVICE_ACTIONS_HOMOLOGACAO.md`). A UI oculta o que
   não está na capability; a API rejeita com 422.
-- **RF-DA-02** Ação **normalize** = volume no máximo + DND off (+ unmute onde
+- **RF-DA-02** Ação **normalize** = volume no padrão do modelo (máximo; FlyingVoice P10: 5) + DND off (+ unmute onde
   possível): por linha (menu `⋮`) e em massa (botão "Normalizar telefones",
   semáforo 5, run em background com progresso ao vivo em
   `GET /action-runs/{run_id}/live`).

@@ -1173,7 +1173,7 @@ function showActionsMenu(td, lineId, ip, ramal) {
   const items = [];
   if (envCapabilities.includes('normalize')) {
     items.push({ act: 'normalize', label: '🔧 Normalizar telefone', color: '#6ee7b7',
-                 title: 'Volume no máximo + DND desligado' });
+                 title: 'Volume no padrão do modelo + DND desligado' });
   }
   if (envCapabilities.includes('set_ip')) {
     items.push({ act: 'set_ip', label: '⚠ Alterar IP…', color: '#fca5a5',
@@ -1235,7 +1235,7 @@ function attachActionsMenu(container) {
 
 async function runNormalizeOnLine(lineId, ip, ramal) {
   if (!ip) { toast.info('Linha sem IP — nada a normalizar.'); return; }
-  if (!confirm(`Normalizar o telefone ${ip} (ramal ${ramal || '—'})?\nVolume no máximo + DND desligado.`)) return;
+  if (!confirm(`Normalizar o telefone ${ip} (ramal ${ramal || '—'})?\nVolume no padrão do modelo + DND desligado.`)) return;
   stopMonitor();  // mesmo motivo do "Aplicar": vendor que reinicia deixaria o ping vermelho à toa
   try {
     const r = await api(
@@ -1328,7 +1328,7 @@ async function normalizeAll() {
     : 'TODOS os telefones com IP deste ambiente';
   const ok = confirm(
     `Normalizar ${escopo}?\n` +
-    'Volume no máximo + DND desligado em cada aparelho.' +
+    'Volume no padrão do modelo + DND desligado em cada aparelho.' +
     (isHtek ? '\n\nAtenção: telefones HTEK reiniciam ao receber a normalização.' : '')
   );
   if (!ok) return;

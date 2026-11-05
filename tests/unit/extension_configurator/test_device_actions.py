@@ -158,8 +158,55 @@ async def test_flyingvoice_normalize_replay_sobrescreve_dnd_e_volume(monkeypatch
     assert captured["path"] == "/goform/setSip"
     body = captured["body"]
     assert "DBID_DND_ENABLE=0" in body           # DND off
-    assert "DBID_HF_OUT_VOL=9" in body           # volume máx
+    assert "DBID_HF_OUT_VOL=5" in body           # volume no padrão
     assert "DBID_SIP_PHONE_NUM=8125" in body     # replay preserva o resto (SIP intacto)
+
+
+async def test_flyingvoice_normalize_nao_envia_select_de_volume_em_branco(monkeypatch) -> None:
+    """Os selects de volume do P10 vêm sem <option> (GenVoLMenu preenche no navegador).
+
+    O replay os lê vazios: sem override, o POST os enviaria em branco. A página
+    aqui repete a estrutura real (scripts/lab/_fv_pref.html, os 7 selects).
+    """
+    ad = FlyingVoiceAdapter()
+    selects = {
+        "DBID_INVOICE_NUM": 1, "DBID_OUTVOICE_NUM": 2, "DBID_HF_IN_VOL": 3,
+        "DBID_HF_OUT_VOL": 4, "DBID_RING_VOL": 5, "DBID_HEADSET_IN_VOL": 6,
+        "DBID_HEADSET_OUT_VOL": 7,
+    }
+    html = (
+        '<form name="preference" action="" method="post">'
+        '<input name="CheckString" value="cs123">'
+        + "".join(
+            f'<select name="{nome}" id="{nome}" class="inputw ImmeEffect">'
+            f'<script type="text/javascript">GenVoLMenu({tipo});</script ></select>'
+            for nome, tipo in selects.items()
+        )
+        + "</form>"
+    )
+
+    class _FakeCli:
+        async def get(self, url):
+            return httpx.Response(200, text=html)
+
+        async def aclose(self): ...
+
+    async def _fake_login(ip, creds):
+        return _FakeCli(), "abc"
+
+    captured: dict[str, str] = {}
+
+    def _fake_http10(ip, path, body, cookie, referer):
+        captured["body"] = body
+        return 302
+
+    monkeypatch.setattr(ad, "_login", _fake_login)
+    monkeypatch.setattr(ad, "_http10_post", _fake_http10)
+
+    await ad.execute_action("1.2.3.4", _CREDS, "normalize", {})
+
+    campos = dict(par.split("=", 1) for par in captured["body"].split("&"))
+    assert {nome: campos[nome] for nome in selects} == dict.fromkeys(selects, "5")
 
 
 # ---------------------------------------------------------------- Intelbras V

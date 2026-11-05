@@ -635,7 +635,7 @@ Sidebar ganha bloco **CONFIGURADOR DE RAMAIS** (sob border-top) com 2 entries:
   homologada não mostra nada (Intelbras hoje).
   - Coluna **`⋮`** (readonly, só em linha salva e com capability): abre menu
     popover ancorado na célula com as ações do vendor:
-    - **🔧 Normalizar telefone** — volume no máximo + DND desligado
+    - **🔧 Normalizar telefone** — volume no padrão do modelo + DND desligado
       (desfaz mute/DND ativado por operador). `confirm()` → POST da ação →
       toast com resultado (avisa quando o aparelho reinicia, ex.: HTEK).
     - **⚠ Alterar IP…** (quando `set_ip` homologado) — abre modal perigoso
